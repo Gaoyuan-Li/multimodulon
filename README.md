@@ -52,7 +52,8 @@ strain_data = multi_modulon['MG1655']
 
 # Get expression matrices
 log_tpm = strain_data.log_tpm  # Raw log TPM values
-X = strain_data.X  # Normalized log TPM values
+log_tpm_norm = strain_data.log_tpm_norm  # Normalized log TPM values
+X = strain_data.X  # Alias for log_tpm_norm
 
 # Get sample metadata
 sample_sheet = strain_data.sample_sheet
@@ -122,7 +123,8 @@ Container for single strain data.
 
 **Properties:**
 - `log_tpm`: Log TPM expression matrix (from log_tpm.csv)
-- `X`: Normalized log TPM expression matrix (from log_tpm_norm.csv)
+- `log_tpm_norm`: Normalized log TPM expression matrix (from log_tpm_norm.csv)
+- `X`: Normalized log TPM expression matrix (alias for log_tpm_norm)
 - `sample_sheet`: Sample metadata
 - `gene_table`: Gene annotations (parsed from GFF)
 

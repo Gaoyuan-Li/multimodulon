@@ -36,6 +36,7 @@ class SpeciesData:
         self.species_name = species_name
         self.data_path = data_path
         self._log_tpm = None
+        self._log_tpm_norm = None
         self._X = None
         self._sample_sheet = None
         self._gene_table = None
@@ -48,10 +49,17 @@ class SpeciesData:
         return self._log_tpm
     
     @property
-    def X(self) -> pd.DataFrame:
+    def log_tpm_norm(self) -> pd.DataFrame:
         """Get normalized log TPM expression matrix."""
+        if self._log_tpm_norm is None:
+            self._load_log_tpm_norm()
+        return self._log_tpm_norm
+    
+    @property
+    def X(self) -> pd.DataFrame:
+        """Get normalized log TPM expression matrix (alias for log_tpm_norm)."""
         if self._X is None:
-            self._load_X()
+            self._X = self.log_tpm_norm
         return self._X
     
     @property
@@ -78,15 +86,15 @@ class SpeciesData:
         self._log_tpm = pd.read_csv(file_path, index_col=0)
         logger.info(f"Loaded log_tpm for {self.species_name}: {self._log_tpm.shape}")
     
-    def _load_X(self):
+    def _load_log_tpm_norm(self):
         """Load normalized log TPM expression matrix."""
         file_path = self.data_path / "expression_matrices" / "log_tpm_norm.csv"
         if not file_path.exists():
             raise FileNotFoundError(f"log_tpm_norm.csv not found for {self.species_name}")
         
         # Read the file with first column as index
-        self._X = pd.read_csv(file_path, index_col=0)
-        logger.info(f"Loaded X (normalized) for {self.species_name}: {self._X.shape}")
+        self._log_tpm_norm = pd.read_csv(file_path, index_col=0)
+        logger.info(f"Loaded log_tpm_norm for {self.species_name}: {self._log_tpm_norm.shape}")
     
     def _load_sample_sheet(self):
         """Load sample metadata."""
@@ -94,11 +102,8 @@ class SpeciesData:
         if not file_path.exists():
             raise FileNotFoundError(f"samplesheet.csv not found for {self.species_name}")
         
-        # Read the file and set appropriate index
-        self._sample_sheet = pd.read_csv(file_path)
-        # Set the sample column as index if it exists
-        if 'sample' in self._sample_sheet.columns:
-            self._sample_sheet = self._sample_sheet.set_index('sample')
+        # Read the file with first column as index
+        self._sample_sheet = pd.read_csv(file_path, index_col=0)
         logger.info(f"Loaded sample_sheet for {self.species_name}: {self._sample_sheet.shape}")
     
     def _load_gene_table(self):
@@ -112,22 +117,32 @@ class SpeciesData:
     
     def validate_data(self):
         """Validate data consistency."""
-        # Check if gene IDs in log_tpm match gene_table
-        log_tpm_genes = set(self.log_tpm.index)
-        gene_table_genes = set(self.gene_table.index)
+        # Check sample consistency between expression matrices and sample sheet
+        log_tpm_samples = self.log_tpm.shape[1]
+        log_tpm_norm_samples = self.log_tpm_norm.shape[1]
+        sample_sheet_samples = self.sample_sheet.shape[0]
         
-        # Find genes in log_tpm
-        log_tpm_gene_prefixes = {g.replace('gene-', '') for g in log_tpm_genes if g.startswith('gene-')}
+        # Check if number of samples match
+        if log_tpm_samples != sample_sheet_samples:
+            logger.warning(f"Sample count mismatch for {self.species_name}: "
+                         f"log_tpm has {log_tpm_samples} samples, "
+                         f"sample_sheet has {sample_sheet_samples} samples")
+            return False
         
-        # Check overlap
-        common_genes = log_tpm_gene_prefixes.intersection(gene_table_genes)
+        if log_tpm_norm_samples != sample_sheet_samples:
+            logger.warning(f"Sample count mismatch for {self.species_name}: "
+                         f"log_tpm_norm has {log_tpm_norm_samples} samples, "
+                         f"sample_sheet has {sample_sheet_samples} samples")
+            return False
         
-        if len(common_genes) == 0:
-            logger.warning(f"No common genes found between log_tpm and gene_table for {self.species_name}")
-        else:
-            logger.info(f"Found {len(common_genes)} common genes for {self.species_name}")
+        if log_tpm_samples != log_tpm_norm_samples:
+            logger.warning(f"Expression matrix mismatch for {self.species_name}: "
+                         f"log_tpm has {log_tpm_samples} samples, "
+                         f"log_tpm_norm has {log_tpm_norm_samples} samples")
+            return False
         
-        return len(common_genes) > 0
+        logger.info(f"Data validation passed for {self.species_name}")
+        return True
 
 
 class MultiModulon:
@@ -147,6 +162,8 @@ class MultiModulon:
         input_folder_path : str
             Path to the Input_Data folder containing species/strain subfolders
         """
+        print(f"\nInitializing MultiModulon...")
+        
         self.input_folder_path = Path(input_folder_path)
         if not self.input_folder_path.exists():
             raise ValueError(f"Input folder not found: {input_folder_path}")
@@ -171,20 +188,41 @@ class MultiModulon:
         logger.info(f"Found {len(species_dirs)} species directories")
         
         # Load each species
+        print(f"\nLoading from {self.input_folder_path}:")
+        print("=" * 60)
+        
         for species_dir in species_dirs:
             species_name = species_dir.name
             logger.info(f"Loading data for {species_name}")
             
             try:
                 species_data = SpeciesData(species_name, species_dir)
-                # Load required data without validation for now
+                # Load required data
                 _ = species_data.log_tpm  # Trigger loading
-                _ = species_data.X        # Trigger loading
+                _ = species_data.log_tpm_norm  # Trigger loading
                 _ = species_data.sample_sheet  # Trigger loading
-                self._species_data[species_name] = species_data
-                logger.info(f"Successfully loaded {species_name}")
+                
+                # Print species information
+                print(f"\n{species_name}:")
+                print(f"  - Number of genes: {species_data.log_tpm.shape[0]}")
+                print(f"  - Number of samples: {species_data.log_tpm.shape[1]}")
+                
+                # Validate data consistency
+                if species_data.validate_data():
+                    self._species_data[species_name] = species_data
+                    print(f"  - Data validation: PASSED")
+                    logger.info(f"Successfully loaded {species_name}")
+                else:
+                    print(f"  - Data validation: FAILED")
+                    logger.warning(f"Skipping {species_name} due to validation failure")
+                    
             except Exception as e:
+                print(f"  - Error: {str(e)}")
                 logger.error(f"Failed to load {species_name}: {str(e)}")
+        
+        print("\n" + "=" * 60)
+        print(f"Successfully loaded {len(self._species_data)} species/strains/modalities")
+        print("=" * 60)
     
     def _run_bbh_analysis(self):
         """Run bidirectional best hits analysis."""
@@ -577,7 +615,7 @@ class MultiModulon:
         expression_dfs = {}
         for strain in strains:
             species_data = self._species_data[strain]
-            expression_dfs[strain] = species_data.X  # Use the normalized expression data
+            expression_dfs[strain] = species_data.log_tpm_norm  # Use the normalized expression data
         
         # Build aligned expression matrices
         for strain in strains:
@@ -599,7 +637,8 @@ class MultiModulon:
                         new_df.loc[gene_label] = 0
                 
                 # Update the species data with the aligned matrix
-                self._species_data[strain]._X = new_df
+                self._species_data[strain]._log_tpm_norm = new_df
+                self._species_data[strain]._X = new_df  # Also update X since it's an alias
                 logger.info(f"Created aligned expression matrix for {strain}: {new_df.shape}")
             else:
                 logger.warning(f"No expression data found for {strain}")
@@ -640,7 +679,8 @@ class MultiModulon:
             try:
                 print(f"    - Samples: {species_data.log_tpm.shape[1]}")
                 print(f"    - Log TPM matrix shape: {species_data.log_tpm.shape}")
-                print(f"    - Normalized matrix (X) shape: {species_data.X.shape}")
+                print(f"    - Log TPM normalized matrix shape: {species_data.log_tpm_norm.shape}")
+                print(f"    - X matrix shape (alias for log_tpm_norm): {species_data.X.shape}")
             except Exception as e:
                 print(f"    - Error accessing data: {str(e)}")
             

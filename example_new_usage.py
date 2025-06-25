@@ -39,7 +39,8 @@ def main():
         
         print(f"\n{first_strain} data:")
         print(f"  - Log TPM matrix shape: {strain_data.log_tpm.shape}")
-        print(f"  - Normalized expression matrix (X) shape: {strain_data.X.shape}")
+        print(f"  - Log TPM normalized matrix shape: {strain_data.log_tpm_norm.shape}")
+        print(f"  - X matrix shape (alias for log_tpm_norm): {strain_data.X.shape}")
         print(f"  - Sample sheet shape: {strain_data.sample_sheet.shape}")
         print(f"  - First 5 genes: {list(strain_data.log_tpm.index[:5])}")
         print(f"  - First 5 samples: {list(strain_data.log_tpm.columns[:5])}")
