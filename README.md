@@ -66,7 +66,8 @@ X = strain_data.X  # Alias for log_tpm_norm
 sample_sheet = strain_data.sample_sheet
 
 # Generate BBH files for all strain pairs
-multi_modulon.generate_BBH('Output_BBH')
+# Use threads parameter to speed up BLAST computation (default: 1)
+multi_modulon.generate_BBH('Output_BBH', threads=8)
 
 # Align genes across all strains and create unified expression matrices
 combined_gene_db = multi_modulon.align_genes('Output_Gene_Info')
@@ -89,6 +90,7 @@ Input_Data/
 │   │   └── log_tpm_norm.csv   # Normalized log TPM values
 │   ├── ref_genome/
 │   │   ├── genomic.gff        # Gene annotations
+│   │   ├── protein.faa        # Protein sequences (used for BBH)
 │   │   └── *.fna              # Genome sequence
 │   └── samplesheet/
 │       └── samplesheet.csv     # Sample metadata
@@ -100,9 +102,25 @@ Input_Data/
 
 The package can generate BBH (Bidirectional Best Hits) files for ortholog detection using BLAST+. The `generate_BBH()` method will:
 
-1. Extract protein sequences from genome files (if not already done)
-2. Run all-vs-all BLAST comparisons between species
-3. Save results as CSV files with gene-to-gene mappings
+1. Use existing protein.faa files from each strain's ref_genome directory
+2. Create mappings from protein IDs (NCBI_GP) to locus_tags using genomic.gff files
+3. Run all-vs-all BLAST comparisons between species
+4. Save results as CSV files with locus_tag-to-locus_tag mappings
+
+The BBH output files will contain the following columns:
+- gene: Query gene locus_tag
+- subject: Subject gene locus_tag
+- PID: Percent identity
+- alnLength: Alignment length
+- mismatchCount: Number of mismatches
+- gapOpenCount: Number of gap openings
+- queryStart/queryEnd: Query alignment coordinates
+- subjectStart/subjectEnd: Subject alignment coordinates
+- eVal: E-value
+- bitScore: Bit score
+- gene_length: Query gene length
+- COV: Coverage (alnLength/gene_length)
+- BBH: Bidirectional best hit indicator ("<=>")
 
 **Note:** BLAST+ must be installed before running BBH analysis (see Installation section above).
 
@@ -115,7 +133,7 @@ Main class for multi-species/strain analysis.
 **Methods:**
 - `__init__(input_folder_path)`: Initialize with Input_Data folder path
 - `__getitem__(species_name)`: Get data for a specific strain
-- `generate_BBH(output_path)`: Generate BBH files for all strain pairs
+- `generate_BBH(output_path, threads=1)`: Generate BBH files for all strain pairs (threads: number of CPU threads for BLAST)
 - `align_genes(output_path)`: Align genes across strains and create unified matrices
 - `get_orthologs(species1, species2)`: Get ortholog pairs (after BBH)
 - `save_bbh(output_path)`: Save BBH results

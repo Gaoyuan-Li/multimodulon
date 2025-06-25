@@ -346,7 +346,7 @@ class MultiModulon:
         
         logger.info(f"BBH results loaded from {input_path}")
     
-    def generate_BBH(self, output_path: str = "Output_BBH"):
+    def generate_BBH(self, output_path: str = "Output_BBH", threads: int = 1):
         """
         Generate BBH files using existing protein.faa files from each strain.
         
@@ -354,6 +354,8 @@ class MultiModulon:
         ----------
         output_path : str
             Path to save BBH results (default: "Output_BBH")
+        threads : int
+            Number of threads to use for BLAST (default: 1)
         """
         
         output_dir = Path(output_path)
@@ -431,7 +433,8 @@ class MultiModulon:
                         species_fasta_paths[species2],
                         species1, species2,
                         protein_to_locus_maps[species1],
-                        protein_to_locus_maps[species2]
+                        protein_to_locus_maps[species2],
+                        threads
                     )
                     blast_results[key] = blast_df
                     
@@ -567,7 +570,7 @@ class MultiModulon:
         return protein_to_locus
     
     def _run_blast_comparison_with_locus(self, fasta1: Path, fasta2: Path, sp1: str, sp2: str,
-                                        protein_to_locus1: dict, protein_to_locus2: dict) -> pd.DataFrame:
+                                        protein_to_locus1: dict, protein_to_locus2: dict, threads: int = 1) -> pd.DataFrame:
         """
         Run BLAST comparison between two species and return results with locus_tags.
         
@@ -594,7 +597,8 @@ class MultiModulon:
                 "blastp", "-query", str(tmp_fasta1), "-db", str(tmpdir / f"{sp2}_db"),
                 "-out", str(blast_output), 
                 "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen",
-                "-max_target_seqs", "1", "-evalue", "1e-5"
+                "-max_target_seqs", "1", "-evalue", "1e-5",
+                "-num_threads", str(threads)
             ], check=True, capture_output=True)
             
             # Parse BLAST results
