@@ -1,24 +1,42 @@
 # MultiModulon
 
-A Python package for analyzing multi-species RNA-seq expression profiles with integrated ortholog detection.
+A Python package for analyzing multi-species/multi-strain/multi-modality profiles.
 
 ## Features
 
-- Load and manage expression data from multiple species
-- Parse GFF annotations to extract gene information
-- Perform Bidirectional Best Hits (BBH) analysis for ortholog detection
-- Unified interface for accessing expression matrices and metadata
+- Load and manage expression data from multiple species/strains
+- Parse GFF annotations to extract gene information using locus_tags
+- Generate Bidirectional Best Hits (BBH) for ortholog detection
+- Align genes across species using Union-Find algorithm
+- Create unified expression matrices with consistent gene indexing
 - Built-in data validation and sanity checks
+
+## Requirements
+
+- Python >= 3.10
+- BLAST+ (for BBH generation)
 
 ## Installation
 
+### Install from GitHub
+
 ```bash
-pip install -e .
+# Install directly from GitHub (includes all dependencies)
+pip install git+https://github.com/Gaoyuan-Li/multimodulon.git
+
+# Or install a specific branch/tag
+pip install git+https://github.com/Gaoyuan-Li/multimodulon.git@main
 ```
 
-For development:
+### Install for development
+
 ```bash
-pip install -e ".[dev]"
+# Clone the repository
+git clone https://github.com/Gaoyuan-Li/multimodulon.git
+cd multimodulon
+
+# Install in editable mode
+pip install -e .
 ```
 
 ## Quick Start
@@ -26,27 +44,29 @@ pip install -e ".[dev]"
 ```python
 from multimodulon import MultiModulon
 
-# Initialize with a data folder
-multi_modulon = MultiModulon('/path/to/data/folder')
+# Initialize with Input_Data folder path
+multi_modulon = MultiModulon('/path/to/Input_Data')
 
-# Access species data
-species_data = multi_modulon['Pseudomonas_fluorescens']
+# Access strain data
+strain_data = multi_modulon['MG1655']
 
 # Get expression matrices
-log_tpm = species_data.log_tpm  # Raw log TPM values
-X = species_data.X  # Normalized log TPM values
+log_tpm = strain_data.log_tpm  # Raw log TPM values
+X = strain_data.X  # Normalized log TPM values
 
 # Get sample metadata
-sample_sheet = species_data.sample_sheet
+sample_sheet = strain_data.sample_sheet
 
-# Get gene annotations
-gene_table = species_data.gene_table
+# Generate BBH files for all strain pairs
+multi_modulon.generate_BBH('Output_BBH')
 
-# Get orthologs between species
-orthologs = multi_modulon.get_orthologs('Pseudomonas_fluorescens', 'Pseudomonas_putida')
+# Align genes across all strains and create unified expression matrices
+combined_gene_db = multi_modulon.align_genes('Output_Gene_Info')
 
-# Save BBH results
-multi_modulon.save_bbh('output/bbh_results')
+# Access aligned expression matrices (same row indexes across all strains)
+for strain in multi_modulon.species:
+    aligned_X = multi_modulon[strain].X  # Aligned expression matrix
+    print(f"{strain}: {aligned_X.shape}")
 ```
 
 ## Data Structure
@@ -54,53 +74,57 @@ multi_modulon.save_bbh('output/bbh_results')
 The package expects the following directory structure:
 
 ```
-data_folder/
-├── Species_name_1/
+Input_Data/
+├── Strain_1/
 │   ├── expression_matrices/
-│   │   ├── log_tpm.tsv
-│   │   ├── log_tpm_norm.csv
-│   │   ├── counts.tsv
-│   │   └── tpm.tsv
+│   │   ├── log_tpm.csv        # Log-transformed TPM values
+│   │   └── log_tpm_norm.csv   # Normalized log TPM values
 │   ├── ref_genome/
-│   │   ├── genomic.gff
-│   │   └── *.fna
+│   │   ├── genomic.gff        # Gene annotations
+│   │   └── *.fna              # Genome sequence
 │   └── samplesheet/
-│       └── samplesheet.csv
-└── Species_name_2/
+│       └── samplesheet.csv     # Sample metadata
+└── Strain_2/
     └── ...
 ```
 
 ## BBH Analysis
 
-The package uses BLAST+ via Docker for BBH analysis. Ensure Docker is installed and running:
+The package can generate BBH files using BLAST+. Make sure BLAST+ is installed:
 
 ```bash
-docker pull quay.io/biocontainers/blast:2.16.0--h66d330f_5
+# Install BLAST+ (Ubuntu/Debian)
+sudo apt-get install ncbi-blast+
+
+# Or use conda
+conda install -c bioconda blast
 ```
 
 ## API Reference
 
 ### MultiModulon
 
-Main class for multi-species analysis.
+Main class for multi-species/strain analysis.
 
 **Methods:**
-- `__init__(data_folder, run_bbh=True)`: Initialize with data folder
-- `__getitem__(species_name)`: Get data for a specific species
-- `get_orthologs(species1, species2)`: Get ortholog pairs
+- `__init__(input_folder_path)`: Initialize with Input_Data folder path
+- `__getitem__(species_name)`: Get data for a specific strain
+- `generate_BBH(output_path)`: Generate BBH files for all strain pairs
+- `align_genes(output_path)`: Align genes across strains and create unified matrices
+- `get_orthologs(species1, species2)`: Get ortholog pairs (after BBH)
 - `save_bbh(output_path)`: Save BBH results
 - `load_bbh(input_path)`: Load BBH results
 - `summary()`: Print data summary
 
 ### SpeciesData
 
-Container for single species data.
+Container for single strain data.
 
 **Properties:**
-- `log_tpm`: Log TPM expression matrix
-- `X`: Normalized log TPM expression matrix
+- `log_tpm`: Log TPM expression matrix (from log_tpm.csv)
+- `X`: Normalized log TPM expression matrix (from log_tpm_norm.csv)
 - `sample_sheet`: Sample metadata
-- `gene_table`: Gene annotations
+- `gene_table`: Gene annotations (parsed from GFF)
 
 ## License
 

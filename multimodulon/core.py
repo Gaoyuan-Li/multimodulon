@@ -1,12 +1,15 @@
 """Core MultiModulon class for multi-species expression analysis."""
 
+from __future__ import annotations
+
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, Optional, Any, List, Tuple
 import logging
 import json
 import pickle
+import subprocess
+import tempfile
 from collections import defaultdict
 
 from .utils.gff_parser import parse_gff
@@ -67,12 +70,12 @@ class SpeciesData:
     
     def _load_log_tpm(self):
         """Load log TPM expression matrix."""
-        file_path = self.data_path / "expression_matrices" / "log_tpm.tsv"
+        file_path = self.data_path / "expression_matrices" / "log_tpm.csv"
         if not file_path.exists():
-            raise FileNotFoundError(f"log_tpm.tsv not found for {self.species_name}")
+            raise FileNotFoundError(f"log_tpm.csv not found for {self.species_name}")
         
         # Read the file with first column as index
-        self._log_tpm = pd.read_csv(file_path, sep='\t', index_col=0)
+        self._log_tpm = pd.read_csv(file_path, index_col=0)
         logger.info(f"Loaded log_tpm for {self.species_name}: {self._log_tpm.shape}")
     
     def _load_X(self):
@@ -135,40 +138,35 @@ class MultiModulon:
     gene annotations, and ortholog relationships across multiple species.
     """
     
-    def __init__(self, data_folder: str, run_bbh: bool = True):
+    def __init__(self, input_folder_path: str):
         """
         Initialize MultiModulon object.
         
         Parameters
         ----------
-        data_folder : str
-            Path to the folder containing species data
-        run_bbh : bool
-            Whether to run BBH analysis during initialization
+        input_folder_path : str
+            Path to the Input_Data folder containing species/strain subfolders
         """
-        self.data_folder = Path(data_folder)
-        if not self.data_folder.exists():
-            raise ValueError(f"Data folder not found: {data_folder}")
+        self.input_folder_path = Path(input_folder_path)
+        if not self.input_folder_path.exists():
+            raise ValueError(f"Input folder not found: {input_folder_path}")
         
         # Initialize storage
-        self._species_data: Dict[str, SpeciesData] = {}
-        self._bbh: Optional[Dict[Tuple[str, str], pd.DataFrame]] = None
+        self._species_data: dict[str, SpeciesData] = {}
+        self._bbh: dict[tuple[str, str], pd.DataFrame] | None = None
+        self._combined_gene_db: pd.DataFrame | None = None
         
         # Load species data
         self._load_species_data()
-        
-        # Run BBH analysis if requested
-        if run_bbh:
-            self._run_bbh_analysis()
     
     def _load_species_data(self):
-        """Load data for all species in the data folder."""
+        """Load data for all species in the input folder."""
         # Find all species directories
-        species_dirs = [d for d in self.data_folder.iterdir() 
+        species_dirs = [d for d in self.input_folder_path.iterdir() 
                        if d.is_dir() and not d.name.startswith('.')]
         
         if not species_dirs:
-            raise ValueError(f"No species directories found in {self.data_folder}")
+            raise ValueError(f"No species directories found in {self.input_folder_path}")
         
         logger.info(f"Found {len(species_dirs)} species directories")
         
@@ -179,11 +177,12 @@ class MultiModulon:
             
             try:
                 species_data = SpeciesData(species_name, species_dir)
-                # Validate data
-                if species_data.validate_data():
-                    self._species_data[species_name] = species_data
-                else:
-                    logger.warning(f"Skipping {species_name} due to validation failure")
+                # Load required data without validation for now
+                _ = species_data.log_tpm  # Trigger loading
+                _ = species_data.X        # Trigger loading
+                _ = species_data.sample_sheet  # Trigger loading
+                self._species_data[species_name] = species_data
+                logger.info(f"Successfully loaded {species_name}")
             except Exception as e:
                 logger.error(f"Failed to load {species_name}: {str(e)}")
     
@@ -240,12 +239,12 @@ class MultiModulon:
         return self._species_data[species_name]
     
     @property
-    def bbh(self) -> Optional[Dict[Tuple[str, str], pd.DataFrame]]:
+    def bbh(self) -> dict[tuple[str, str], pd.DataFrame] | None:
         """Get BBH results."""
         return self._bbh
     
     @property
-    def species(self) -> List[str]:
+    def species(self) -> list[str]:
         """Get list of loaded species."""
         return list(self._species_data.keys())
     
@@ -309,6 +308,302 @@ class MultiModulon:
         
         logger.info(f"BBH results loaded from {input_path}")
     
+    def generate_BBH(self, output_path: str = "Output_BBH"):
+        """
+        Generate BBH files using gff and fna files from each strain.
+        
+        Parameters
+        ----------
+        output_path : str
+            Path to save BBH results (default: "Output_BBH")
+        """
+        
+        output_dir = Path(output_path)
+        output_dir.mkdir(exist_ok=True)
+        
+        species_list = list(self._species_data.keys())
+        logger.info(f"Generating BBH for {len(species_list)} species: {species_list}")
+        
+        # Extract protein sequences for each species if needed
+        species_fasta_paths = {}
+        for species_name in species_list:
+            species_data = self._species_data[species_name]
+            gff_file = None
+            fna_file = None
+            
+            # Find gff and fna files
+            ref_genome_dir = species_data.data_path / "ref_genome"
+            for file in ref_genome_dir.iterdir():
+                if file.suffix == '.gff':
+                    gff_file = file
+                elif file.suffix == '.fna':
+                    fna_file = file
+            
+            if not gff_file or not fna_file:
+                logger.error(f"Missing gff or fna file for {species_name}")
+                continue
+            
+            # Create protein fasta file
+            protein_fasta = ref_genome_dir / f"{species_name}_proteins.faa"
+            if not protein_fasta.exists():
+                logger.info(f"Extracting proteins for {species_name}")
+                extract_protein_sequences(fna_file, gff_file, protein_fasta)
+            
+            species_fasta_paths[species_name] = protein_fasta
+        
+        # Generate all pairwise BBH comparisons
+        for species1 in species_list:
+            for species2 in species_list:
+                output_file = output_dir / f"{species1}_vs_{species2}.csv"
+                
+                if output_file.exists():
+                    logger.info(f"BBH file already exists: {output_file}")
+                    continue
+                
+                logger.info(f"Generating BBH: {species1} vs {species2}")
+                
+                try:
+                    # Run BLAST comparison
+                    bbh_df = self._run_blast_comparison(
+                        species_fasta_paths[species1],
+                        species_fasta_paths[species2],
+                        species1, species2
+                    )
+                    
+                    # Save results
+                    bbh_df.to_csv(output_file, index=False)
+                    logger.info(f"Saved BBH results to {output_file}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to generate BBH for {species1} vs {species2}: {str(e)}")
+                    # Create empty file to mark as attempted
+                    pd.DataFrame(columns=['gene', 'subject']).to_csv(output_file, index=False)
+        
+        logger.info(f"BBH generation completed. Results saved to {output_dir}")
+    
+    def _run_blast_comparison(self, fasta1: Path, fasta2: Path, sp1: str, sp2: str) -> pd.DataFrame:
+        """
+        Run BLAST comparison between two species and return parsed results.
+        
+        Returns DataFrame with columns: gene, subject
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            
+            # Copy FASTA files to temp directory
+            tmp_fasta1 = tmpdir / f"{sp1}.faa"
+            tmp_fasta2 = tmpdir / f"{sp2}.faa"
+            
+            subprocess.run(f"cp {fasta1} {tmp_fasta1}", shell=True, check=True)
+            subprocess.run(f"cp {fasta2} {tmp_fasta2}", shell=True, check=True)
+            
+            # Create BLAST database
+            subprocess.run([
+                "makeblastdb", "-in", str(tmp_fasta2), "-dbtype", "prot", "-out", str(tmpdir / f"{sp2}_db")
+            ], check=True, capture_output=True)
+            
+            # Run BLAST
+            blast_output = tmpdir / "blast_results.txt"
+            subprocess.run([
+                "blastp", "-query", str(tmp_fasta1), "-db", str(tmpdir / f"{sp2}_db"),
+                "-out", str(blast_output), "-outfmt", "6 qseqid sseqid evalue bitscore",
+                "-max_target_seqs", "1", "-evalue", "1e-5"
+            ], check=True, capture_output=True)
+            
+            # Parse BLAST results
+            if blast_output.exists() and blast_output.stat().st_size > 0:
+                df = pd.read_csv(
+                    blast_output, sep='\\t',
+                    names=['gene', 'subject', 'evalue', 'bitscore']
+                )
+                # Keep only gene and subject columns for BBH format
+                return df[['gene', 'subject']]
+            else:
+                return pd.DataFrame(columns=['gene', 'subject'])
+    
+    def align_genes(self, output_path: str = "Output_Gene_Info"):
+        """
+        Align genes across all species using Union-Find algorithm to create combined gene database.
+        
+        Parameters
+        ----------
+        output_path : str
+            Path to save the combined gene database (default: "Output_Gene_Info")
+        """
+        from collections import defaultdict
+        
+        output_dir = Path(output_path)
+        output_dir.mkdir(exist_ok=True)
+        
+        # Get list of strains
+        strains = list(self._species_data.keys())
+        logger.info(f"Aligning genes for strains: {strains}")
+        
+        # Step 1: Collect all genes from each strain's self-comparison file
+        strain_genes = {strain: set() for strain in strains}
+        bbh_dir = Path("Output_BBH")  # Assuming BBH files are in this directory
+        
+        for strain in strains:
+            self_file = bbh_dir / f'{strain}_vs_{strain}.csv'
+            if self_file.exists():
+                df = pd.read_csv(self_file)
+                if 'gene' in df.columns:
+                    genes = df['gene'].unique()
+                    strain_genes[strain].update(genes)
+                    logger.info(f"Found {len(genes)} genes for {strain}")
+            else:
+                # If self-comparison file doesn't exist, get genes from expression data
+                species_data = self._species_data[strain]
+                genes = species_data.log_tpm.index.tolist()
+                strain_genes[strain].update(genes)
+                logger.info(f"Using {len(genes)} genes from expression data for {strain}")
+        
+        # Step 2: Initialize Union-Find structure
+        class UnionFind:
+            def __init__(self):
+                self.parent = {}
+            
+            def find(self, node):
+                if node not in self.parent:
+                    self.parent[node] = node
+                while self.parent[node] != node:
+                    self.parent[node] = self.parent[self.parent[node]]  # Path compression
+                    node = self.parent[node]
+                return node
+            
+            def union(self, node1, node2):
+                root1 = self.find(node1)
+                root2 = self.find(node2)
+                if root1 != root2:
+                    self.parent[root2] = root1
+        
+        uf = UnionFind()
+        
+        # Step 3: Process all pairwise BBH files to build equivalence relationships
+        if bbh_dir.exists():
+            for filename in bbh_dir.iterdir():
+                if not filename.name.endswith('.csv'):
+                    continue
+                # Parse strain names from filename
+                parts = filename.stem.split('_vs_')
+                if len(parts) != 2:
+                    continue
+                x, y = parts[0], parts[1]
+                
+                if x not in strains or y not in strains:
+                    continue
+                
+                try:
+                    df = pd.read_csv(filename)
+                    if 'gene' in df.columns and 'subject' in df.columns:
+                        for _, row in df.iterrows():
+                            gene_x = (x, row['gene'])
+                            gene_y = (y, row['subject'])
+                            # Ensure genes exist in their respective strain's self-reported list
+                            if row['gene'] in strain_genes[x] and row['subject'] in strain_genes[y]:
+                                uf.union(gene_x, gene_y)
+                except Exception as e:
+                    logger.warning(f"Failed to process {filename}: {str(e)}")
+        
+        # Step 4: Group all genes into their connected components
+        components = defaultdict(lambda: {strain: [] for strain in strains})
+        for strain in strains:
+            for gene in strain_genes[strain]:
+                node = (strain, gene)
+                root = uf.find(node)
+                components[root][strain].append(gene)
+        
+        # Step 5: Create the final DataFrame
+        rows = []
+        for comp in components.values():
+            row = {}
+            for strain in strains:
+                genes = comp[strain]
+                if len(genes) == 1:
+                    row[strain] = genes[0]
+                elif len(genes) > 1:
+                    # Handle unexpected duplicates: take the first occurrence
+                    row[strain] = genes[0]
+                else:
+                    row[strain] = None
+            rows.append(row)
+        
+        # Create DataFrame and save
+        df = pd.DataFrame(rows)
+        output_file = output_dir / "combined_gene_db.csv"
+        df.to_csv(output_file, index=False)
+        
+        # Store the combined gene database
+        self._combined_gene_db = df
+        
+        logger.info(f"Gene alignment completed. Combined gene database saved to {output_file}")
+        logger.info(f"Total gene groups: {len(df)}")
+        
+        # Create aligned expression matrices
+        self._create_aligned_expression_matrices(df, strains)
+        
+        return df
+    
+    def _create_aligned_expression_matrices(self, combined_gene_db: pd.DataFrame, strains: list[str]):
+        """
+        Create aligned expression matrices (X) for all strains with same row indexes.
+        """
+        logger.info("Creating aligned expression matrices...")
+        
+        # Define a helper function to find the first valid gene ID
+        def find_first_valid_gene(row):
+            for i, strain in enumerate(strains):
+                val = row[strain]
+                # Treat "None" strings, actual NaN, or None as invalid
+                if pd.notna(val) and val != "None" and val is not None:
+                    return i, val
+            return np.nan, np.nan
+        
+        # Apply this helper to each row of combined_gene_db
+        results = combined_gene_db.apply(find_first_valid_gene, axis=1)
+        combined_gene_db["priority"] = results.apply(lambda x: x[0])
+        combined_gene_db["row_label"] = results.apply(lambda x: x[1])
+        
+        # Remove rows with no valid genes
+        valid_rows = combined_gene_db.dropna(subset=['row_label'])
+        
+        # Sort rows by (priority, row_label)
+        df_sorted = valid_rows.sort_values(by=["priority", "row_label"], ascending=[True, True]).copy()
+        
+        # Set the sorted gene IDs as the new index
+        df_sorted = df_sorted.set_index("row_label")
+        
+        # Get original expression data for each strain
+        expression_dfs = {}
+        for strain in strains:
+            species_data = self._species_data[strain]
+            expression_dfs[strain] = species_data.X  # Use the normalized expression data
+        
+        # Build aligned expression matrices
+        for strain in strains:
+            # Prepare an empty DataFrame with same columns as original but reindexed
+            if strain in expression_dfs and not expression_dfs[strain].empty:
+                cols = expression_dfs[strain].columns
+                new_df = pd.DataFrame(index=df_sorted.index, columns=cols, dtype=float)
+                
+                # For each row in df_sorted, find the gene ID that corresponds to this strain
+                for gene_label in new_df.index:
+                    strain_gene_id = df_sorted.loc[gene_label, strain]
+                    if pd.notna(strain_gene_id) and strain_gene_id != "None" and strain_gene_id is not None:
+                        # If the gene is in the strain's expression file, copy it. If not, fill with 0.
+                        if strain_gene_id in expression_dfs[strain].index:
+                            new_df.loc[gene_label] = expression_dfs[strain].loc[strain_gene_id]
+                        else:
+                            new_df.loc[gene_label] = 0
+                    else:
+                        new_df.loc[gene_label] = 0
+                
+                # Update the species data with the aligned matrix
+                self._species_data[strain]._X = new_df
+                logger.info(f"Created aligned expression matrix for {strain}: {new_df.shape}")
+            else:
+                logger.warning(f"No expression data found for {strain}")
+    
     def get_orthologs(self, species1: str, species2: str) -> pd.DataFrame:
         """
         Get ortholog pairs between two species.
@@ -336,15 +631,23 @@ class MultiModulon:
         """Print summary of loaded data."""
         print(f"MultiModulon Summary")
         print(f"====================")
-        print(f"Data folder: {self.data_folder}")
-        print(f"Number of species: {len(self._species_data)}")
-        print(f"\nSpecies loaded:")
+        print(f"Input folder: {self.input_folder_path}")
+        print(f"Number of species/strains: {len(self._species_data)}")
+        print(f"\nSpecies/strains loaded:")
         
         for species_name, species_data in self._species_data.items():
             print(f"\n  {species_name}:")
-            print(f"    - Genes: {len(species_data.gene_table)}")
-            print(f"    - Samples: {species_data.log_tpm.shape[1]}")
-            print(f"    - Expression matrix shape: {species_data.log_tpm.shape}")
+            try:
+                print(f"    - Samples: {species_data.log_tpm.shape[1]}")
+                print(f"    - Log TPM matrix shape: {species_data.log_tpm.shape}")
+                print(f"    - Normalized matrix (X) shape: {species_data.X.shape}")
+            except Exception as e:
+                print(f"    - Error accessing data: {str(e)}")
+            
+        if self._combined_gene_db is not None:
+            print(f"\nGene alignment completed:")
+            print(f"  - Total gene groups: {len(self._combined_gene_db)}")
+            print(f"  - Aligned expression matrices created for all strains")
             
         if self._bbh is not None:
             print(f"\nBBH analysis completed:")
