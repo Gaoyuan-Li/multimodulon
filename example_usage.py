@@ -50,7 +50,8 @@ def main():
     print("Generating BBH files...")
     print("=" * 60)
     
-    # This will create BBH files for all strain pairs
+    # This will create BBH files for all strain pairs using existing protein.faa files
+    # The BBH files will use locus_tags (e.g., b0001, EcolC_0001) in the gene and subject columns
     multi_modulon.generate_BBH("../imminer_2_industrial_strain/Output_BBH")
     
     # Align genes across all strains

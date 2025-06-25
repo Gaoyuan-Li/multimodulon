@@ -348,7 +348,7 @@ class MultiModulon:
     
     def generate_BBH(self, output_path: str = "Output_BBH"):
         """
-        Generate BBH files using gff and fna files from each strain.
+        Generate BBH files using existing protein.faa files from each strain.
         
         Parameters
         ----------
@@ -362,32 +362,32 @@ class MultiModulon:
         species_list = list(self._species_data.keys())
         logger.info(f"Generating BBH for {len(species_list)} species: {species_list}")
         
-        # Extract protein sequences for each species if needed
+        # Use existing protein.faa files and create mapping from protein_id to locus_tag
         species_fasta_paths = {}
+        protein_to_locus_maps = {}
+        
         for species_name in species_list:
             species_data = self._species_data[species_name]
-            gff_file = None
-            fna_file = None
-            
-            # Find gff and fna files
             ref_genome_dir = species_data.data_path / "ref_genome"
-            for file in ref_genome_dir.iterdir():
-                if file.suffix == '.gff':
-                    gff_file = file
-                elif file.suffix == '.fna':
-                    fna_file = file
             
-            if not gff_file or not fna_file:
-                logger.error(f"Missing gff or fna file for {species_name}")
+            # Check for existing protein.faa file
+            protein_fasta = ref_genome_dir / "protein.faa"
+            if not protein_fasta.exists():
+                logger.error(f"Missing protein.faa file for {species_name} at {protein_fasta}")
                 continue
             
-            # Create protein fasta file
-            protein_fasta = ref_genome_dir / f"{species_name}_proteins.faa"
-            if not protein_fasta.exists():
-                logger.info(f"Extracting proteins for {species_name}")
-                extract_protein_sequences(fna_file, gff_file, protein_fasta)
+            # Check for GFF file to create protein_id to locus_tag mapping
+            gff_file = ref_genome_dir / "genomic.gff"
+            if not gff_file.exists():
+                logger.error(f"Missing genomic.gff file for {species_name}")
+                continue
             
+            # Create mapping from NCBI_GP (protein_id) to locus_tag
+            protein_to_locus = self._create_protein_to_locus_mapping(gff_file)
+            protein_to_locus_maps[species_name] = protein_to_locus
             species_fasta_paths[species_name] = protein_fasta
+            
+            logger.info(f"Found {len(protein_to_locus)} protein-to-locus mappings for {species_name}")
         
         # Check if BLAST tools are available
         try:
@@ -400,7 +400,8 @@ class MultiModulon:
             logger.error("  Conda: conda install -c bioconda blast")
             raise RuntimeError("BLAST tools not installed")
         
-        # Generate all pairwise BBH comparisons
+        # First, run all BLAST comparisons to collect results
+        blast_results = {}
         for species1 in species_list:
             for species2 in species_list:
                 # Skip if we don't have protein files for these species
@@ -408,30 +409,77 @@ class MultiModulon:
                     logger.warning(f"Skipping {species1} vs {species2}: missing protein files")
                     continue
                 
-                output_file = output_dir / f"{species1}_vs_{species2}.csv"
+                key = (species1, species2)
                 
+                # Check if output file already exists
+                output_file = output_dir / f"{species1}_vs_{species2}.csv"
                 if output_file.exists():
                     logger.info(f"BBH file already exists: {output_file}")
+                    # Load existing results
+                    try:
+                        blast_results[key] = pd.read_csv(output_file)
+                    except Exception as e:
+                        logger.warning(f"Failed to load existing file {output_file}: {e}")
                     continue
                 
-                logger.info(f"Generating BBH: {species1} vs {species2}")
+                logger.info(f"Running BLAST: {species1} vs {species2}")
                 
                 try:
                     # Run BLAST comparison
-                    bbh_df = self._run_blast_comparison(
+                    blast_df = self._run_blast_comparison_with_locus(
                         species_fasta_paths[species1],
                         species_fasta_paths[species2],
-                        species1, species2
+                        species1, species2,
+                        protein_to_locus_maps[species1],
+                        protein_to_locus_maps[species2]
                     )
-                    
-                    # Save results
-                    bbh_df.to_csv(output_file, index=False)
-                    logger.info(f"Saved BBH results to {output_file}")
+                    blast_results[key] = blast_df
                     
                 except Exception as e:
-                    logger.error(f"Failed to generate BBH for {species1} vs {species2}: {str(e)}")
-                    # Create empty file to mark as attempted
-                    pd.DataFrame(columns=['gene', 'subject']).to_csv(output_file, index=False)
+                    logger.error(f"Failed to run BLAST for {species1} vs {species2}: {str(e)}")
+                    blast_results[key] = pd.DataFrame(columns=['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 
+                                                              'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart', 
+                                                              'subjectEnd', 'eVal', 'bitScore', 'gene_length', 'COV', 'BBH'])
+        
+        # Now determine BBH for all pairs
+        for species1 in species_list:
+            for species2 in species_list:
+                key = (species1, species2)
+                if key not in blast_results:
+                    continue
+                
+                output_file = output_dir / f"{species1}_vs_{species2}.csv"
+                if output_file.exists():
+                    continue
+                
+                df = blast_results[key].copy()
+                
+                if species1 == species2:
+                    # Self-comparison, all hits are BBH
+                    df['BBH'] = '<=>'
+                else:
+                    # Cross-species comparison, determine BBH
+                    reverse_key = (species2, species1)
+                    if reverse_key in blast_results:
+                        reverse_df = blast_results[reverse_key]
+                        # Create dictionaries for fast lookup
+                        forward_hits = dict(zip(df['gene'], df['subject']))
+                        reverse_hits = dict(zip(reverse_df['gene'], reverse_df['subject']))
+                        
+                        # Mark BBH
+                        df['BBH'] = df.apply(
+                            lambda row: '<=>' if (row['subject'] in reverse_hits and 
+                                                reverse_hits[row['subject']] == row['gene']) else '',
+                            axis=1
+                        )
+                    else:
+                        logger.warning(f"No reverse comparison found for {species2} vs {species1}")
+                        df['BBH'] = ''
+                
+                # Save results with index column
+                df.reset_index(drop=True, inplace=True)
+                df.to_csv(output_file, index=True, index_label='')
+                logger.info(f"Saved BBH results to {output_file}")
         
         logger.info(f"BBH generation completed. Results saved to {output_dir}")
     
@@ -474,6 +522,132 @@ class MultiModulon:
                 return df[['gene', 'subject']]
             else:
                 return pd.DataFrame(columns=['gene', 'subject'])
+    
+    def _create_protein_to_locus_mapping(self, gff_file: Path) -> dict:
+        """
+        Create mapping from protein_id (NCBI_GP) to locus_tag from GFF file.
+        """
+        protein_to_locus = {}
+        
+        with open(gff_file, 'r') as f:
+            for line in f:
+                if line.startswith('#') or not line.strip():
+                    continue
+                
+                parts = line.strip().split('\t')
+                if len(parts) < 9:
+                    continue
+                
+                feature_type = parts[2]
+                if feature_type == 'CDS':
+                    attributes = parts[8]
+                    
+                    # Parse attributes
+                    attr_dict = {}
+                    for attr in attributes.split(';'):
+                        if '=' in attr:
+                            key, value = attr.split('=', 1)
+                            attr_dict[key] = value
+                    
+                    # Get protein_id from NCBI_GP in Dbxref
+                    protein_id = None
+                    if 'Dbxref' in attr_dict:
+                        dbxrefs = attr_dict['Dbxref'].split(',')
+                        for dbxref in dbxrefs:
+                            if dbxref.startswith('NCBI_GP:'):
+                                protein_id = dbxref.replace('NCBI_GP:', '')
+                                break
+                    
+                    # Get locus_tag
+                    locus_tag = attr_dict.get('locus_tag', None)
+                    
+                    if protein_id and locus_tag:
+                        protein_to_locus[protein_id] = locus_tag
+        
+        return protein_to_locus
+    
+    def _run_blast_comparison_with_locus(self, fasta1: Path, fasta2: Path, sp1: str, sp2: str,
+                                        protein_to_locus1: dict, protein_to_locus2: dict) -> pd.DataFrame:
+        """
+        Run BLAST comparison between two species and return results with locus_tags.
+        
+        Returns DataFrame with columns matching the expected BBH output format.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            
+            # Copy FASTA files to temp directory
+            tmp_fasta1 = tmpdir / f"{sp1}.faa"
+            tmp_fasta2 = tmpdir / f"{sp2}.faa"
+            
+            subprocess.run(f"cp {fasta1} {tmp_fasta1}", shell=True, check=True)
+            subprocess.run(f"cp {fasta2} {tmp_fasta2}", shell=True, check=True)
+            
+            # Create BLAST database
+            subprocess.run([
+                "makeblastdb", "-in", str(tmp_fasta2), "-dbtype", "prot", "-out", str(tmpdir / f"{sp2}_db")
+            ], check=True, capture_output=True)
+            
+            # Run BLAST with extended output format
+            blast_output = tmpdir / "blast_results.txt"
+            subprocess.run([
+                "blastp", "-query", str(tmp_fasta1), "-db", str(tmpdir / f"{sp2}_db"),
+                "-out", str(blast_output), 
+                "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen",
+                "-max_target_seqs", "1", "-evalue", "1e-5"
+            ], check=True, capture_output=True)
+            
+            # Parse BLAST results
+            if blast_output.exists() and blast_output.stat().st_size > 0:
+                df = pd.read_csv(
+                    blast_output, sep='\t',
+                    names=['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen',
+                           'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore', 'qlen']
+                )
+                
+                # Convert protein IDs to locus_tags
+                df['gene'] = df['qseqid'].map(protein_to_locus1)
+                df['subject'] = df['sseqid'].map(protein_to_locus2)
+                
+                # Filter out rows where mapping failed
+                df = df.dropna(subset=['gene', 'subject'])
+                
+                # Rename columns to match expected format
+                df = df.rename(columns={
+                    'pident': 'PID',
+                    'length': 'alnLength',
+                    'mismatch': 'mismatchCount',
+                    'gapopen': 'gapOpenCount',
+                    'qstart': 'queryStart',
+                    'qend': 'queryEnd',
+                    'sstart': 'subjectStart',
+                    'send': 'subjectEnd',
+                    'evalue': 'eVal',
+                    'bitscore': 'bitScore',
+                    'qlen': 'gene_length'
+                })
+                
+                # Calculate coverage
+                df['COV'] = df['alnLength'] / df['gene_length']
+                
+                # For self-comparisons, mark as bidirectional best hit
+                if sp1 == sp2:
+                    df['BBH'] = '<=>'  
+                else:
+                    # For cross-species comparisons, we need to run reciprocal BLAST to determine BBH
+                    # For now, leave empty as the full BBH determination requires both directions
+                    df['BBH'] = ''
+                
+                # Select and order columns to match expected format
+                columns = ['gene', 'subject', 'PID', 'alnLength', 'mismatchCount', 'gapOpenCount',
+                          'queryStart', 'queryEnd', 'subjectStart', 'subjectEnd', 'eVal', 'bitScore',
+                          'gene_length', 'COV', 'BBH']
+                
+                return df[columns]
+            else:
+                return pd.DataFrame(columns=['gene', 'subject', 'PID', 'alnLength', 'mismatchCount',
+                                           'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart',
+                                           'subjectEnd', 'eVal', 'bitScore', 'gene_length', 'COV', 'BBH'])
     
     def align_genes(self, output_path: str = "Output_Gene_Info"):
         """
