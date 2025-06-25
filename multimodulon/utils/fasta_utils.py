@@ -69,13 +69,25 @@ def extract_protein_sequences(genome_fasta: Path, gff_file: Path, output_fasta: 
                 
                 # Translate to protein
                 try:
+                    # Trim sequence to multiple of 3 to avoid partial codon warning
+                    seq_len = len(seq)
+                    if seq_len % 3 != 0:
+                        seq = seq[:-(seq_len % 3)]
+                    
                     protein_seq = seq.translate(to_stop=True)
                     
                     # Create SeqRecord
+                    # Build description carefully to avoid empty strings
+                    desc_parts = []
+                    if protein_id:
+                        desc_parts.append(protein_id)
+                    if product:
+                        desc_parts.append(product)
+                    
                     record = SeqRecord(
                         protein_seq,
                         id=locus_tag,
-                        description=f"{protein_id} {product}"
+                        description=" ".join(desc_parts) if desc_parts else locus_tag
                     )
                     protein_records.append(record)
                     
