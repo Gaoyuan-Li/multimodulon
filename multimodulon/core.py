@@ -389,9 +389,25 @@ class MultiModulon:
             
             species_fasta_paths[species_name] = protein_fasta
         
+        # Check if BLAST tools are available
+        try:
+            subprocess.run(["makeblastdb", "-version"], capture_output=True, check=True)
+            subprocess.run(["blastp", "-version"], capture_output=True, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            logger.error("BLAST tools (makeblastdb, blastp) not found. Please install NCBI BLAST+:")
+            logger.error("  Ubuntu/Debian: sudo apt-get install ncbi-blast+")
+            logger.error("  macOS: brew install blast")
+            logger.error("  Conda: conda install -c bioconda blast")
+            raise RuntimeError("BLAST tools not installed")
+        
         # Generate all pairwise BBH comparisons
         for species1 in species_list:
             for species2 in species_list:
+                # Skip if we don't have protein files for these species
+                if species1 not in species_fasta_paths or species2 not in species_fasta_paths:
+                    logger.warning(f"Skipping {species1} vs {species2}: missing protein files")
+                    continue
+                
                 output_file = output_dir / f"{species1}_vs_{species2}.csv"
                 
                 if output_file.exists():

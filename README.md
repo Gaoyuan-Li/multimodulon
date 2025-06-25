@@ -14,9 +14,16 @@ A Python package for analyzing multi-species/multi-strain/multi-modality profile
 ## Requirements
 
 - Python >= 3.10
-- BLAST+ (for BBH generation)
+- NCBI BLAST+ tools (required for BBH generation)
 
 ## Installation
+
+### Install BLAST+ (Required for BBH generation)
+
+```bash
+# Conda
+conda install -c bioconda blast
+```
 
 ### Install from GitHub
 
@@ -91,15 +98,13 @@ Input_Data/
 
 ## BBH Analysis
 
-The package can generate BBH files using BLAST+. Make sure BLAST+ is installed:
+The package can generate BBH (Bidirectional Best Hits) files for ortholog detection using BLAST+. The `generate_BBH()` method will:
 
-```bash
-# Install BLAST+ (Ubuntu/Debian)
-sudo apt-get install ncbi-blast+
+1. Extract protein sequences from genome files (if not already done)
+2. Run all-vs-all BLAST comparisons between species
+3. Save results as CSV files with gene-to-gene mappings
 
-# Or use conda
-conda install -c bioconda blast
-```
+**Note:** BLAST+ must be installed before running BBH analysis (see Installation section above).
 
 ## API Reference
 
