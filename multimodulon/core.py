@@ -963,7 +963,8 @@ class MultiModulon:
         This method loads the combined gene database from the specified folder and creates
         aligned expression matrices (X) for all strains. All X matrices will have the same
         row indices, using gene names from the leftmost non-null entry in each gene group.
-        Gene groups not owned by a strain are filled with zeros.
+        For strains that don't have a gene in a gene group, their existing genes are renamed
+        to match the leftmost gene name and inherit their log TPM norm values.
         
         Parameters
         ----------
@@ -1028,7 +1029,7 @@ class MultiModulon:
         
         # Create aligned X matrices for each strain
         logger.info("Creating aligned X matrices for all strains...")
-        for strain_idx, strain in enumerate(strains):
+        for strain in strains:
             if strain not in expression_data or expression_data[strain].empty:
                 logger.warning(f"No expression data found for {strain}, skipping")
                 continue
@@ -1041,18 +1042,34 @@ class MultiModulon:
             aligned_X = pd.DataFrame(index=gene_index, columns=cols, dtype=float)
             aligned_X[:] = 0.0  # Initialize all values to 0
             
-            # Fill in expression values for genes owned by this strain
-            for row_idx, (gene_name, row) in enumerate(zip(gene_names, combined_gene_db.itertuples(index=False))):
-                # Get the gene ID for this strain from the combined_gene_db
-                strain_gene_id = getattr(row, strain)
+            # Create a mapping from strain genes to leftmost gene names for inheritance
+            strain_gene_to_leftmost = {}
+            for gene_name, row in zip(gene_names, combined_gene_db.itertuples(index=False)):
+                # Get all gene IDs in this gene group
+                gene_group = []
+                for col_strain in combined_gene_db.columns:
+                    strain_gene_id = getattr(row, col_strain)
+                    if pd.notna(strain_gene_id) and strain_gene_id != "None" and strain_gene_id is not None:
+                        gene_group.append((col_strain, strain_gene_id))
                 
-                if pd.notna(strain_gene_id) and strain_gene_id != "None" and strain_gene_id is not None:
-                    # Check if this gene exists in the strain's expression data
-                    if strain_gene_id in orig_expr.index:
-                        # Copy the expression values
-                        aligned_X.loc[gene_name] = orig_expr.loc[strain_gene_id]
-                    # else: keep as zeros (gene is in database but not in expression data)
-                # else: keep as zeros (gene group not owned by this strain)
+                # Map all genes in this group to the leftmost gene name
+                for col_strain, gene_id in gene_group:
+                    if col_strain == strain:
+                        strain_gene_to_leftmost[gene_id] = gene_name
+            
+            # Fill in expression values by renaming genes to inherit log TPM norm values
+            for gene_id in orig_expr.index:
+                if gene_id in strain_gene_to_leftmost:
+                    # This gene has a mapping to a gene group - use the leftmost name
+                    leftmost_name = strain_gene_to_leftmost[gene_id]
+                    aligned_X.loc[leftmost_name] = orig_expr.loc[gene_id]
+                else:
+                    # This gene doesn't exist in combined_gene_db - add it with its original name
+                    # Only add if the gene name is not already used
+                    if gene_id not in aligned_X.index:
+                        # Expand the aligned_X matrix to include this gene
+                        new_row = pd.DataFrame(orig_expr.loc[[gene_id]], columns=cols)
+                        aligned_X = pd.concat([aligned_X, new_row])
             
             # Update the species data with the new aligned X matrix
             self._species_data[strain]._X = aligned_X
@@ -1065,6 +1082,13 @@ class MultiModulon:
         
         logger.info("Successfully generated aligned X matrices for all strains")
         
+        # Calculate maximum dimension recommendation
+        min_columns = min([self._species_data[strain].X.shape[1] for strain in strains if strain in self._species_data])
+        # Use the n*10 or n*10+5 that is smaller than the lowest number of columns
+        max_dim = ((min_columns // 10) * 10) if min_columns % 10 < 5 else ((min_columns // 10) * 10 + 5)
+        if max_dim >= min_columns:
+            max_dim = ((min_columns // 10) * 10) if min_columns >= 10 else min_columns - 5
+        
         # Print summary
         print(f"\nGenerated aligned X matrices:")
         print("=" * 60)
@@ -1073,6 +1097,8 @@ class MultiModulon:
                 X = self._species_data[strain].X
                 non_zero = (X != 0).any(axis=1).sum()
                 print(f"{strain}: {X.shape} ({non_zero} non-zero gene groups)")
+        print("=" * 60)
+        print(f"Maximum dimension recommendation: {max_dim}")
         print("=" * 60)
     
     def summary(self):
