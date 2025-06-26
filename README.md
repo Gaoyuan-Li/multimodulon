@@ -70,7 +70,12 @@ sample_sheet = strain_data.sample_sheet
 multiModulon.generate_BBH('Output_BBH', threads=8)
 
 # Align genes across all strains and create unified expression matrices
-combined_gene_db = multiModulon.align_genes('Output_Gene_Info')
+combined_gene_db = multiModulon.align_genes(
+    input_bbh_dir='Output_BBH',
+    output_dir='Output_Gene_Info',
+    reference_order=['MG1655', 'BL21', 'C', 'Crooks', 'W', 'W3110'],  # optional
+    bbh_threshold=90  # optional, minimum PID threshold
+)
 
 # Access aligned expression matrices (same row indexes across all strains)
 for strain in multiModulon.species:
@@ -134,7 +139,7 @@ Main class for multi-species/strain analysis.
 - `__init__(input_folder_path)`: Initialize with Input_Data folder path
 - `__getitem__(species_name)`: Get data for a specific strain
 - `generate_BBH(output_path, threads=1)`: Generate BBH files for all strain pairs (threads: number of CPU threads for BLAST)
-- `align_genes(output_path)`: Align genes across strains and create unified matrices
+- `align_genes(input_bbh_dir, output_dir, reference_order, bbh_threshold)`: Align genes across strains and create unified matrices
 - `get_orthologs(species1, species2)`: Get ortholog pairs (after BBH)
 - `save_bbh(output_path)`: Save BBH results
 - `load_bbh(input_path)`: Load BBH results

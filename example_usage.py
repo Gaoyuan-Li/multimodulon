@@ -61,7 +61,10 @@ def main():
     print("=" * 60)
     
     # This will create the combined gene database and aligned expression matrices
-    combined_gene_db = multiModulon.align_genes("../imminer_2_industrial_strain/Output_Gene_Info")
+    combined_gene_db = multiModulon.align_genes(
+        input_bbh_dir="../imminer_2_industrial_strain/Output_BBH_test",
+        output_dir="../imminer_2_industrial_strain/Output_Gene_Info"
+    )
     
     print(f"\nCombined gene database shape: {combined_gene_db.shape}")
     print(f"Columns: {list(combined_gene_db.columns)}")

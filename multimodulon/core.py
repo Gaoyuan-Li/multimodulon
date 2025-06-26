@@ -653,13 +653,16 @@ class MultiModulon:
                                            'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart',
                                            'subjectEnd', 'eVal', 'bitScore', 'gene_length', 'COV', 'BBH'])
     
-    def align_genes(self, output_path: str = "Output_Gene_Info", reference_order: list[str] = None, bbh_threshold: float = None):
+    def align_genes(self, input_bbh_dir: str = "Output_BBH", output_dir: str = "Output_Gene_Info", 
+                    reference_order: list[str] = None, bbh_threshold: float = None):
         """
         Align genes across all species using Union-Find algorithm to create combined gene database.
         
         Parameters
         ----------
-        output_path : str
+        input_bbh_dir : str
+            Path to the directory containing BBH CSV files (default: "Output_BBH")
+        output_dir : str
             Path to save the combined gene database (default: "Output_Gene_Info")
         reference_order : list[str], optional
             List of strain names in the desired column order for the combined gene database.
@@ -671,8 +674,12 @@ class MultiModulon:
         """
         from collections import defaultdict
         
-        output_dir = Path(output_path)
-        output_dir.mkdir(exist_ok=True)
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        bbh_dir = Path(input_bbh_dir)
+        if not bbh_dir.exists():
+            raise FileNotFoundError(f"BBH directory not found: {input_bbh_dir}")
         
         # Get list of strains
         if reference_order:
@@ -688,7 +695,6 @@ class MultiModulon:
         
         # Step 1: Collect all genes from each strain's self-comparison file
         strain_genes = {strain: set() for strain in strains}
-        bbh_dir = Path("Output_BBH")  # Assuming BBH files are in this directory
         
         for strain in strains:
             self_file = bbh_dir / f'{strain}_vs_{strain}.csv'
@@ -742,8 +748,12 @@ class MultiModulon:
                 
                 try:
                     df = pd.read_csv(filename)
-                    if 'gene' in df.columns and 'subject' in df.columns:
-                        for _, row in df.iterrows():
+                    if 'gene' in df.columns and 'subject' in df.columns and 'BBH' in df.columns:
+                        # Only process rows with BBH marker '<=>'
+                        bbh_rows = df[df['BBH'] == '<=>']
+                        logger.info(f"Processing {len(bbh_rows)} BBH relationships from {filename.name}")
+                        
+                        for _, row in bbh_rows.iterrows():
                             gene_x = (x, row['gene'])
                             gene_y = (y, row['subject'])
                             # Ensure genes exist in their respective strain's self-reported list
@@ -756,6 +766,8 @@ class MultiModulon:
                                 else:
                                     # No threshold specified or PID column missing, use all relationships
                                     uf.union(gene_x, gene_y)
+                    else:
+                        logger.warning(f"Required columns missing in {filename}: {df.columns.tolist()}")
                 except Exception as e:
                     logger.warning(f"Failed to process {filename}: {str(e)}")
         
@@ -784,7 +796,7 @@ class MultiModulon:
         
         # Create DataFrame and save
         df = pd.DataFrame(rows)
-        output_file = output_dir / "combined_gene_db.csv"
+        output_file = output_path / "combined_gene_db.csv"
         df.to_csv(output_file, index=False)
         
         # Store the combined gene database
