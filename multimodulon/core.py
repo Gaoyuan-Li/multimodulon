@@ -585,7 +585,7 @@ class MultiModulon:
                         # Issue warning for locus_tag extraction
                         warning_key = f"{species_name}_note_extraction"
                         if warning_key not in getattr(self, '_warned_extractions', set()):
-                            print(f"WARNING: Species '{species_name}' - No locus_tag found in GFF file, extracting from Note field")
+                            print(f"WARNING: '{species_name}' - No locus_tag found in GFF file, extracting from Note field")
                             if not hasattr(self, '_warned_extractions'):
                                 self._warned_extractions = set()
                             self._warned_extractions.add(warning_key)
