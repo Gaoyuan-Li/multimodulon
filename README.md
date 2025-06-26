@@ -111,7 +111,7 @@ The package can generate BBH (Bidirectional Best Hits) files for ortholog detect
 2. Create mappings from protein IDs (NCBI_GP) to locus_tags using genomic.gff files
    - Standard strains: Uses `locus_tag` attribute from GFF files
    - W3110 strain: Extracts JW-numbers (e.g., JW4367) from Note field format "ECK0001:JW4367:b0001"
-   - Warnings are issued when fallback extraction methods are used
+   - Warnings are printed when fallback extraction methods are used, including the strain name
 3. Run all-vs-all BLAST comparisons between species
 4. Save results as CSV files with locus_tag-to-locus_tag mappings
 
