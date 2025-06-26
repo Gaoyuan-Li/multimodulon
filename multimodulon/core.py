@@ -529,6 +529,15 @@ class MultiModulon:
     def _create_protein_to_locus_mapping(self, gff_file: Path) -> dict:
         """
         Create mapping from protein_id (NCBI_GP) to locus_tag from GFF file.
+        Handles different GFF formats including W3110 which uses Note field instead of locus_tag.
+        
+        For W3110 strain, extracts JW-numbers (e.g., JW4367) from Note field format "ECK0001:JW4367:b0001".
+        Issues warnings when fallback extraction methods are used.
+        
+        Returns
+        -------
+        dict
+            Mapping from protein_id to locus_tag
         """
         protein_to_locus = {}
         
@@ -561,8 +570,51 @@ class MultiModulon:
                                 protein_id = dbxref.replace('NCBI_GP:', '')
                                 break
                     
-                    # Get locus_tag
+                    # Get locus_tag - handle different formats
                     locus_tag = attr_dict.get('locus_tag', None)
+                    
+                    # If no locus_tag found, try to extract from Note field (W3110 format)
+                    if not locus_tag and 'Note' in attr_dict:
+                        # Issue warning for locus_tag extraction
+                        if gff_file.name not in getattr(self, '_warned_gff_files', set()):
+                            logger.warning(f"No locus_tag found in GFF file {gff_file.name}, extracting from Note field")
+                            if not hasattr(self, '_warned_gff_files'):
+                                self._warned_gff_files = set()
+                            self._warned_gff_files.add(gff_file.name)
+                        
+                        note_value = attr_dict['Note']
+                        # Parse "ECK0001:JW4367:b0001" format - use the JW-number for W3110
+                        if ':' in note_value:
+                            parts = note_value.split(':')
+                            # Look for JW-number first (preferred for W3110)
+                            for part in parts:
+                                if part.startswith('JW') and len(part) > 2:
+                                    locus_tag = part
+                                    break
+                            # If no JW-number found, fall back to b-number
+                            if not locus_tag:
+                                for part in reversed(parts):
+                                    if part.startswith('b') and len(part) > 1:
+                                        locus_tag = part
+                                        break
+                    
+                    # If still no locus_tag, try using gene name as fallback
+                    if not locus_tag and 'gene' in attr_dict:
+                        if gff_file.name not in getattr(self, '_warned_gff_files', set()):
+                            logger.warning(f"No locus_tag or Note field found in GFF file {gff_file.name}, using gene name as fallback")
+                            if not hasattr(self, '_warned_gff_files'):
+                                self._warned_gff_files = set()
+                            self._warned_gff_files.add(gff_file.name)
+                        locus_tag = attr_dict['gene']
+                    
+                    # If still no locus_tag, use protein_id itself as last resort
+                    if not locus_tag and protein_id:
+                        if gff_file.name not in getattr(self, '_warned_gff_files', set()):
+                            logger.warning(f"No identifiable locus_tag in GFF file {gff_file.name}, using protein_id as last resort")
+                            if not hasattr(self, '_warned_gff_files'):
+                                self._warned_gff_files = set()
+                            self._warned_gff_files.add(gff_file.name)
+                        locus_tag = protein_id
                     
                     if protein_id and locus_tag:
                         protein_to_locus[protein_id] = locus_tag
