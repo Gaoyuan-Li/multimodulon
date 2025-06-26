@@ -57,9 +57,9 @@ class SpeciesData:
     
     @property
     def X(self) -> pd.DataFrame:
-        """Get normalized log TPM expression matrix (alias for log_tpm_norm)."""
+        """Get aligned expression matrix. Defaults to log_tpm_norm if not set."""
         if self._X is None:
-            self._X = self.log_tpm_norm
+            return self.log_tpm_norm
         return self._X
     
     @property
@@ -926,9 +926,8 @@ class MultiModulon:
                     else:
                         new_df.loc[gene_label] = 0
                 
-                # Update the species data with the aligned matrix
-                self._species_data[strain]._log_tpm_norm = new_df
-                self._species_data[strain]._X = new_df  # Also update X since it's an alias
+                # Update only the X matrix (preserve original log_tpm_norm)
+                self._species_data[strain]._X = new_df
                 logger.info(f"Created aligned expression matrix for {strain}: {new_df.shape}")
             else:
                 logger.warning(f"No expression data found for {strain}")
@@ -963,8 +962,8 @@ class MultiModulon:
         This method loads the combined gene database from the specified folder and creates
         aligned expression matrices (X) for all strains. All X matrices will have the same
         row indices, using gene names from the leftmost non-null entry in each gene group.
-        For strains that don't have a gene in a gene group, their existing genes are renamed
-        to match the leftmost gene name and inherit their log TPM norm values.
+        The original log_tpm_norm data is preserved unchanged; only the X matrices are created
+        with aligned gene names.
         
         Parameters
         ----------
@@ -1019,61 +1018,47 @@ class MultiModulon:
         gene_index = pd.Index(gene_names)
         logger.info(f"Created gene index with {len(gene_index)} genes")
         
-        # Get original expression data for each strain
-        expression_data = {}
-        for strain in strains:
-            if strain in self._species_data:
-                species_data = self._species_data[strain]
-                expression_data[strain] = species_data.log_tpm_norm  # Use normalized expression data
-                logger.info(f"Loaded expression data for {strain}: {expression_data[strain].shape}")
-        
         # Create aligned X matrices for each strain
         logger.info("Creating aligned X matrices for all strains...")
         for strain in strains:
-            if strain not in expression_data or expression_data[strain].empty:
+            if strain not in self._species_data:
+                logger.warning(f"Strain {strain} not found in loaded species data, skipping")
+                continue
+            
+            species_data = self._species_data[strain]
+            
+            # Get original expression matrix (preserve the original log_tpm_norm)
+            orig_expr = species_data.log_tpm_norm
+            if orig_expr.empty:
                 logger.warning(f"No expression data found for {strain}, skipping")
                 continue
             
-            # Get original expression matrix
-            orig_expr = expression_data[strain]
             cols = orig_expr.columns
             
             # Create new aligned matrix with gene_index as row index
+            # Only include genes that exist in combined_gene_db (no new zero rows)
             aligned_X = pd.DataFrame(index=gene_index, columns=cols, dtype=float)
-            aligned_X[:] = 0.0  # Initialize all values to 0
             
-            # Create a mapping from strain genes to leftmost gene names for inheritance
+            # Create a mapping from strain genes to leftmost gene names
             strain_gene_to_leftmost = {}
             for gene_name, row in zip(gene_names, combined_gene_db.itertuples(index=False)):
-                # Get all gene IDs in this gene group
-                gene_group = []
-                for col_strain in combined_gene_db.columns:
-                    strain_gene_id = getattr(row, col_strain)
-                    if pd.notna(strain_gene_id) and strain_gene_id != "None" and strain_gene_id is not None:
-                        gene_group.append((col_strain, strain_gene_id))
-                
-                # Map all genes in this group to the leftmost gene name
-                for col_strain, gene_id in gene_group:
-                    if col_strain == strain:
-                        strain_gene_to_leftmost[gene_id] = gene_name
+                # Get the gene ID for this strain in this gene group
+                strain_gene_id = getattr(row, strain, None)
+                if pd.notna(strain_gene_id) and strain_gene_id != "None" and strain_gene_id is not None:
+                    strain_gene_to_leftmost[strain_gene_id] = gene_name
             
-            # Fill in expression values by renaming genes to inherit log TPM norm values
+            # Fill in expression values by mapping original genes to leftmost gene names
             for gene_id in orig_expr.index:
                 if gene_id in strain_gene_to_leftmost:
                     # This gene has a mapping to a gene group - use the leftmost name
                     leftmost_name = strain_gene_to_leftmost[gene_id]
                     aligned_X.loc[leftmost_name] = orig_expr.loc[gene_id]
-                else:
-                    # This gene doesn't exist in combined_gene_db - add it with its original name
-                    # Only add if the gene name is not already used
-                    if gene_id not in aligned_X.index:
-                        # Expand the aligned_X matrix to include this gene
-                        new_row = pd.DataFrame(orig_expr.loc[[gene_id]], columns=cols)
-                        aligned_X = pd.concat([aligned_X, new_row])
             
-            # Update the species data with the new aligned X matrix
+            # Fill remaining rows with zeros (genes not present in this strain)
+            aligned_X = aligned_X.fillna(0.0)
+            
+            # Update only the X matrix (preserve original log_tpm_norm)
             self._species_data[strain]._X = aligned_X
-            self._species_data[strain]._log_tpm_norm = aligned_X
             
             # Log statistics
             non_zero_genes = (aligned_X != 0).any(axis=1).sum()
