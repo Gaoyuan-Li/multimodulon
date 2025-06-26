@@ -168,7 +168,7 @@ Chr1	RefSeq	CDS	200	300	.	+	0	ID=cds-2;locus_tag=GeneB2;product=protein B2;prote
         
         return tmpdir
     
-    def test_multi_modulon_initialization(self):
+    def test_multiModulon_initialization(self):
         """Test MultiModulon initialization."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)
@@ -189,7 +189,7 @@ Chr1	RefSeq	CDS	200	300	.	+	0	ID=cds-2;locus_tag=GeneB2;product=protein B2;prote
             sp_b = multi['Species_B']
             assert sp_b.log_tpm.shape == (2, 2)
     
-    def test_multi_modulon_invalid_species(self):
+    def test_multiModulon_invalid_species(self):
         """Test accessing invalid species."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir = Path(tmpdir)

@@ -653,7 +653,7 @@ class MultiModulon:
                                            'gapOpenCount', 'queryStart', 'queryEnd', 'subjectStart',
                                            'subjectEnd', 'eVal', 'bitScore', 'gene_length', 'COV', 'BBH'])
     
-    def align_genes(self, output_path: str = "Output_Gene_Info"):
+    def align_genes(self, output_path: str = "Output_Gene_Info", reference_order: list[str] = None, bbh_threshold: float = None):
         """
         Align genes across all species using Union-Find algorithm to create combined gene database.
         
@@ -661,6 +661,13 @@ class MultiModulon:
         ----------
         output_path : str
             Path to save the combined gene database (default: "Output_Gene_Info")
+        reference_order : list[str], optional
+            List of strain names in the desired column order for the combined gene database.
+            If not provided, strains will be ordered as they appear in the species data.
+        bbh_threshold : float, optional
+            Minimum percent identity (PID) threshold for BBH relationships.
+            Gene pairs with PID below this threshold will be treated as different genes.
+            If not provided, all BBH relationships are used regardless of PID.
         """
         from collections import defaultdict
         
@@ -668,7 +675,15 @@ class MultiModulon:
         output_dir.mkdir(exist_ok=True)
         
         # Get list of strains
-        strains = list(self._species_data.keys())
+        if reference_order:
+            # Validate that all strains in reference_order exist in species_data
+            available_strains = set(self._species_data.keys())
+            for strain in reference_order:
+                if strain not in available_strains:
+                    raise ValueError(f"Strain '{strain}' in reference_order not found in loaded species data. Available strains: {list(available_strains)}")
+            strains = reference_order
+        else:
+            strains = list(self._species_data.keys())
         logger.info(f"Aligning genes for strains: {strains}")
         
         # Step 1: Collect all genes from each strain's self-comparison file
@@ -733,7 +748,14 @@ class MultiModulon:
                             gene_y = (y, row['subject'])
                             # Ensure genes exist in their respective strain's self-reported list
                             if row['gene'] in strain_genes[x] and row['subject'] in strain_genes[y]:
-                                uf.union(gene_x, gene_y)
+                                # Check PID threshold if provided
+                                if bbh_threshold is not None and 'PID' in df.columns:
+                                    if row['PID'] >= bbh_threshold:
+                                        uf.union(gene_x, gene_y)
+                                    # If PID is below threshold, genes are treated as different (no union)
+                                else:
+                                    # No threshold specified or PID column missing, use all relationships
+                                    uf.union(gene_x, gene_y)
                 except Exception as e:
                     logger.warning(f"Failed to process {filename}: {str(e)}")
         
@@ -859,6 +881,125 @@ class MultiModulon:
             raise ValueError(f"No BBH results found for {species1} vs {species2}")
         
         return self._bbh[key]
+    
+    def generate_X(self, gene_info_folder: str):
+        """
+        Generate X matrices for all strains with consistent row indices based on combined_gene_db.
+        
+        This method loads the combined gene database from the specified folder and creates
+        aligned expression matrices (X) for all strains. All X matrices will have the same
+        row indices, using gene names from the leftmost non-null entry in each gene group.
+        Gene groups not owned by a strain are filled with zeros.
+        
+        Parameters
+        ----------
+        gene_info_folder : str
+            Path to the Gene_Info folder containing combined_gene_db.csv
+            Example: "../imminer_2_industrial_strain/Output_Gene_Info"
+        """
+        gene_info_path = Path(gene_info_folder)
+        combined_db_path = gene_info_path / "combined_gene_db.csv"
+        
+        if not combined_db_path.exists():
+            raise FileNotFoundError(f"combined_gene_db.csv not found in {gene_info_folder}")
+        
+        # Load the combined gene database
+        logger.info(f"Loading combined gene database from {combined_db_path}")
+        combined_gene_db = pd.read_csv(combined_db_path)
+        self._combined_gene_db = combined_gene_db
+        
+        # Get list of strains from the columns
+        strains = list(combined_gene_db.columns)
+        logger.info(f"Found {len(strains)} strains in combined gene database: {strains}")
+        
+        # Verify all strains exist in loaded species data
+        available_strains = set(self._species_data.keys())
+        missing_strains = set(strains) - available_strains
+        if missing_strains:
+            logger.warning(f"The following strains in combined_gene_db are not loaded in MultiModulon: {missing_strains}")
+            # Filter to only use available strains
+            strains = [s for s in strains if s in available_strains]
+            logger.info(f"Proceeding with {len(strains)} available strains: {strains}")
+        
+        # Extract gene names from the leftmost non-null entry in each row
+        logger.info("Extracting gene names from leftmost entries in gene groups...")
+        gene_names = []
+        for idx, row in combined_gene_db.iterrows():
+            # Find the first non-null gene in the row (from left to right)
+            gene_name = None
+            for strain in combined_gene_db.columns:
+                val = row[strain]
+                # Check for non-null and non-"None" values
+                if pd.notna(val) and val != "None" and val is not None:
+                    gene_name = val
+                    break
+            
+            if gene_name is not None:
+                gene_names.append(gene_name)
+            else:
+                # If all entries are null, use a placeholder
+                gene_names.append(f"gene_group_{idx}")
+        
+        # Create a mapping from row index to gene name
+        gene_index = pd.Index(gene_names)
+        logger.info(f"Created gene index with {len(gene_index)} genes")
+        
+        # Get original expression data for each strain
+        expression_data = {}
+        for strain in strains:
+            if strain in self._species_data:
+                species_data = self._species_data[strain]
+                expression_data[strain] = species_data.log_tpm_norm  # Use normalized expression data
+                logger.info(f"Loaded expression data for {strain}: {expression_data[strain].shape}")
+        
+        # Create aligned X matrices for each strain
+        logger.info("Creating aligned X matrices for all strains...")
+        for strain_idx, strain in enumerate(strains):
+            if strain not in expression_data or expression_data[strain].empty:
+                logger.warning(f"No expression data found for {strain}, skipping")
+                continue
+            
+            # Get original expression matrix
+            orig_expr = expression_data[strain]
+            cols = orig_expr.columns
+            
+            # Create new aligned matrix with gene_index as row index
+            aligned_X = pd.DataFrame(index=gene_index, columns=cols, dtype=float)
+            aligned_X[:] = 0.0  # Initialize all values to 0
+            
+            # Fill in expression values for genes owned by this strain
+            for row_idx, (gene_name, row) in enumerate(zip(gene_names, combined_gene_db.itertuples(index=False))):
+                # Get the gene ID for this strain from the combined_gene_db
+                strain_gene_id = getattr(row, strain)
+                
+                if pd.notna(strain_gene_id) and strain_gene_id != "None" and strain_gene_id is not None:
+                    # Check if this gene exists in the strain's expression data
+                    if strain_gene_id in orig_expr.index:
+                        # Copy the expression values
+                        aligned_X.loc[gene_name] = orig_expr.loc[strain_gene_id]
+                    # else: keep as zeros (gene is in database but not in expression data)
+                # else: keep as zeros (gene group not owned by this strain)
+            
+            # Update the species data with the new aligned X matrix
+            self._species_data[strain]._X = aligned_X
+            self._species_data[strain]._log_tpm_norm = aligned_X
+            
+            # Log statistics
+            non_zero_genes = (aligned_X != 0).any(axis=1).sum()
+            logger.info(f"Created aligned X matrix for {strain}: shape={aligned_X.shape}, "
+                       f"non-zero genes={non_zero_genes}/{len(aligned_X)}")
+        
+        logger.info("Successfully generated aligned X matrices for all strains")
+        
+        # Print summary
+        print(f"\nGenerated aligned X matrices:")
+        print("=" * 60)
+        for strain in strains:
+            if strain in self._species_data:
+                X = self._species_data[strain].X
+                non_zero = (X != 0).any(axis=1).sum()
+                print(f"{strain}: {X.shape} ({non_zero} non-zero gene groups)")
+        print("=" * 60)
     
     def summary(self):
         """Print summary of loaded data."""

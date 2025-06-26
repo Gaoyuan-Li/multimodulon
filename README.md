@@ -52,10 +52,10 @@ pip install -e .
 from multimodulon import MultiModulon
 
 # Initialize with Input_Data folder path
-multi_modulon = MultiModulon('/path/to/Input_Data')
+multiModulon = MultiModulon('/path/to/Input_Data')
 
 # Access strain data
-strain_data = multi_modulon['MG1655']
+strain_data = multiModulon['MG1655']
 
 # Get expression matrices
 log_tpm = strain_data.log_tpm  # Raw log TPM values
@@ -67,14 +67,14 @@ sample_sheet = strain_data.sample_sheet
 
 # Generate BBH files for all strain pairs
 # Use threads parameter to speed up BLAST computation (default: 1)
-multi_modulon.generate_BBH('Output_BBH', threads=8)
+multiModulon.generate_BBH('Output_BBH', threads=8)
 
 # Align genes across all strains and create unified expression matrices
-combined_gene_db = multi_modulon.align_genes('Output_Gene_Info')
+combined_gene_db = multiModulon.align_genes('Output_Gene_Info')
 
 # Access aligned expression matrices (same row indexes across all strains)
-for strain in multi_modulon.species:
-    aligned_X = multi_modulon[strain].X  # Aligned expression matrix
+for strain in multiModulon.species:
+    aligned_X = multiModulon[strain].X  # Aligned expression matrix
     print(f"{strain}: {aligned_X.shape}")
 ```
 
