@@ -683,7 +683,7 @@ print("\\nOptimization completed!")
     total_time = time.time() - start_time
     print(f"\nTotal optimization time: {total_time:.2f}s")
     
-    return best_k, mean_nre_per_k, W_matrices_per_k, K_matrices_per_k, fig
+    return best_k, mean_nre_per_k, all_nre_per_k, fig
 
 
 def run_nre_optimization_native(
