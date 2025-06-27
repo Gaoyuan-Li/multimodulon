@@ -138,8 +138,6 @@ def run_multi_view_ICA_on_datasets(
     if len(a_values) != n_views:
         raise ValueError(f"Number of a_values ({len(a_values)}) must match number of datasets ({n_views})")
     
-    print(f"Running multi-view ICA on {n_views} datasets")
-    
     # Set random seeds for reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -147,10 +145,8 @@ def run_multi_view_ICA_on_datasets(
     # Set device
     if mode == 'gpu' and torch.cuda.is_available():
         device = torch.device("cuda:0")
-        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
     else:
         device = torch.device("cpu")
-        print("Using CPU")
     
     # Use full batch if not specified
     if batch_size is None:
@@ -165,8 +161,6 @@ def run_multi_view_ICA_on_datasets(
     models = []
     
     for i, (dataset, a_val) in enumerate(zip(datasets, a_values)):
-        print(f"Processing dataset {i+1}: {dataset.shape}")
-        
         # Convert to numpy and transpose
         X_np = dataset.copy().values.T
         
@@ -238,21 +232,16 @@ def run_multi_view_ICA_on_datasets(
         return closure
     
     # Training loop
-    print("Starting training...")
     for epoch in range(10):
         for batch in train_loader:
             optimizer.step(train_closure(*batch))
-        if epoch % 2 == 0:
-            print(f"Epoch {epoch}/10 completed")
     
     # Get final results
-    print("Computing final results...")
     results = []
     for i, (model, Xw_model) in enumerate(zip(models, Xw_models)):
         Sp_full = model(Xw_model)
         df = pd.DataFrame(Sp_full.detach().cpu().numpy())
         results.append(df)
-        print(f"Dataset {i+1} result shape: {df.shape}")
     
     # Normalize DataFrames
     for df in results:
@@ -288,11 +277,6 @@ def run_multiview_ica_native(
     Returns:
         Dictionary mapping species names to M matrices (ICA results)
     """
-    print("\n" + "="*60)
-    print("MULTI-VIEW ICA EXECUTION (Native)")
-    print("="*60)
-    
-    start_time = time.time()
     
     # Validate inputs
     n_species = len(species_X_matrices)
@@ -303,22 +287,9 @@ def run_multiview_ica_native(
         raise ValueError(f"Expected {n_species} a_values, got {len(a_values)}")
     
     # Prepare data
-    print("\n[1/2] Preparing data...")
-    prep_start = time.time()
-    
     species_list = list(species_X_matrices.keys())
     X_matrices = [species_X_matrices[sp] for sp in species_list]
     a_list = [a_values[sp] for sp in species_list]
-    
-    print(f"Species: {species_list}")
-    print(f"a_values: {a_list}")
-    print(f"c (core components): {c}")
-    print(f"Mode: {mode}")
-    print(f"✓ Data prepared in {time.time() - prep_start:.2f}s")
-    
-    # Run multi-view ICA
-    print(f"\n[2/2] Running multi-view ICA...")
-    run_start = time.time()
     
     results = run_multi_view_ICA_on_datasets(
         X_matrices,
@@ -328,18 +299,10 @@ def run_multiview_ica_native(
         **kwargs
     )
     
-    print(f"✓ Multi-view ICA completed in {time.time() - run_start:.2f}s")
-    
     # Create results dictionary
     results_dict = {}
     for species, result in zip(species_list, results):
         results_dict[species] = result
-        print(f"✓ {species} M matrix: {result.shape}")
-    
-    total_time = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"TOTAL EXECUTION TIME: {total_time:.2f}s")
-    print(f"{'='*60}\n")
     
     return results_dict
 

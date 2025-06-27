@@ -1298,8 +1298,10 @@ class MultiModulon:
                 X = self._species_data[species].X
                 n_samples.append(X.shape[0])  # number of samples (rows)
             min_samples = min(n_samples)
-            # Set max_k to min_samples - 5 to ensure we don't exceed data constraints
-            max_k = max(5, min_samples - 5)  # Ensure at least k=5 is testable
+            # Set max_k to the largest multiple of step that's less than min_samples
+            # This ensures k candidates don't exceed data constraints
+            max_k = ((min_samples - 1) // step) * step
+            max_k = max(step, max_k)  # Ensure at least one k candidate
             print(f"Auto-determined max_k = {max_k} based on minimum samples ({min_samples})")
         
         # Generate k candidates
@@ -1316,8 +1318,7 @@ class MultiModulon:
         for species in species_list:
             species_X_matrices[species] = self._species_data[species].X
         
-        # Run optimization (native PyTorch mode)
-        print(f"\nUsing native PyTorch mode")
+        # Run optimization
         best_k, nre_scores, all_nre_per_k, fig = run_nre_optimization_native(
             species_X_matrices=species_X_matrices,
             k_candidates=k_candidates,

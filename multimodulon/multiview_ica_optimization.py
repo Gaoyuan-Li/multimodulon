@@ -696,34 +696,26 @@ def run_nre_optimization_native(
     seed: int = 42
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
-    Native implementation of NRE optimization using PyTorch.
+    NRE optimization using PyTorch.
     """
-    # Import required functions - use the local implementation
-    # Note: We avoid importing from the original multiview_ica due to syntax issues
-    
-    print("\n" + "="*60)
-    print("NRE OPTIMIZATION FOR SHARED COMPONENTS (Native)")
-    print("="*60)
     
     species_list = list(species_X_matrices.keys())
     n_species = len(species_list)
     if n_species < 2:
         raise ValueError(f"Expected at least 2 species, got {n_species}")
     
-    print(f"Optimizing for {n_species} species: {species_list}")
+    # Check and display device status
+    import torch
+    if mode == 'gpu' and torch.cuda.is_available():
+        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+    else:
+        print("Using CPU")
     
     # Initialize storage for NRE results
     mean_nre_per_k = {}
     all_nre_per_k = {k: [] for k in k_candidates}
     
-    print(f"\nOptimization parameters:")
-    print(f"  - k candidates: {k_candidates}")
-    print(f"  - Train fraction: {train_frac}")
-    print(f"  - Number of runs: {num_runs}")
-    print(f"  - Max components per view: {max_a_per_view}")
-    
     for run in range(num_runs):
-        print(f"\nRun {run + 1}/{num_runs}")
         
         # Split data consistently across views
         n_samples = species_X_matrices[species_list[0]].shape[0]
@@ -740,33 +732,33 @@ def run_nre_optimization_native(
             X_test_views.append(X.iloc[test_idx])
         
         for k in k_candidates:
-            print(f"  Testing k={k}...")
+            start_time = time.time()
             
-            # Run multi-view ICA with current k
             # Import the generalized function
             from .multiview_ica import run_multi_view_ICA_on_datasets
             
+            # Run multi-view ICA with current k
             results = run_multi_view_ICA_on_datasets(
                 X_train_views,
-                [max_a_per_view] * n_species,  # Use same a for all views
-                k,  # c = k (number of core components)
+                [max_a_per_view] * n_species,
+                k,
                 mode=mode
             )
             
             # Train another model on test data to get comparable results
             test_results = run_multi_view_ICA_on_datasets(
                 X_test_views,
-                [max_a_per_view] * n_species,  # Use same a for all views
-                k,  # c = k
+                [max_a_per_view] * n_species,
+                k,
                 mode=mode
             )
             
-            # Calculate NRE using the test results (paper definition)
+            # Calculate NRE using the test results
             nre = calculate_nre_proper(test_results, k)
-            
             all_nre_per_k[k].append(nre)
             
-            print(f"    NRE = {nre:.6f}")
+            elapsed_time = time.time() - start_time
+            print(f"k={k}: {elapsed_time:.1f}s, NRE={nre:.6f}")
     
     # Calculate mean NRE for each k
     for k in k_candidates:
