@@ -126,7 +126,7 @@ def run_multi_view_ICA_on_datasets(
                  Shape: (genes, samples)
         a_values: List of integers, number of components for each view/species
         c: Number of core components
-        batch_size: Batch size for training (if None, uses 5977 as default)
+        batch_size: Batch size for training (if None, uses full batch)
         max_iter: Maximum iterations for optimizer
         seed: Random seed
         mode: 'gpu' or 'cpu'
@@ -160,7 +160,7 @@ def run_multi_view_ICA_on_datasets(
 
     # Use default batch size if not specified
     if batch_size is None:
-        batch_size = 5977
+        batch_size = datasets[0].shape[1]  # number of samples
 
     # loader
     train_loader = DataLoader(TensorDataset(*X_model),
