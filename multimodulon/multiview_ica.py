@@ -124,7 +124,7 @@ def run_multi_view_ICA_on_datasets(
     Args:
         datasets: List of DataFrames, each representing expression data for one view/species
         a_values: List of integers, number of components for each view/species
-        c: Number of shared sources
+        c: Number of core components
         batch_size: Batch size for training
         max_iter: Maximum iterations for optimizer
         seed: Random seed
@@ -219,7 +219,7 @@ def run_multi_view_ICA_on_datasets(
             for Sp in Sp_list:
                 loss += torch.sum(torch.log(torch.cosh(Sp)))
             
-            # Subtract pairwise correlations for shared components
+            # Subtract pairwise correlations for core components
             corr_val = 0.0
             for i in range(len(Sp_list)):
                 for j in range(i + 1, len(Sp_list)):
@@ -282,7 +282,7 @@ def run_multiview_ica_native(
     Args:
         species_X_matrices: Dictionary mapping species names to aligned X matrices
         a_values: Dictionary mapping species names to number of components
-        c: Number of shared sources
+        c: Number of core components
         mode: 'gpu' or 'cpu' mode
         
     Returns:
@@ -312,7 +312,7 @@ def run_multiview_ica_native(
     
     print(f"Species: {species_list}")
     print(f"a_values: {a_list}")
-    print(f"c (shared sources): {c}")
+    print(f"c (core components): {c}")
     print(f"Mode: {mode}")
     print(f"✓ Data prepared in {time.time() - prep_start:.2f}s")
     

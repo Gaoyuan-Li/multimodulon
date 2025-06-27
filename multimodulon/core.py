@@ -1131,7 +1131,7 @@ class MultiModulon:
             - a1, a2, ..., a6 : int
                 Number of independent components for each species/strain
             - c : int
-                Number of shared sources across all species
+                Number of core components across all species
             - mode : str, optional
                 'gpu' or 'cpu' mode (default: 'gpu')
         
@@ -1171,7 +1171,7 @@ class MultiModulon:
         a_values = {}
         c = kwargs.get('c')
         if c is None:
-            raise ValueError("Parameter 'c' (number of shared sources) is required")
+            raise ValueError("Parameter 'c' (number of core components) is required")
         
         # Extract a values for each species - support flexible naming
         for i, species in enumerate(species_list, 1):
@@ -1226,10 +1226,20 @@ class MultiModulon:
         save_plot: Optional[str] = None
     ) -> Tuple[int, Dict[int, float]]:
         """
-        Optimize the number of shared components using NRE (Noise Reduction Error).
+        Optimize the number of core components using NRE (Noise Reduction Error).
         
-        This method uses cross-validation to find the optimal number of shared
-        components (k) by minimizing the NRE score using native PyTorch.
+        This method uses cross-validation to find the optimal number of core
+        components (k) by minimizing the normalized NRE score.
+        
+        **NRE Theory:**
+        The NRE measures how much the "core" components differ across views.
+        - When k < k_true: Components are truly shared → low residuals → low NRE
+        - When k = k_true: Optimal sharing → minimum NRE
+        - When k > k_true: Including view-specific components → higher NRE
+        
+        **Normalization:**
+        To avoid linear scaling with k, the NRE is normalized by the total
+        variance of components, making it a ratio rather than absolute value.
         
         Parameters
         ----------
@@ -1253,14 +1263,14 @@ class MultiModulon:
         Returns
         -------
         best_k : int
-            Optimal number of shared components
+            Optimal number of core components
         nre_scores : dict
             Dictionary mapping k values to mean NRE scores
         
         Examples
         --------
         >>> best_k, nre_scores = multiModulon.optimize_number_of_core_components()
-        >>> print(f"Optimal number of shared components: {best_k}")
+        >>> print(f"Optimal number of core components: {best_k}")
         """
         # Check prerequisites
         species_list = list(self._species_data.keys())
@@ -1270,7 +1280,7 @@ class MultiModulon:
                 f"NRE optimization requires at least 2 species/strains, found {n_species}"
             )
         
-        print(f"Optimizing shared components for {n_species} species/strains: {species_list}")
+        print(f"Optimizing core components for {n_species} species/strains: {species_list}")
         
         # Check if all species have X matrices
         for species in species_list:
