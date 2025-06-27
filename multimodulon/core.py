@@ -872,8 +872,22 @@ class MultiModulon:
                     row[strain] = None
             rows.append(row)
         
-        # Create DataFrame and save
+        # Create DataFrame and sort by leftmost non-None value
         df = pd.DataFrame(rows)
+        
+        # Add sorting logic: find leftmost non-None value for each row
+        def get_leftmost_value(row):
+            for strain in strains:
+                val = row[strain]
+                if pd.notna(val) and val != "None" and val is not None:
+                    return val
+            return ""  # Return empty string if no valid gene found
+        
+        df['_sort_key'] = df.apply(get_leftmost_value, axis=1)
+        
+        # Sort by the leftmost non-None value in increasing order
+        df = df.sort_values('_sort_key').drop('_sort_key', axis=1).reset_index(drop=True)
+        
         output_file = output_path / "combined_gene_db.csv"
         df.to_csv(output_file, index=False)
         
@@ -894,27 +908,25 @@ class MultiModulon:
         """
         logger.info("Creating aligned expression matrices...")
         
-        # Define a helper function to find the first valid gene ID
+        # Define a helper function to find the first valid gene ID for row labeling
         def find_first_valid_gene(row):
-            for i, strain in enumerate(strains):
+            for strain in strains:
                 val = row[strain]
                 # Treat "None" strings, actual NaN, or None as invalid
                 if pd.notna(val) and val != "None" and val is not None:
-                    return i, val
-            return np.nan, np.nan
+                    return val
+            return None
         
         # Apply this helper to each row of combined_gene_db
-        results = combined_gene_db.apply(find_first_valid_gene, axis=1)
-        combined_gene_db["priority"] = results.apply(lambda x: x[0])
-        combined_gene_db["row_label"] = results.apply(lambda x: x[1])
+        combined_gene_db["row_label"] = combined_gene_db.apply(find_first_valid_gene, axis=1)
         
         # Remove rows with no valid genes
         valid_rows = combined_gene_db.dropna(subset=['row_label'])
         
-        # Sort rows by (priority, row_label)
-        df_sorted = valid_rows.sort_values(by=["priority", "row_label"], ascending=[True, True]).copy()
+        # The combined_gene_db is already sorted by leftmost non-None value, so use it as is
+        df_sorted = valid_rows.copy()
         
-        # Set the sorted gene IDs as the new index
+        # Set the gene IDs as the new index
         df_sorted = df_sorted.set_index("row_label")
         
         # Get original expression data for each strain
