@@ -14,36 +14,46 @@ When running `optimize_number_of_core_components()`, the algorithm uses the **NR
 
 **Mathematical Definition**: As defined in the multi-view ICA paper:
 
-**NRE(k) := Σ_{d=1}^D ||ẑ_d^{(k)}||² / k**
+**NRE(k) := (1/N₁) Σᵢ₌₁^{N₁} Σ_{d=1}^D ||ẑ_d^{(k)}_i||² / k**
 
 Where:
-- **ẑ_d^{(k)} = z_{d,0}^{(k)} - z̄_0^{(k)}** (residual after removing cross-view mean)
-- **z_{d,0}^{(k)}** are the first k components from view d 
-- **z̄_0^{(k)} = (1/D) Σ_{ℓ=1}^D z_{ℓ,0}^{(k)}** is the mean of those k components across all D views
+- **ẑ_d^{(k)}_i = z_{d,0}^{(k)}_i - z̄_0^{(k)}_i** (residual for sample i after removing cross-view mean)
+- **z_{d,0}^{(k)}_i** are the first k components from view d for sample i
+- **z̄_0^{(k)}_i = (1/D) Σ_{ℓ=1}^D z_{ℓ,0}^{(k)}_i** is the mean across views for sample i
 - **D** is the number of views (species)
+- **N₁** is the number of test samples
 
 **Implementation**:
 ```python
 def calculate_nre_proper(S_matrices, k_core):
     D = len(S_matrices)  # Number of views
+    N_1 = S_matrices[0].shape[0]  # Number of test samples
     
     # Extract first k_core components from each view (z_{d,0}^(k))
     z_d_0_k = []
     for S in S_matrices:
         z_d_0_k.append(S.values[:, :k_core])
     
-    # Calculate bar_z_0^(k) = (1/D) * sum_{l=1}^D z_{l,0}^(k)
-    bar_z_0_k = np.mean(z_d_0_k, axis=0)
+    # Calculate NRE for each sample individually, then average
+    nre_per_sample = []
     
-    # Calculate hat_z_d^(k) = z_{d,0}^(k) - bar_z_0^(k) for each view
-    total_squared_norm = 0.0
-    for z_d in z_d_0_k:
-        hat_z_d = z_d - bar_z_0_k
-        squared_norm = np.sum(hat_z_d**2)
-        total_squared_norm += squared_norm
+    for i in range(N_1):
+        # Extract components for sample i from all views
+        z_i_views = [z_d[i, :] for z_d in z_d_0_k]
+        
+        # Calculate bar_z_0^(k)_i = (1/D) * sum_{l=1}^D z_{l,0}^(k)_i
+        bar_z_i = np.mean(z_i_views, axis=0)
+        
+        # Calculate NRE for this sample
+        sample_nre = 0.0
+        for z_i_d in z_i_views:
+            hat_z_i_d = z_i_d - bar_z_i
+            sample_nre += np.sum(hat_z_i_d**2)
+        
+        nre_per_sample.append(sample_nre / k_core)
     
-    nre = total_squared_norm / k_core
-    return nre
+    # Average over all test samples
+    return np.mean(nre_per_sample)
 ```
 
 **Expected Behavior**:

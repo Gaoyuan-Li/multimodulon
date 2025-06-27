@@ -1292,13 +1292,15 @@ class MultiModulon:
         
         # Determine max_k if not provided
         if max_k is None:
-            # Get dimensions of X matrices
-            X_dims = []
+            # Get number of samples for each species (should be consistent after alignment)
+            n_samples = []
             for species in species_list:
                 X = self._species_data[species].X
-                X_dims.append(min(X.shape))  # min of genes and samples
-            max_k = min(X_dims)
-            print(f"Auto-determined max_k = {max_k} based on data dimensions")
+                n_samples.append(X.shape[0])  # number of samples (rows)
+            min_samples = min(n_samples)
+            # Set max_k to min_samples - 5 to ensure we don't exceed data constraints
+            max_k = max(5, min_samples - 5)  # Ensure at least k=5 is testable
+            print(f"Auto-determined max_k = {max_k} based on minimum samples ({min_samples})")
         
         # Generate k candidates
         k_candidates = list(range(step, min(max_k + 1, 100), step))
@@ -1316,7 +1318,7 @@ class MultiModulon:
         
         # Run optimization (native PyTorch mode)
         print(f"\nUsing native PyTorch mode")
-        best_k, nre_scores, W_matrices, K_matrices, fig = run_nre_optimization_native(
+        best_k, nre_scores, all_nre_per_k, fig = run_nre_optimization_native(
             species_X_matrices=species_X_matrices,
             k_candidates=k_candidates,
             max_a_per_view=max_a_per_view,

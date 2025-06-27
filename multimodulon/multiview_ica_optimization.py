@@ -342,23 +342,26 @@ def calculate_nre_proper(
     """
     Calculate the Normalized Reconstruction Error (NRE) as defined in the paper.
     
-    NRE(k) := sum_{d=1}^D ||hat_z_d^(k)||^2 / k
+    The paper defines:
+    NRE(k) = (1/N_1) * sum_{i=1}^{N_1} sum_{d=1}^D ||hat_z_d^(k)_i||^2 / k
     
-    where hat_z_d^(k) = z_{d,0}^(k) - bar_z_0^(k)
-    and bar_z_0^(k) = (1/D) * sum_{l=1}^D z_{l,0}^(k)
+    where:
+    - hat_z_d^(k)_i = z_{d,0}^(k)_i - bar_z_0^(k)_i (for sample i)
+    - bar_z_0^(k)_i = (1/D) * sum_{l=1}^D z_{l,0}^(k)_i
+    - N_1 is the number of test samples
     
     Args:
         S_matrices: List of ICA source matrices for each view (z_d)
         k_core: Number of core components to evaluate (k)
         
     Returns:
-        NRE score (lower is better)
+        Average NRE score over all test samples (lower is better)
     """
     if k_core <= 0:
         return float('inf')
     
     D = len(S_matrices)  # Number of views
-    n_samples = S_matrices[0].shape[0]
+    N_1 = S_matrices[0].shape[0]  # Number of test samples
     
     # Extract first k_core components from each view (z_{d,0}^(k))
     z_d_0_k = []
@@ -371,24 +374,28 @@ def calculate_nre_proper(
         else:
             z_d_0_k.append(S.values[:, :k_core])
     
-    # Calculate bar_z_0^(k) = (1/D) * sum_{l=1}^D z_{l,0}^(k)
-    bar_z_0_k = np.mean(z_d_0_k, axis=0)  # Shape: (n_samples, k_core)
+    # Calculate NRE for each sample individually, then average
+    nre_per_sample = []
     
-    # Calculate hat_z_d^(k) = z_{d,0}^(k) - bar_z_0^(k) for each view
-    hat_z_d_k = []
-    for z_d in z_d_0_k:
-        hat_z_d = z_d - bar_z_0_k
-        hat_z_d_k.append(hat_z_d)
+    for i in range(N_1):
+        # Extract components for sample i from all views
+        z_i_views = [z_d[i, :] for z_d in z_d_0_k]  # Shape: D x k_core
+        
+        # Calculate bar_z_0^(k)_i = (1/D) * sum_{l=1}^D z_{l,0}^(k)_i
+        bar_z_i = np.mean(z_i_views, axis=0)  # Shape: k_core
+        
+        # Calculate hat_z_d^(k)_i = z_{d,0}^(k)_i - bar_z_0^(k)_i for each view
+        sample_nre = 0.0
+        for z_i_d in z_i_views:
+            hat_z_i_d = z_i_d - bar_z_i
+            sample_nre += np.sum(hat_z_i_d**2)
+        
+        # NRE for this sample: sum_{d=1}^D ||hat_z_d^(k)_i||^2 / k
+        nre_per_sample.append(sample_nre / k_core)
     
-    # Calculate NRE(k) = sum_{d=1}^D ||hat_z_d^(k)||^2 / k
-    total_squared_norm = 0.0
-    for hat_z_d in hat_z_d_k:
-        # ||hat_z_d^(k)||^2 = sum over all samples and components
-        squared_norm = np.sum(hat_z_d**2)
-        total_squared_norm += squared_norm
-    
-    nre = total_squared_norm / k_core
-    return nre
+    # Average NRE over all test samples: (1/N_1) * sum_{i=1}^{N_1} NRE(k)_i
+    average_nre = np.mean(nre_per_sample)
+    return average_nre
 
 
 
