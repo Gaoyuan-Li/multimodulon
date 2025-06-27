@@ -27,32 +27,32 @@ Where:
 ```python
 def calculate_nre_proper(S_matrices, k_core):
     D = len(S_matrices)  # Number of views
-    N_1 = S_matrices[0].shape[0]  # Number of test samples
+    N_1 = S_matrices[0].shape[1]  # Number of samples (columns)
     
     # Extract first k_core components from each view (z_{d,0}^(k))
     z_d_0_k = []
     for S in S_matrices:
-        z_d_0_k.append(S.values[:, :k_core])
+        z_d_0_k.append(S.values[:k_core, :])  # First k components
     
     # Calculate NRE for each sample individually, then average
     nre_per_sample = []
     
     for i in range(N_1):
-        # Extract components for sample i from all views
-        z_i_views = [z_d[i, :] for z_d in z_d_0_k]
+        # Extract components for sample i from all views: z_{d,0}^{(k)}_i
+        z_i_views = [z_d[:, i] for z_d in z_d_0_k]  # List of k_core arrays
         
-        # Calculate bar_z_0^(k)_i = (1/D) * sum_{l=1}^D z_{l,0}^(k)_i
-        bar_z_i = np.mean(z_i_views, axis=0)
+        # Calculate z̄_0^{(k)}_i = (1/D) * Σ_{ℓ=1}^D z_{ℓ,0}^{(k)}_i
+        z_bar_i = np.mean(z_i_views, axis=0)
         
-        # Calculate NRE for this sample
+        # Calculate Σ_{d=1}^D ||ẑ_d^{(k)}_i||² 
         sample_nre = 0.0
         for z_i_d in z_i_views:
-            hat_z_i_d = z_i_d - bar_z_i
-            sample_nre += np.sum(hat_z_i_d**2)
+            hat_z_i_d = z_i_d - z_bar_i  # ẑ_d^{(k)}_i = z_{d,0}^{(k)}_i - z̄_0^{(k)}_i
+            sample_nre += np.sum(hat_z_i_d**2)  # ||ẑ_d^{(k)}_i||²
         
         nre_per_sample.append(sample_nre / k_core)
     
-    # Average over all test samples
+    # Average over all test samples: (1/N_1) * Σᵢ₌₁^{N_1} NRE(k)_i
     return np.mean(nre_per_sample)
 ```
 

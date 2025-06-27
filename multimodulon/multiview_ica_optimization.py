@@ -342,58 +342,58 @@ def calculate_nre_proper(
     """
     Calculate the Normalized Reconstruction Error (NRE) as defined in the paper.
     
-    The paper defines:
-    NRE(k) = (1/N_1) * sum_{i=1}^{N_1} sum_{d=1}^D ||hat_z_d^(k)_i||^2 / k
+    NRE(k) = (1/N_1) * Σᵢ₌₁^{N_1} Σ_{d=1}^D ||ẑ_d^{(k)}_i||² / k
     
     where:
-    - hat_z_d^(k)_i = z_{d,0}^(k)_i - bar_z_0^(k)_i (for sample i)
-    - bar_z_0^(k)_i = (1/D) * sum_{l=1}^D z_{l,0}^(k)_i
+    - ẑ_d^{(k)}_i = z_{d,0}^{(k)}_i - z̄_0^{(k)}_i (residual for sample i)
+    - z_{d,0}^{(k)}_i are the first k components from view d for sample i  
+    - z̄_0^{(k)}_i = (1/D) Σ_{ℓ=1}^D z_{ℓ,0}^{(k)}_i (cross-view mean for sample i)
     - N_1 is the number of test samples
     
     Args:
-        S_matrices: List of ICA source matrices for each view (z_d)
+        S_matrices: List of source signal matrices (components x samples) for each view
         k_core: Number of core components to evaluate (k)
         
     Returns:
-        Average NRE score over all test samples (lower is better)
+        NRE score (lower is better)
     """
     if k_core <= 0:
         return float('inf')
     
     D = len(S_matrices)  # Number of views
-    N_1 = S_matrices[0].shape[0]  # Number of test samples
+    N_1 = S_matrices[0].shape[1]  # Number of samples (columns)
     
     # Extract first k_core components from each view (z_{d,0}^(k))
     z_d_0_k = []
     for S in S_matrices:
-        if k_core > S.shape[1]:
+        if k_core > S.shape[0]:  # Check number of components (rows)
             # Pad with zeros if k_core exceeds available components
-            padded = np.zeros((S.shape[0], k_core))
-            padded[:, :S.shape[1]] = S.values
+            padded = np.zeros((k_core, S.shape[1]))
+            padded[:S.shape[0], :] = S.values
             z_d_0_k.append(padded)
         else:
-            z_d_0_k.append(S.values[:, :k_core])
+            z_d_0_k.append(S.values[:k_core, :])  # First k components
     
-    # Calculate NRE for each sample individually, then average
+    # Calculate NRE for each sample, then average
     nre_per_sample = []
     
     for i in range(N_1):
-        # Extract components for sample i from all views
-        z_i_views = [z_d[i, :] for z_d in z_d_0_k]  # Shape: D x k_core
+        # Extract components for sample i from all views: z_{d,0}^{(k)}_i
+        z_i_views = [z_d[:, i] for z_d in z_d_0_k]  # List of k_core arrays
         
-        # Calculate bar_z_0^(k)_i = (1/D) * sum_{l=1}^D z_{l,0}^(k)_i
-        bar_z_i = np.mean(z_i_views, axis=0)  # Shape: k_core
+        # Calculate z̄_0^{(k)}_i = (1/D) * Σ_{ℓ=1}^D z_{ℓ,0}^{(k)}_i
+        z_bar_i = np.mean(z_i_views, axis=0)  # Shape: (k_core,)
         
-        # Calculate hat_z_d^(k)_i = z_{d,0}^(k)_i - bar_z_0^(k)_i for each view
+        # Calculate Σ_{d=1}^D ||ẑ_d^{(k)}_i||² where ẑ_d^{(k)}_i = z_{d,0}^{(k)}_i - z̄_0^{(k)}_i
         sample_nre = 0.0
         for z_i_d in z_i_views:
-            hat_z_i_d = z_i_d - bar_z_i
-            sample_nre += np.sum(hat_z_i_d**2)
+            hat_z_i_d = z_i_d - z_bar_i  # Residual for this view
+            sample_nre += np.sum(hat_z_i_d**2)  # ||ẑ_d^{(k)}_i||²
         
-        # NRE for this sample: sum_{d=1}^D ||hat_z_d^(k)_i||^2 / k
+        # Divide by k for this sample: Σ_{d=1}^D ||ẑ_d^{(k)}_i||² / k
         nre_per_sample.append(sample_nre / k_core)
     
-    # Average NRE over all test samples: (1/N_1) * sum_{i=1}^{N_1} NRE(k)_i
+    # Average over all test samples: (1/N_1) * Σᵢ₌₁^{N_1} NRE(k)_i
     average_nre = np.mean(nre_per_sample)
     return average_nre
 
@@ -718,7 +718,7 @@ def run_nre_optimization_native(
     for run in range(num_runs):
         
         # Split data consistently across views
-        n_samples = species_X_matrices[species_list[0]].shape[0]
+        n_samples = species_X_matrices[species_list[0]].shape[1]  # samples are columns
         indices = np.arange(n_samples)
         train_idx, test_idx = train_test_split(
             indices, train_size=train_frac, random_state=seed + run
@@ -728,8 +728,8 @@ def run_nre_optimization_native(
         X_test_views = []
         for species in species_list:
             X = species_X_matrices[species]
-            X_train_views.append(X.iloc[train_idx])
-            X_test_views.append(X.iloc[test_idx])
+            X_train_views.append(X.iloc[:, train_idx])  # Select columns (samples)
+            X_test_views.append(X.iloc[:, test_idx])    # Select columns (samples)
         
         for k in k_candidates:
             start_time = time.time()
@@ -738,7 +738,7 @@ def run_nre_optimization_native(
             from .multiview_ica import run_multi_view_ICA_on_datasets
             
             # Run multi-view ICA with current k
-            results = run_multi_view_ICA_on_datasets(
+            results, _ = run_multi_view_ICA_on_datasets(
                 X_train_views,
                 [max_a_per_view] * n_species,
                 k,
@@ -746,15 +746,15 @@ def run_nre_optimization_native(
             )
             
             # Train another model on test data to get comparable results
-            test_results = run_multi_view_ICA_on_datasets(
+            test_results, test_sources = run_multi_view_ICA_on_datasets(
                 X_test_views,
                 [max_a_per_view] * n_species,
                 k,
                 mode=mode
             )
             
-            # Calculate NRE using the test results
-            nre = calculate_nre_proper(test_results, k)
+            # Calculate NRE using the test source signals (components x samples)
+            nre = calculate_nre_proper(test_sources, k)
             all_nre_per_k[k].append(nre)
             
             elapsed_time = time.time() - start_time

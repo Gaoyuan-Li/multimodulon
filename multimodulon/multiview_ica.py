@@ -44,15 +44,15 @@ class MSIICA(nn.Module):
 
 def whiten(X, rank):
     """
-    GPU-based whitening function that keeps the original input and output shapes.
+    GPU-based whitening function for ICA preprocessing.
 
     Args:
-        X (torch.Tensor): Input tensor with shape (1, features, samples).
+        X (torch.Tensor): Input tensor with shape (1, samples, genes).
         rank (int): Number of components to keep.
 
     Returns:
         tuple: (whitening_matrix, whitened_X)
-            - whitening_matrix is a tensor of shape (1, rank, features)
+            - whitening_matrix is a tensor of shape (1, rank, samples)  
             - whitened_X is a tensor of shape (1, rank, samples)
     """
     # Center the data along the sample dimension.
@@ -161,7 +161,7 @@ def run_multi_view_ICA_on_datasets(
     models = []
     
     for i, (dataset, a_val) in enumerate(zip(datasets, a_values)):
-        # Convert to numpy and transpose
+        # Convert to numpy and transpose to (samples, genes) for ICA processing
         X_np = dataset.copy().values.T
         
         # Convert to torch tensor
@@ -180,8 +180,8 @@ def run_multi_view_ICA_on_datasets(
         K_matrices.append(K)
         Xw_tensors.append(Xw)
         
-        # Prepare model input
-        Xw_model = Xw[0].T.contiguous()
+        # Prepare model input: (samples, rank) as in reference  
+        Xw_model = Xw[0].T.contiguous()  # Shape: (samples, rank)
         Xw_models.append(Xw_model)
         
         # Create model
@@ -236,14 +236,24 @@ def run_multi_view_ICA_on_datasets(
         for batch in train_loader:
             optimizer.step(train_closure(*batch))
     
-    # Get final results
+    # Get final results  
     results = []
-    for i, (model, Xw_model) in enumerate(zip(models, Xw_models)):
-        Sp_full = model(Xw_model)
-        df = pd.DataFrame(Sp_full.detach().cpu().numpy())
-        results.append(df)
+    source_signals = []  # For NRE calculation
     
-    # Normalize DataFrames
+    for i, (model, Xw_model) in enumerate(zip(models, Xw_models)):
+        Sp_full = model(Xw_model)  # Shape: (samples, components)
+        
+        # Store source signals for NRE: (components, samples)
+        source_df = pd.DataFrame(Sp_full.detach().cpu().numpy().T)  
+        source_signals.append(source_df)
+        
+        # Store mixing matrices for final result: (genes, components)
+        # Note: This is actually the source coefficient matrix, not the true mixing matrix
+        # But it's what we return as the "M" matrix for downstream analysis
+        mixing_df = pd.DataFrame(Sp_full.detach().cpu().numpy())
+        results.append(mixing_df)
+    
+    # Normalize mixing matrices (results)
     for df in results:
         n_samples = df.shape[0]
         if n_samples == 0:
@@ -255,7 +265,7 @@ def run_multi_view_ICA_on_datasets(
         df_normalized = centered * scaling_factors
         df.loc[:] = df_normalized.values
     
-    return results
+    return results, source_signals
 
 
 def run_multiview_ica_native(
@@ -291,7 +301,7 @@ def run_multiview_ica_native(
     X_matrices = [species_X_matrices[sp] for sp in species_list]
     a_list = [a_values[sp] for sp in species_list]
     
-    results = run_multi_view_ICA_on_datasets(
+    results, _ = run_multi_view_ICA_on_datasets(
         X_matrices,
         a_list,
         c,

@@ -1296,7 +1296,7 @@ class MultiModulon:
             n_samples = []
             for species in species_list:
                 X = self._species_data[species].X
-                n_samples.append(X.shape[0])  # number of samples (rows)
+                n_samples.append(X.shape[1])  # number of samples (columns)
             min_samples = min(n_samples)
             # Set max_k to the largest multiple of step that's less than min_samples
             # This ensures k candidates don't exceed data constraints
