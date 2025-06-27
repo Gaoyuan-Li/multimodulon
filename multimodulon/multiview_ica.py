@@ -116,7 +116,8 @@ def run_multi_view_ICA_on_datasets(
     batch_size=None,
     max_iter=10000,
     seed=0,
-    mode='gpu'
+    mode='gpu',
+    return_unmixing_matrices=False
 ):
     """
     Run multi-view ICA on multiple RNA-seq datasets.
@@ -130,9 +131,16 @@ def run_multi_view_ICA_on_datasets(
         max_iter: Maximum iterations for optimizer
         seed: Random seed
         mode: 'gpu' or 'cpu'
+        return_unmixing_matrices: If True, returns both sources and unmixing matrices
         
     Returns:
-        List of DataFrames containing the source signals (samples x components) for each view
+        If return_unmixing_matrices is False:
+            List of DataFrames containing the source signals (samples x components) for each view
+        If return_unmixing_matrices is True:
+            Tuple of (sources, W_matrices, K_matrices) where:
+            - sources: List of DataFrames (samples x components)
+            - W_matrices: List of numpy arrays with unmixing matrices W
+            - K_matrices: List of numpy arrays with whitening matrices K
     """
     # reproducibility
     torch.manual_seed(seed)
@@ -215,15 +223,22 @@ def run_multi_view_ICA_on_datasets(
         var = centred.var(ddof=0).replace(0, 1)
         scale = np.sqrt(1.0 / (n * var))
         df.loc[:] = centred * scale
-        
-    return dfs
+    
+    if return_unmixing_matrices:
+        # Extract W matrices from models and K matrices from whitening
+        W_matrices = [m.W.weight.detach().cpu().numpy() for m in models]
+        K_matrices = [k.detach().cpu().numpy() for k in K]
+        return dfs, W_matrices, K_matrices
+    else:
+        return dfs
 
 
-def run_multiview_ica_native(
+def run_multiview_ica(
     species_X_matrices: Dict[str, pd.DataFrame],
     a_values: Dict[str, int],
     c: int,
     mode: str = 'gpu',
+    return_unmixing_matrices: bool = False,
     **kwargs
 ) -> Dict[str, pd.DataFrame]:
     """
@@ -235,10 +250,17 @@ def run_multiview_ica_native(
         a_values: Dictionary mapping species names to number of components
         c: Number of core components
         mode: 'gpu' or 'cpu' mode
+        return_unmixing_matrices: If True, returns unmixing matrices along with sources
         **kwargs: Additional arguments passed to run_multi_view_ICA_on_datasets
         
     Returns:
-        Dictionary mapping species names to M matrices (samples, components)
+        If return_unmixing_matrices is False:
+            Dictionary mapping species names to M matrices (samples, components)
+        If return_unmixing_matrices is True:
+            Tuple of (M_matrices, W_matrices, K_matrices) where:
+            - M_matrices: Dict mapping species to source matrices
+            - W_matrices: Dict mapping species to unmixing matrices W
+            - K_matrices: Dict mapping species to whitening matrices K
     """
     
     # Validate inputs
@@ -260,16 +282,31 @@ def run_multiview_ica_native(
         a_list,
         c,
         mode=mode,
+        return_unmixing_matrices=return_unmixing_matrices,
         **kwargs
     )
     
-    # Create results dictionary
-    results_dict = {}
-    for species, result in zip(species_list, results):
-        results_dict[species] = result
-    
-    return results_dict
+    if return_unmixing_matrices:
+        # Unpack results
+        result_dfs, W_list, K_list = results
+        
+        # Create dictionaries
+        M_matrices = {}
+        W_matrices = {}
+        K_matrices = {}
+        
+        for species, df, W, K in zip(species_list, result_dfs, W_list, K_list):
+            M_matrices[species] = df
+            W_matrices[species] = W
+            K_matrices[species] = K
+        
+        return M_matrices, W_matrices, K_matrices
+    else:
+        # Create results dictionary
+        results_dict = {}
+        for species, result in zip(species_list, results):
+            results_dict[species] = result
+        
+        return results_dict
 
 
-# For backward compatibility, alias the docker function to native
-run_multiview_ica_docker = run_multiview_ica_native

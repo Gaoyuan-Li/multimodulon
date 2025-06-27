@@ -16,8 +16,8 @@ from typing import Dict, Optional, Tuple
 from .utils.gff_parser import parse_gff
 from .utils.bbh import BBHAnalyzer
 from .utils.fasta_utils import extract_protein_sequences
-from .multiview_ica import run_multiview_ica_native
-from .multiview_ica_optimization import run_nre_optimization_native
+from .multiview_ica import run_multiview_ica
+from .multiview_ica_optimization import run_nre_optimization
 
 logger = logging.getLogger(__name__)
 
@@ -1134,7 +1134,7 @@ class MultiModulon:
     
     def run_multiview_ica(self, **kwargs):
         """
-        Run multi-view ICA on aligned expression matrices using native PyTorch.
+        Run multi-view ICA on aligned expression matrices.
         
         Parameters
         ----------
@@ -1209,9 +1209,8 @@ class MultiModulon:
         for species in species_list:
             species_X_matrices[species] = self._species_data[species].X
         
-        # Run multi-view ICA (native PyTorch mode)
-        print(f"\nUsing native PyTorch mode")
-        results = run_multiview_ica_native(
+        # Run multi-view ICA
+        results = run_multiview_ica(
             species_X_matrices=species_X_matrices,
             a_values=a_values,
             c=c,
@@ -1331,7 +1330,7 @@ class MultiModulon:
             species_X_matrices[species] = self._species_data[species].X
         
         # Run optimization
-        best_k, nre_scores, all_nre_per_k, fig = run_nre_optimization_native(
+        best_k, nre_scores, all_nre_per_k, fig = run_nre_optimization(
             species_X_matrices=species_X_matrices,
             k_candidates=k_candidates,
             max_a_per_view=max_a_per_view,
