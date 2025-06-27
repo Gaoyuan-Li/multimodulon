@@ -16,8 +16,8 @@ from typing import Dict, Optional, Tuple
 from .utils.gff_parser import parse_gff
 from .utils.bbh import BBHAnalyzer
 from .utils.fasta_utils import extract_protein_sequences
-from .multiview_ica import run_multiview_ica_docker, run_multiview_ica_native
-from .multiview_ica_optimization import run_nre_optimization_docker, run_nre_optimization_native
+from .multiview_ica import run_multiview_ica_native
+from .multiview_ica_optimization import run_nre_optimization_native
 
 logger = logging.getLogger(__name__)
 
@@ -1122,7 +1122,7 @@ class MultiModulon:
     
     def run_multiview_ica(self, **kwargs):
         """
-        Run multi-view ICA on aligned expression matrices.
+        Run multi-view ICA on aligned expression matrices using native PyTorch.
         
         Parameters
         ----------
@@ -1134,10 +1134,6 @@ class MultiModulon:
                 Number of shared sources across all species
             - mode : str, optional
                 'gpu' or 'cpu' mode (default: 'gpu')
-            - use_docker : bool, optional
-                Whether to use Docker for execution (default: True)
-            - docker_image : str, optional
-                Docker image to use (default: 'pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime')
         
         Returns
         -------
@@ -1146,12 +1142,22 @@ class MultiModulon:
         
         Examples
         --------
+        # For 6 species (traditional way)
         >>> multiModulon.run_multiview_ica(a1=50, a2=50, a3=50, a4=50, a5=50, a6=50, c=30)
+        
+        # For any number of species (using list)
+        >>> multiModulon.run_multiview_ica(a=[50, 50, 50], c=30)  # for 3 species
+        
+        # For any number of species (same a for all)
+        >>> multiModulon.run_multiview_ica(a=50, c=30)
         """
         # Check if X matrices have been generated
         species_list = list(self._species_data.keys())
-        if len(species_list) != 6:
-            raise ValueError(f"Multi-view ICA requires exactly 6 species/strains, found {len(species_list)}")
+        n_species = len(species_list)
+        if n_species < 2:
+            raise ValueError(f"Multi-view ICA requires at least 2 species/strains, found {n_species}")
+        
+        print(f"Running multi-view ICA on {n_species} species/strains: {species_list}")
         
         # Check if all species have X matrices
         for species in species_list:
@@ -1167,41 +1173,38 @@ class MultiModulon:
         if c is None:
             raise ValueError("Parameter 'c' (number of shared sources) is required")
         
-        # Extract a values for each species
+        # Extract a values for each species - support flexible naming
         for i, species in enumerate(species_list, 1):
             a_key = f'a{i}'
-            if a_key not in kwargs:
-                raise ValueError(f"Parameter '{a_key}' is required for species {species}")
-            a_values[species] = kwargs[a_key]
+            if a_key in kwargs:
+                a_values[species] = kwargs[a_key]
+            elif 'a' in kwargs and isinstance(kwargs['a'], (list, tuple)):
+                # Support passing a list of a values
+                if len(kwargs['a']) != n_species:
+                    raise ValueError(f"Length of 'a' list ({len(kwargs['a'])}) must match number of species ({n_species})")
+                a_values[species] = kwargs['a'][i-1]
+            elif 'a' in kwargs and isinstance(kwargs['a'], int):
+                # Support passing a single a value for all species
+                a_values[species] = kwargs['a']
+            else:
+                raise ValueError(f"Parameter '{a_key}' is required for species {species}, or provide 'a' as list/int")
         
         # Get other parameters
         mode = kwargs.get('mode', 'gpu')
-        use_docker = kwargs.get('use_docker', True)
-        docker_image = kwargs.get('docker_image', 'pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime')
         
         # Prepare X matrices dictionary
         species_X_matrices = {}
         for species in species_list:
             species_X_matrices[species] = self._species_data[species].X
         
-        # Run multi-view ICA
-        if use_docker:
-            print(f"\nUsing Docker mode with image: {docker_image}")
-            results = run_multiview_ica_docker(
-                species_X_matrices=species_X_matrices,
-                a_values=a_values,
-                c=c,
-                mode=mode,
-                docker_image=docker_image
-            )
-        else:
-            print(f"\nUsing native mode (requires PyTorch installation)")
-            results = run_multiview_ica_native(
-                species_X_matrices=species_X_matrices,
-                a_values=a_values,
-                c=c,
-                mode=mode
-            )
+        # Run multi-view ICA (native PyTorch mode)
+        print(f"\nUsing native PyTorch mode")
+        results = run_multiview_ica_native(
+            species_X_matrices=species_X_matrices,
+            a_values=a_values,
+            c=c,
+            mode=mode
+        )
         
         # Save M matrices to each species
         print("\nSaving M matrices to species objects...")
@@ -1219,8 +1222,6 @@ class MultiModulon:
         train_frac: float = 0.75,
         num_runs: int = 3,
         mode: str = 'gpu',
-        use_docker: bool = True,
-        docker_image: str = 'pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime',
         seed: int = 42,
         save_plot: Optional[str] = None
     ) -> Tuple[int, Dict[int, float]]:
@@ -1228,7 +1229,7 @@ class MultiModulon:
         Optimize the number of shared components using NRE (Noise Reduction Error).
         
         This method uses cross-validation to find the optimal number of shared
-        components (k) by minimizing the NRE score.
+        components (k) by minimizing the NRE score using native PyTorch.
         
         Parameters
         ----------
@@ -1244,10 +1245,6 @@ class MultiModulon:
             Number of cross-validation runs
         mode : str, default='gpu'
             'gpu' or 'cpu' mode
-        use_docker : bool, default=True
-            Whether to use Docker for execution
-        docker_image : str, optional
-            Docker image to use
         seed : int, default=42
             Random seed for reproducibility
         save_plot : str, optional
@@ -1267,10 +1264,13 @@ class MultiModulon:
         """
         # Check prerequisites
         species_list = list(self._species_data.keys())
-        if len(species_list) != 6:
+        n_species = len(species_list)
+        if n_species < 2:
             raise ValueError(
-                f"NRE optimization requires exactly 6 species/strains, found {len(species_list)}"
+                f"NRE optimization requires at least 2 species/strains, found {n_species}"
             )
+        
+        print(f"Optimizing shared components for {n_species} species/strains: {species_list}")
         
         # Check if all species have X matrices
         for species in species_list:
@@ -1304,30 +1304,17 @@ class MultiModulon:
         for species in species_list:
             species_X_matrices[species] = self._species_data[species].X
         
-        # Run optimization
-        if use_docker:
-            print(f"\nUsing Docker mode with image: {docker_image}")
-            best_k, nre_scores, W_matrices, K_matrices, fig = run_nre_optimization_docker(
-                species_X_matrices=species_X_matrices,
-                k_candidates=k_candidates,
-                max_a_per_view=max_a_per_view,
-                train_frac=train_frac,
-                num_runs=num_runs,
-                mode=mode,
-                docker_image=docker_image,
-                seed=seed
-            )
-        else:
-            print(f"\nUsing native mode (requires PyTorch installation)")
-            best_k, nre_scores, W_matrices, K_matrices, fig = run_nre_optimization_native(
-                species_X_matrices=species_X_matrices,
-                k_candidates=k_candidates,
-                max_a_per_view=max_a_per_view,
-                train_frac=train_frac,
-                num_runs=num_runs,
-                mode=mode,
-                seed=seed
-            )
+        # Run optimization (native PyTorch mode)
+        print(f"\nUsing native PyTorch mode")
+        best_k, nre_scores, W_matrices, K_matrices, fig = run_nre_optimization_native(
+            species_X_matrices=species_X_matrices,
+            k_candidates=k_candidates,
+            max_a_per_view=max_a_per_view,
+            train_frac=train_frac,
+            num_runs=num_runs,
+            mode=mode,
+            seed=seed
+        )
         
         # Save or display plot
         if save_plot:

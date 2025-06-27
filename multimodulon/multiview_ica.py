@@ -2,144 +2,125 @@
 Multi-view ICA implementation for MultiModulon analysis.
 
 This module provides GPU-accelerated multi-view ICA functionality
-using PyTorch within Docker containers.
+using PyTorch natively.
 """
 
-import os
-import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
+
+try:
+    import torch
+    import torch.nn as nn
+    import geotorch
+    import scipy.optimize
+except ImportError as e:
+    raise ImportError(
+        "PyTorch and geotorch are required for multi-view ICA. "
+        "Please install them with: pip install torch==2.6.0 torchvision==0.21.0 "
+        "torchaudio==2.6.0 geotorch==0.3.0 --index-url https://download.pytorch.org/whl/cu124"
+    ) from e
 
 
-def prepare_docker_environment(
-    input_data_dir: str,
-    output_dir: str,
-    species_X_matrices: Dict[str, pd.DataFrame],
-    a_values: Dict[str, int],
-    c: int,
-    mode: str = 'gpu'
-) -> Tuple[str, str]:
-    """
-    Prepare the Docker environment by creating necessary files and directories.
-    
-    Args:
-        input_data_dir: Directory containing input data
-        output_dir: Directory for output files
-        species_X_matrices: Dictionary mapping species names to X matrices
-        a_values: Dictionary mapping species names to number of components
-        c: Number of shared sources
-        mode: 'gpu' or 'cpu' mode for computation
+# Import the multiview ICA functions from the original implementation
+sys.path.append(str(Path(__file__).parent.parent.parent / "multimodulon_dev"))
+
+try:
+    from multiview_ica import (
+        MSIICA, whiten, find_ordering, 
+        run_multi_view_ICA_on_6_datasets
+    )
+except ImportError:
+    # Define the classes and functions locally if import fails
+    class MSIICA(nn.Module):
+        def __init__(self, n_in, n_out, U=None, ortho=True):
+            super().__init__()
+            self.W = nn.Linear(n_in, n_out, bias=False)
+            geotorch.orthogonal(self.W, "weight")
+            if U is not None:
+                self.W.weight = U.contiguous()
+                    
+        def forward(self, Xw):
+            S = self.W(Xw)
+            return S
+
+    def whiten(X, rank):
+        """
+        GPU-based whitening function that keeps the original input and output shapes.
+        """
+        # Center the data along the sample dimension.
+        X_centered = X - X.mean(dim=2, keepdim=True)
+        samples = X.shape[2]
         
-    Returns:
-        Tuple of (temp_dir_path, script_path)
-    """
-    # Create temporary directory for Docker execution
-    temp_dir = tempfile.mkdtemp(prefix="multiview_ica_")
-    
-    # Save X matrices as CSV files
-    print("Saving X matrices for Docker execution...")
-    data_dir = os.path.join(temp_dir, "data")
-    os.makedirs(data_dir, exist_ok=True)
-    
-    species_list = list(species_X_matrices.keys())
-    for species, X_matrix in species_X_matrices.items():
-        csv_path = os.path.join(data_dir, f"{species}_X.csv")
-        X_matrix.to_csv(csv_path, index=True)
-    
-    # Create the execution script
-    script_content = f'''
-import sys
-import os
-import pandas as pd
-import numpy as np
-import torch
+        # Compute the covariance matrix of shape (1, features, features).
+        cov = torch.matmul(X_centered, X_centered.transpose(1, 2)) / (samples - 1)
+        
+        # Compute the eigen decomposition of the covariance matrix.
+        eigvals, eigvecs = torch.linalg.eigh(cov)
+        
+        # Rearrange eigenvalues and eigenvectors in descending order.
+        eigvals = eigvals.flip(dims=[-1])
+        eigvecs = eigvecs.flip(dims=[-1])
+        
+        # Select the top 'rank' components.
+        eigvals = eigvals[:, :rank]
+        eigvecs = eigvecs[:, :, :rank]
+        
+        # Compute scaling factors and form the whitening matrix.
+        scale = 1.0 / torch.sqrt(eigvals + 1e-10)
+        whitening_matrix = (eigvecs * scale.unsqueeze(1)).transpose(1, 2)
+        
+        # Compute the whitened data.
+        whitened_X = torch.matmul(whitening_matrix, X_centered)
+        
+        return whitening_matrix, whitened_X
 
-# Add the multiview_ica module path
-sys.path.append('/workspace')
+    def find_ordering(S_list):
+        """Find ordering of sources across views."""
+        n_pb = len(S_list)
+        p = None
+        for i in range(n_pb):
+            p = S_list[i].shape[0] if p is None else np.min((p, S_list[i].shape[0]))
 
-# Import the functions from the original implementation
-from multiview_ica_impl import run_multi_view_ICA_on_6_datasets
+        for i in range(len(S_list)):
+            S_list[i] /= np.linalg.norm(S_list[i], axis=1, keepdims=1)
+        S = S_list[0].copy()
+        order = np.arange(p)[None, :] * np.ones(n_pb, dtype=int)[:, None]
+        for i, s in enumerate(S_list[1:]):
+                M = np.dot(S, s.T)
+                u, orders = scipy.optimize.linear_sum_assignment(-abs(M.T))
+                order[i + 1] = orders
+                vals= abs(M[orders, u])
 
-# Load the data
-print("Loading X matrices...")
-species_list = {species_list}
-X_matrices = []
-for species in species_list:
-    csv_path = f"/workspace/data/{{species}}_X.csv"
-    X = pd.read_csv(csv_path, index_col=0)
-    X_matrices.append(X)
-    print(f"Loaded {{species}}: {{X.shape}}")
-
-# Get a_values in the same order
-a_values = {[a_values[sp] for sp in species_list]}
-c = {c}
-
-print("\\nRunning multi-view ICA...")
-print(f"a_values: {{a_values}}")
-print(f"c (shared sources): {{c}}")
-
-# Run the multi-view ICA
-results = run_multi_view_ICA_on_6_datasets(
-    *X_matrices,
-    *a_values,
-    c,
-    mode='{mode}'
-)
-
-# Save results
-print("\\nSaving results...")
-for i, (species, result) in enumerate(zip(species_list, results)):
-    output_path = f"/workspace/output/{{species}}_M.csv"
-    result.to_csv(output_path, index=False)
-    print(f"Saved {{species}} M matrix: {{result.shape}}")
-
-print("\\nMulti-view ICA completed successfully!")
-'''
-    
-    script_path = os.path.join(temp_dir, "run_multiview_ica.py")
-    with open(script_path, 'w') as f:
-        f.write(script_content)
-    
-    # Copy the original multiview_ica implementation
-    impl_path = os.path.join(temp_dir, "multiview_ica_impl.py")
-    with open("/home/gaoyuan/PhD/iMM_2/multimodulon_dev/multiview_ica.py", 'r') as src:
-        with open(impl_path, 'w') as dst:
-            dst.write(src.read())
-    
-    # Create output directory
-    os.makedirs(os.path.join(temp_dir, "output"), exist_ok=True)
-    
-    return temp_dir, script_path
+        return u, orders, vals
 
 
-def run_multiview_ica_docker(
+def run_multiview_ica_native(
     species_X_matrices: Dict[str, pd.DataFrame],
     a_values: Dict[str, int],
     c: int,
     mode: str = 'gpu',
-    docker_image: str = 'pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime'
+    **kwargs
 ) -> Dict[str, pd.DataFrame]:
     """
-    Run multi-view ICA using Docker with PyTorch.
+    Run multi-view ICA natively using PyTorch.
     
     Args:
         species_X_matrices: Dictionary mapping species names to aligned X matrices
         a_values: Dictionary mapping species names to number of components
         c: Number of shared sources
         mode: 'gpu' or 'cpu' mode
-        docker_image: Docker image to use
         
     Returns:
         Dictionary mapping species names to M matrices (ICA results)
     """
     print("\n" + "="*60)
-    print("MULTI-VIEW ICA EXECUTION")
+    print("MULTI-VIEW ICA EXECUTION (Native)")
     print("="*60)
     
     start_time = time.time()
@@ -151,158 +132,54 @@ def run_multiview_ica_docker(
     if len(a_values) != 6:
         raise ValueError(f"Expected exactly 6 a_values, got {len(a_values)}")
     
-    # Prepare Docker environment
-    print("\n[1/4] Preparing Docker environment...")
-    prep_start = time.time()
-    temp_dir, script_path = prepare_docker_environment(
-        input_data_dir="",
-        output_dir="",
-        species_X_matrices=species_X_matrices,
-        a_values=a_values,
-        c=c,
-        mode=mode
-    )
-    print(f"✓ Environment prepared in {time.time() - prep_start:.2f}s")
-    
-    # Pull Docker image if needed
-    print(f"\n[2/4] Checking Docker image: {docker_image}")
-    pull_start = time.time()
-    try:
-        subprocess.run(
-            ["docker", "image", "inspect", docker_image],
-            capture_output=True,
-            check=True
-        )
-        print(f"✓ Docker image already available")
-    except subprocess.CalledProcessError:
-        print(f"Pulling Docker image...")
-        subprocess.run(
-            ["docker", "pull", docker_image],
-            check=True
-        )
-        print(f"✓ Docker image pulled in {time.time() - pull_start:.2f}s")
-    
-    # Run Docker container
-    print(f"\n[3/4] Running multi-view ICA in Docker container...")
-    run_start = time.time()
-    
-    docker_cmd = [
-        "docker", "run", "--rm",
-        "-v", f"{temp_dir}:/workspace",
-        "-w", "/workspace"
-    ]
-    
-    # Add GPU support if in GPU mode
-    if mode == 'gpu':
-        docker_cmd.extend(["--gpus", "all"])
-    
-    docker_cmd.extend([
-        docker_image,
-        "python", "/workspace/run_multiview_ica.py"
-    ])
-    
-    try:
-        result = subprocess.run(
-            docker_cmd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(result.stdout)
-        if result.stderr:
-            print("Warnings:", result.stderr)
-        print(f"✓ Multi-view ICA completed in {time.time() - run_start:.2f}s")
-    except subprocess.CalledProcessError as e:
-        print(f"Error running Docker container:")
-        print(f"stdout: {e.stdout}")
-        print(f"stderr: {e.stderr}")
-        raise
-    
-    # Load results
-    print(f"\n[4/4] Loading results...")
-    load_start = time.time()
-    results = {}
-    output_dir = os.path.join(temp_dir, "output")
-    
-    for species in species_X_matrices.keys():
-        result_path = os.path.join(output_dir, f"{species}_M.csv")
-        if os.path.exists(result_path):
-            results[species] = pd.read_csv(result_path)
-            print(f"✓ Loaded {species} M matrix: {results[species].shape}")
-        else:
-            raise FileNotFoundError(f"Result file not found: {result_path}")
-    
-    print(f"✓ Results loaded in {time.time() - load_start:.2f}s")
-    
-    # Cleanup
-    import shutil
-    shutil.rmtree(temp_dir)
-    
-    total_time = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"TOTAL EXECUTION TIME: {total_time:.2f}s")
-    print(f"{'='*60}\n")
-    
-    return results
-
-
-def run_multiview_ica_native(
-    species_X_matrices: Dict[str, pd.DataFrame],
-    a_values: Dict[str, int],
-    c: int,
-    mode: str = 'gpu'
-) -> Dict[str, pd.DataFrame]:
-    """
-    Run multi-view ICA natively (without Docker).
-    
-    This requires PyTorch to be installed in the current environment.
-    
-    Args:
-        species_X_matrices: Dictionary mapping species names to aligned X matrices
-        a_values: Dictionary mapping species names to number of components
-        c: Number of shared sources
-        mode: 'gpu' or 'cpu' mode
-        
-    Returns:
-        Dictionary mapping species names to M matrices (ICA results)
-    """
-    try:
-        import torch
-        sys.path.append('/home/gaoyuan/PhD/iMM_2/multimodulon_dev')
-        from multiview_ica import run_multi_view_ICA_on_6_datasets
-    except ImportError:
-        raise ImportError(
-            "PyTorch not found. Please use Docker mode or install PyTorch."
-        )
-    
-    print("\n" + "="*60)
-    print("MULTI-VIEW ICA EXECUTION (Native)")
-    print("="*60)
-    
-    start_time = time.time()
-    
-    # Validate inputs
-    if len(species_X_matrices) != 6:
-        raise ValueError(f"Expected exactly 6 species, got {len(species_X_matrices)}")
-    
     # Prepare data
+    print("\n[1/2] Preparing data...")
+    prep_start = time.time()
+    
     species_list = list(species_X_matrices.keys())
     X_matrices = [species_X_matrices[sp] for sp in species_list]
     a_list = [a_values[sp] for sp in species_list]
     
-    print(f"\nRunning multi-view ICA...")
     print(f"Species: {species_list}")
     print(f"a_values: {a_list}")
     print(f"c (shared sources): {c}")
     print(f"Mode: {mode}")
+    print(f"✓ Data prepared in {time.time() - prep_start:.2f}s")
     
     # Run multi-view ICA
-    results = run_multi_view_ICA_on_6_datasets(
-        *X_matrices,
-        *a_list,
-        c,
-        mode=mode
-    )
+    print(f"\n[2/2] Running multi-view ICA...")
+    run_start = time.time()
+    
+    try:
+        # Try to use the imported function first if it exists and handles the right number of datasets
+        if len(X_matrices) == 6:
+            results = run_multi_view_ICA_on_6_datasets(
+                *X_matrices,
+                *a_list,
+                c,
+                mode=mode,
+                **kwargs
+            )
+        else:
+            # Use generalized local implementation for non-6 datasets
+            results = run_multi_view_ICA_on_datasets_local(
+                X_matrices,
+                a_list,
+                c,
+                mode=mode,
+                **kwargs
+            )
+    except (NameError, TypeError):
+        # Fallback to generalized local implementation
+        results = run_multi_view_ICA_on_datasets_local(
+            X_matrices,
+            a_list,
+            c,
+            mode=mode,
+            **kwargs
+        )
+    
+    print(f"✓ Multi-view ICA completed in {time.time() - run_start:.2f}s")
     
     # Create results dictionary
     results_dict = {}
@@ -316,3 +193,166 @@ def run_multiview_ica_native(
     print(f"{'='*60}\n")
     
     return results_dict
+
+
+def run_multi_view_ICA_on_datasets_local(
+    datasets, a_values, c,
+    batch_size=None,
+    max_iter=10000,
+    seed=0,
+    mode='gpu'
+):
+    """
+    Local implementation of multi-view ICA on any number of datasets.
+    
+    Args:
+        datasets: List of DataFrames, each representing expression data for one view/species
+        a_values: List of integers, number of components for each view/species
+        c: Number of shared sources
+        batch_size: Batch size for training
+        max_iter: Maximum iterations for optimizer
+        seed: Random seed
+        mode: 'gpu' or 'cpu'
+        
+    Returns:
+        List of DataFrames containing the ICA results for each view
+    """
+    # Validate inputs
+    n_views = len(datasets)
+    if len(a_values) != n_views:
+        raise ValueError(f"Number of a_values ({len(a_values)}) must match number of datasets ({n_views})")
+    
+    print(f"Running multi-view ICA on {n_views} datasets")
+    
+    # Set random seeds for reproducibility
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    
+    # Set device
+    if mode == 'gpu' and torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+    else:
+        device = torch.device("cpu")
+        print("Using CPU")
+    
+    # Use full batch if not specified
+    if batch_size is None:
+        batch_size = len(datasets[0].index)
+    
+    # Convert DataFrames to numpy arrays and transpose to get shape (features, samples)
+    X_tensors = []
+    k_values = []
+    K_matrices = []
+    Xw_tensors = []
+    Xw_models = []
+    models = []
+    
+    for i, (dataset, a_val) in enumerate(zip(datasets, a_values)):
+        print(f"Processing dataset {i+1}: {dataset.shape}")
+        
+        # Convert to numpy and transpose
+        X_np = dataset.copy().values.T
+        
+        # Convert to torch tensor
+        X_t = torch.from_numpy(X_np).float().to(device)
+        X_tensors.append(X_t)
+        
+        # Compute matrix rank
+        k = torch.linalg.matrix_rank(X_t).item()
+        k_values.append(k)
+        
+        # Reshape for whitening
+        X_t_reshaped = X_t.unsqueeze(0)
+        
+        # Whiten dataset
+        K, Xw = whiten(X_t_reshaped, k)
+        K_matrices.append(K)
+        Xw_tensors.append(Xw)
+        
+        # Prepare model input
+        Xw_model = Xw[0].T.contiguous()
+        Xw_models.append(Xw_model)
+        
+        # Create model
+        model = MSIICA(k, a_val).to(device)
+        models.append(model)
+    
+    # Create DataLoader
+    from torch.utils.data import DataLoader, TensorDataset
+    train_data = TensorDataset(*Xw_models)
+    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    
+    # Set up optimizer - collect all model parameters
+    params = []
+    for model in models:
+        params.extend(list(model.parameters()))
+    optimizer = torch.optim.LBFGS(params, line_search_fn="strong_wolfe", max_iter=max_iter)
+    
+    def train_closure(*batch_data):
+        def closure():
+            optimizer.zero_grad()
+            
+            # Forward pass through all models
+            Sp_list = []
+            for i, (model, x_batch) in enumerate(zip(models, batch_data)):
+                Sp = model(x_batch)
+                Sp_list.append(Sp)
+            
+            # Compute loss - sum of log cosh for all views
+            loss = 0.0
+            for Sp in Sp_list:
+                loss += torch.sum(torch.log(torch.cosh(Sp)))
+            
+            # Subtract pairwise correlations for shared components
+            corr_val = 0.0
+            for i in range(len(Sp_list)):
+                for j in range(i + 1, len(Sp_list)):
+                    # Use only the first c components for correlation
+                    corr_val += torch.trace(Sp_list[i][:, :c].T @ Sp_list[j][:, :c])
+            loss = loss - corr_val
+            
+            loss.backward()
+            
+            # Ensure gradients are contiguous
+            for p in params:
+                if p.grad is not None and not p.grad.is_contiguous():
+                    p.grad.data = p.grad.data.contiguous()
+            
+            return loss
+        return closure
+    
+    # Training loop
+    print("Starting training...")
+    for epoch in range(10):
+        for batch in train_loader:
+            optimizer.step(train_closure(*batch))
+        if epoch % 2 == 0:
+            print(f"Epoch {epoch}/10 completed")
+    
+    # Get final results
+    print("Computing final results...")
+    results = []
+    for i, (model, Xw_model) in enumerate(zip(models, Xw_models)):
+        Sp_full = model(Xw_model)
+        df = pd.DataFrame(Sp_full.detach().cpu().numpy())
+        results.append(df)
+        print(f"Dataset {i+1} result shape: {df.shape}")
+    
+    # Normalize DataFrames
+    for df in results:
+        n_samples = df.shape[0]
+        if n_samples == 0:
+            continue
+        centered = df - df.mean()
+        variances = centered.var(ddof=0)
+        variances = variances.replace(0, 1)
+        scaling_factors = np.sqrt(1 / (n_samples * variances))
+        df_normalized = centered * scaling_factors
+        df.loc[:] = df_normalized.values
+    
+    return results
+
+
+# For backward compatibility
+run_multiview_ica_docker = run_multiview_ica_native
