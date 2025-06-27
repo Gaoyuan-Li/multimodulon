@@ -19,6 +19,96 @@ except ImportError:
 
 
 
+def calculate_rgr(
+    S_matrices: List[pd.DataFrame],
+    k_core: int,
+    k_prev: Optional[int] = None,
+    prev_reconstruction_error: Optional[float] = None
+) -> float:
+    """
+    Calculate the Reconstruction Gain Rate (RGR).
+    
+    RGR measures the relative improvement in reconstruction quality per added component:
+    RGR(k) = (RE(k-Δk) - RE(k)) / (Δk * RE(k))
+    
+    where:
+    - RE(k) is the reconstruction error with k components
+    - Δk is the step size (default 5)
+    - Higher RGR indicates better gain from adding components
+    
+    Args:
+        S_matrices: List of source signal matrices with shape (samples, components)
+        k_core: Number of core components to evaluate
+        k_prev: Previous k value (for calculating gain)
+        prev_reconstruction_error: RE at k_prev (to avoid recalculation)
+        
+    Returns:
+        RGR score (higher is better, optimal at elbow point)
+    """
+    # Calculate reconstruction error for current k
+    re_k = calculate_reconstruction_error(S_matrices, k_core)
+    
+    if k_prev is None or prev_reconstruction_error is None:
+        # For first k, return normalized RE inverse as proxy
+        return 1.0 / (re_k + 1e-8)
+    
+    # Calculate gain rate
+    delta_k = k_core - k_prev
+    if delta_k <= 0 or re_k >= prev_reconstruction_error:
+        return 0.0  # No improvement
+    
+    rgr = (prev_reconstruction_error - re_k) / (delta_k * re_k)
+    return rgr
+
+
+def calculate_reconstruction_error(
+    S_matrices: List[pd.DataFrame],
+    k_core: int
+) -> float:
+    """
+    Calculate the reconstruction error using first k components.
+    
+    RE(k) = Σᵢ Σ_d ||X_d_i - X̂_d_i||² / (N * D)
+    
+    where X̂_d_i is reconstructed from k core components
+    """
+    if k_core <= 0:
+        return float('inf')
+    
+    D = len(S_matrices)
+    N = S_matrices[0].shape[0]
+    
+    total_error = 0.0
+    
+    # Extract first k components from each view
+    core_components = []
+    for S in S_matrices:
+        if k_core > S.shape[1]:
+            padded = np.zeros((S.shape[0], k_core))
+            padded[:, :S.shape[1]] = S.values
+            core_components.append(padded)
+        else:
+            core_components.append(S.values[:, :k_core])
+    
+    # Calculate reconstruction error
+    for d, S in enumerate(S_matrices):
+        # Use full matrix for error calculation
+        full_signal = S.values
+        core_signal = core_components[d]
+        
+        # Simple reconstruction error: difference from using only k components
+        # In practice, this measures how much signal is in non-core components
+        if k_core < S.shape[1]:
+            non_core_signal = S.values[:, k_core:]
+            error = np.sum(non_core_signal ** 2)
+        else:
+            error = 0.0
+        
+        total_error += error
+    
+    return total_error / (N * D)
+
+
 def calculate_nre_proper(
     S_matrices: List[pd.DataFrame],
     k_core: int
@@ -94,16 +184,23 @@ def run_nre_optimization(
     train_frac: float = 0.75,
     num_runs: int = 3,
     mode: str = 'gpu',
-    seed: int = 42
+    seed: int = 42,
+    metric: str = 'nre'
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
-    NRE optimization using PyTorch.
+    Optimization using NRE or RGR metric.
+    
+    Args:
+        metric: 'nre' for Normalized Reconstruction Error, 'rgr' for Reconstruction Gain Rate
     """
     
     species_list = list(species_X_matrices.keys())
     n_species = len(species_list)
     if n_species < 2:
         raise ValueError(f"Expected at least 2 species, got {n_species}")
+    
+    if metric not in ['nre', 'rgr']:
+        raise ValueError(f"Unknown metric: {metric}. Use 'nre' or 'rgr'")
     
     # Check and display device status
     import torch
@@ -112,9 +209,13 @@ def run_nre_optimization(
     else:
         print("Using CPU")
     
-    # Initialize storage for NRE results
-    mean_nre_per_k = {}
-    all_nre_per_k = {k: [] for k in k_candidates}
+    # Initialize storage for metric results
+    mean_metric_per_k = {}
+    all_metric_per_k = {k: [] for k in k_candidates}
+    
+    # For RGR, we need to track previous reconstruction errors
+    if metric == 'rgr':
+        prev_re_per_run = {run: {} for run in range(num_runs)}
     
     for run in range(num_runs):
         
@@ -154,26 +255,51 @@ def run_nre_optimization(
                 mode=mode
             )
             
-            # Calculate NRE using the test source signals (components x samples)
-            nre = calculate_nre_proper(test_sources, k)
-            all_nre_per_k[k].append(nre)
+            # Calculate metric using the test source signals (components x samples)
+            if metric == 'nre':
+                score = calculate_nre_proper(test_sources, k)
+            else:  # rgr
+                # Find previous k value for RGR calculation
+                k_idx = k_candidates.index(k)
+                if k_idx > 0:
+                    k_prev = k_candidates[k_idx - 1]
+                    prev_re = prev_re_per_run[run].get(k_prev)
+                    score = calculate_rgr(test_sources, k, k_prev, prev_re)
+                else:
+                    score = calculate_rgr(test_sources, k)
+                
+                # Store reconstruction error for next iteration
+                prev_re_per_run[run][k] = calculate_reconstruction_error(test_sources, k)
+            
+            all_metric_per_k[k].append(score)
             
             elapsed_time = time.time() - start_time
-            print(f"k={k}: {elapsed_time:.1f}s, NRE={nre:.6f}")
+            metric_name = metric.upper()
+            print(f"k={k}: {elapsed_time:.1f}s, {metric_name}={score:.6f}")
     
-    # Calculate mean NRE for each k
+    # Calculate mean metric for each k
     for k in k_candidates:
-        if all_nre_per_k[k]:
-            mean_nre_per_k[k] = np.mean(all_nre_per_k[k])
+        if all_metric_per_k[k]:
+            mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
     
     # Find optimal k
-    min_nre = min(mean_nre_per_k.values())
-    tolerance = 1e-8
-    optimal_k_candidates = [k for k, nre in mean_nre_per_k.items() 
-                           if abs(nre - min_nre) < tolerance]
-    best_k = max(optimal_k_candidates)
+    if metric == 'nre':
+        # For NRE, minimize
+        optimal_value = min(mean_metric_per_k.values())
+        tolerance = 1e-8
+        optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
+                               if abs(score - optimal_value) < tolerance]
+        best_k = max(optimal_k_candidates)  # Choose largest k if tied
+    else:  # rgr
+        # For RGR, find elbow point (maximum gain rate)
+        optimal_value = max(mean_metric_per_k.values())
+        tolerance = optimal_value * 0.1  # 10% tolerance for RGR
+        optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
+                               if score >= optimal_value - tolerance]
+        best_k = min(optimal_k_candidates)  # Choose smallest k if tied
     
-    print(f"\nOptimal k = {best_k} (NRE = {mean_nre_per_k[best_k]:.6f})")
+    metric_name = metric.upper()
+    print(f"\nOptimal k = {best_k} ({metric_name} = {mean_metric_per_k[best_k]:.6f})")
     
     # Create NRE plot
     if 'plt' in globals():
@@ -186,30 +312,37 @@ def run_nre_optimization(
         ax = None
     
     if ax is not None:
-        k_values = sorted(mean_nre_per_k.keys())
+        k_values = sorted(mean_metric_per_k.keys())
         
-        mean_values = [mean_nre_per_k[k] for k in k_values]
-        std_values = [np.std(all_nre_per_k[k]) if len(all_nre_per_k[k]) > 1 else 0 for k in k_values]
+        mean_values = [mean_metric_per_k[k] for k in k_values]
+        std_values = [np.std(all_metric_per_k[k]) if len(all_metric_per_k[k]) > 1 else 0 for k in k_values]
         
-        # Plot NRE with error bars
+        # Plot metric with error bars
+        metric_label = 'NRE Score' if metric == 'nre' else 'RGR Score'
         ax.errorbar(k_values, mean_values, yerr=std_values, 
                    marker='o', markersize=8, capsize=5, capthick=2,
-                   color='blue', label='NRE Score', linewidth=2)
+                   color='blue', label=metric_label, linewidth=2)
         
         # Highlight optimal k
         ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
                   label=f'Optimal k = {best_k}')
-        ax.scatter([best_k], [mean_nre_per_k[best_k]], color='red', s=120, zorder=5,
+        ax.scatter([best_k], [mean_metric_per_k[best_k]], color='red', s=120, zorder=5,
                   edgecolors='darkred', linewidth=2)
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
-        ax.set_ylabel('NRE Score (Lower is Better)', fontsize=12)
-        ax.set_title('Normalized Reconstruction Error (NRE) vs Number of Core Components', fontsize=14, fontweight='bold')
+        if metric == 'nre':
+            ax.set_ylabel('NRE Score (Lower is Better)', fontsize=12)
+            ax.set_title('Normalized Reconstruction Error (NRE) vs Number of Core Components', fontsize=14, fontweight='bold')
+        else:
+            ax.set_ylabel('RGR Score (Higher is Better)', fontsize=12)
+            ax.set_title('Reconstruction Gain Rate (RGR) vs Number of Core Components', fontsize=14, fontweight='bold')
+        
         ax.grid(True, alpha=0.3)
         ax.legend()
         
         # Add optimal value text
-        ax.text(0.02, 0.98, f'Optimal k = {best_k}\nNRE = {mean_nre_per_k[best_k]:.6f}', 
+        metric_name = metric.upper()
+        ax.text(0.02, 0.98, f'Optimal k = {best_k}\n{metric_name} = {mean_metric_per_k[best_k]:.6f}', 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
                verticalalignment='top')
@@ -217,4 +350,4 @@ def run_nre_optimization(
         # Adjust layout
         plt.tight_layout()
     
-    return best_k, mean_nre_per_k, all_nre_per_k, fig
+    return best_k, mean_metric_per_k, all_metric_per_k, fig
