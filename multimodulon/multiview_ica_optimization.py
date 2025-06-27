@@ -35,7 +35,7 @@ def calculate_nre_proper(
     - N_1 is the number of test samples
     
     Args:
-        S_matrices: List of source signal matrices (components x samples) for each view
+        S_matrices: List of source signal matrices with shape (samples, components)
         k_core: Number of core components to evaluate (k)
         
     Returns:
@@ -45,25 +45,26 @@ def calculate_nre_proper(
         return float('inf')
     
     D = len(S_matrices)  # Number of views
-    N_1 = S_matrices[0].shape[1]  # Number of samples (columns)
+    N_1 = S_matrices[0].shape[0]  # Number of samples (rows)
     
     # Extract first k_core components from each view (z_{d,0}^(k))
+    # S_matrices have shape (samples, components), so we need columns
     z_d_0_k = []
     for S in S_matrices:
-        if k_core > S.shape[0]:  # Check number of components (rows)
+        if k_core > S.shape[1]:  # Check number of components (columns)
             # Pad with zeros if k_core exceeds available components
-            padded = np.zeros((k_core, S.shape[1]))
-            padded[:S.shape[0], :] = S.values
+            padded = np.zeros((S.shape[0], k_core))
+            padded[:, :S.shape[1]] = S.values
             z_d_0_k.append(padded)
         else:
-            z_d_0_k.append(S.values[:k_core, :])  # First k components
+            z_d_0_k.append(S.values[:, :k_core])  # First k components (columns)
     
     # Calculate NRE for each sample, then average
     nre_per_sample = []
     
     for i in range(N_1):
         # Extract components for sample i from all views: z_{d,0}^{(k)}_i
-        z_i_views = [z_d[:, i] for z_d in z_d_0_k]  # List of k_core arrays
+        z_i_views = [z_d[i, :] for z_d in z_d_0_k]  # List of k_core arrays
         
         # Calculate z̄_0^{(k)}_i = (1/D) * Σ_{ℓ=1}^D z_{ℓ,0}^{(k)}_i
         z_bar_i = np.mean(z_i_views, axis=0)  # Shape: (k_core,)
@@ -118,7 +119,7 @@ def run_nre_optimization(
     for run in range(num_runs):
         
         # Split data consistently across views
-        n_samples = species_X_matrices[species_list[0]].shape[1]  # samples are columns
+        n_samples = species_X_matrices[species_list[0]].shape[0]  # samples are rows
         indices = np.arange(n_samples)
         train_idx, test_idx = train_test_split(
             indices, train_size=train_frac, random_state=seed + run
@@ -128,8 +129,8 @@ def run_nre_optimization(
         X_test_views = []
         for species in species_list:
             X = species_X_matrices[species]
-            X_train_views.append(X.iloc[:, train_idx])  # Select columns (samples)
-            X_test_views.append(X.iloc[:, test_idx])    # Select columns (samples)
+            X_train_views.append(X.iloc[train_idx, :])  # Select rows (samples)
+            X_test_views.append(X.iloc[test_idx, :])    # Select rows (samples)
         
         for k in k_candidates:
             start_time = time.time()
