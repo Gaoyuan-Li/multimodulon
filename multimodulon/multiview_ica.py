@@ -44,15 +44,15 @@ class MSIICA(nn.Module):
 
 def whiten(X, rank):
     """
-    GPU-based whitening function for ICA preprocessing.
+    GPU-based whitening function that keeps the original input and output shapes.
 
     Args:
-        X (torch.Tensor): Input tensor with shape (1, samples, genes).
+        X (torch.Tensor): Input tensor with shape (1, features, samples).
         rank (int): Number of components to keep.
 
     Returns:
         tuple: (whitening_matrix, whitened_X)
-            - whitening_matrix is a tensor of shape (1, rank, samples)  
+            - whitening_matrix is a tensor of shape (1, rank, features)
             - whitened_X is a tensor of shape (1, rank, samples)
     """
     # Center the data along the sample dimension.
@@ -86,6 +86,7 @@ def whiten(X, rank):
 def find_ordering(S_list):
     """
     Find ordering of sources across views.
+    Taken from https://github.com/hugorichard/multiviewica
     
     Args:
         S_list: List of source matrices
@@ -107,7 +108,6 @@ def find_ordering(S_list):
         u, orders = scipy.optimize.linear_sum_assignment(-abs(M.T))
         order[i + 1] = orders
         vals = abs(M[orders, u])
-
     return u, orders, vals
 
 
@@ -119,153 +119,104 @@ def run_multi_view_ICA_on_datasets(
     mode='gpu'
 ):
     """
-    Multi-view ICA implementation for any number of datasets.
+    Run multi-view ICA on multiple RNA-seq datasets.
     
     Args:
         datasets: List of DataFrames, each representing expression data for one view/species
+                 Shape: (genes, samples)
         a_values: List of integers, number of components for each view/species
         c: Number of core components
-        batch_size: Batch size for training
+        batch_size: Batch size for training (if None, uses 5977 as default)
         max_iter: Maximum iterations for optimizer
         seed: Random seed
         mode: 'gpu' or 'cpu'
         
     Returns:
-        List of DataFrames containing the ICA results for each view
+        List of DataFrames containing the source signals (samples x components) for each view
     """
-    # Validate inputs
-    n_views = len(datasets)
-    if len(a_values) != n_views:
-        raise ValueError(f"Number of a_values ({len(a_values)}) must match number of datasets ({n_views})")
-    
-    # Set random seeds for reproducibility
+    # reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
-    
-    # Set device
-    if mode == 'gpu' and torch.cuda.is_available():
-        device = torch.device("cuda:0")
-    else:
-        device = torch.device("cpu")
-    
-    # Use full batch if not specified
+
+    # device
+    device = torch.device("cuda:0" if mode == "gpu" and torch.cuda.is_available() else "cpu")
+
+    # to torch, transpose to (features, samples)
+    X_np = [d.values.T.copy() for d in datasets]
+    X_t = [torch.from_numpy(x).float().to(device) for x in X_np]
+
+    # ranks
+    ks = [torch.linalg.matrix_rank(x).item() for x in X_t]
+
+    # add batch dim for whitening
+    X_t = [x.unsqueeze(0) for x in X_t]
+    K, Xw = zip(*(whiten(x, k) for x, k in zip(X_t, ks)))
+
+    # (samples, rank)
+    X_model = [xw[0].T.contiguous() for xw in Xw]
+
+    # models
+    models = [MSIICA(k, a).to(device) for k, a in zip(ks, a_values)]
+
+    # Use default batch size if not specified
     if batch_size is None:
-        batch_size = len(datasets[0].index)
-    
-    # Convert DataFrames to numpy arrays and transpose to get shape (features, samples)
-    X_tensors = []
-    k_values = []
-    K_matrices = []
-    Xw_tensors = []
-    Xw_models = []
-    models = []
-    
-    for i, (dataset, a_val) in enumerate(zip(datasets, a_values)):
-        # Convert to numpy and transpose to (samples, genes) for ICA processing
-        X_np = dataset.copy().values.T
-        
-        # Convert to torch tensor
-        X_t = torch.from_numpy(X_np).float().to(device)
-        X_tensors.append(X_t)
-        
-        # Compute matrix rank
-        k = torch.linalg.matrix_rank(X_t).item()
-        k_values.append(k)
-        
-        # Reshape for whitening
-        X_t_reshaped = X_t.unsqueeze(0)
-        
-        # Whiten dataset
-        K, Xw = whiten(X_t_reshaped, k)
-        K_matrices.append(K)
-        Xw_tensors.append(Xw)
-        
-        # Prepare model input: (samples, rank) as in reference  
-        Xw_model = Xw[0].T.contiguous()  # Shape: (samples, rank)
-        Xw_models.append(Xw_model)
-        
-        # Create model
-        model = MSIICA(k, a_val).to(device)
-        models.append(model)
-    
-    # Create DataLoader
-    train_data = TensorDataset(*Xw_models)
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    
-    # Set up optimizer - collect all model parameters
-    params = []
-    for model in models:
-        params.extend(list(model.parameters()))
-    optimizer = torch.optim.LBFGS(params, line_search_fn="strong_wolfe", max_iter=max_iter)
-    
-    def train_closure(*batch_data):
+        batch_size = 5977
+
+    # loader
+    train_loader = DataLoader(TensorDataset(*X_model),
+                              batch_size=batch_size, shuffle=True)
+
+    # optimiser
+    params = [p for m in models for p in m.parameters()]
+    optimizer = torch.optim.LBFGS(params, line_search_fn="strong_wolfe",
+                                  max_iter=max_iter)
+
+    def train_closure(*inputs):
         def closure():
             optimizer.zero_grad()
-            
-            # Forward pass through all models
-            Sp_list = []
-            for i, (model, x_batch) in enumerate(zip(models, batch_data)):
-                Sp = model(x_batch)
-                Sp_list.append(Sp)
-            
-            # Compute loss - sum of log cosh for all views
-            loss = 0.0
-            for Sp in Sp_list:
-                loss += torch.sum(torch.log(torch.cosh(Sp)))
-            
-            # Subtract pairwise correlations for core components
-            corr_val = 0.0
-            for i in range(len(Sp_list)):
-                for j in range(i + 1, len(Sp_list)):
-                    # Use only the first c components for correlation
-                    corr_val += torch.trace(Sp_list[i][:, :c].T @ Sp_list[j][:, :c])
-            loss = loss - corr_val
-            
+            Sp = [m(x) for m, x in zip(models, inputs)]
+
+            # ICA contrast
+            loss = sum(torch.log(torch.cosh(s)).sum() for s in Sp)
+
+            # anti-correlate shared part
+            for i in range(len(Sp)):
+                for j in range(i + 1, len(Sp)):
+                    loss -= torch.trace(Sp[i][:, :c].T @ Sp[j][:, :c])
+
             loss.backward()
-            
-            # Ensure gradients are contiguous
+
+            # ensure contiguous grads for LBFGS
             for p in params:
                 if p.grad is not None and not p.grad.is_contiguous():
-                    p.grad.data = p.grad.data.contiguous()
-            
+                    p.grad = p.grad.contiguous()
+
             return loss
         return closure
-    
-    # Training loop
-    for epoch in range(10):
+
+    # training
+    for _ in range(10):
         for batch in train_loader:
             optimizer.step(train_closure(*batch))
-    
-    # Get final results  
-    results = []
-    source_signals = []  # For NRE calculation
-    
-    for i, (model, Xw_model) in enumerate(zip(models, Xw_models)):
-        Sp_full = model(Xw_model)  # Shape: (samples, components)
+
+    # final sources
+    Sp_full = [m(x) for m, x in zip(models, X_model)]
+
+    # (optional) reorder if you have a find_ordering()
+    _ = find_ordering([s.detach().cpu().numpy().T for s in Sp_full])
+
+    # to DataFrames
+    dfs = [pd.DataFrame(s.detach().cpu().numpy()) for s in Sp_full]
+
+    # variance-normalise columns
+    for df in dfs:
+        n = df.shape[0]
+        centred = df - df.mean()
+        var = centred.var(ddof=0).replace(0, 1)
+        scale = np.sqrt(1.0 / (n * var))
+        df.loc[:] = centred * scale
         
-        # Store source signals for NRE: (components, samples)
-        source_df = pd.DataFrame(Sp_full.detach().cpu().numpy().T)  
-        source_signals.append(source_df)
-        
-        # Store mixing matrices for final result: (genes, components)
-        # Note: This is actually the source coefficient matrix, not the true mixing matrix
-        # But it's what we return as the "M" matrix for downstream analysis
-        mixing_df = pd.DataFrame(Sp_full.detach().cpu().numpy())
-        results.append(mixing_df)
-    
-    # Normalize mixing matrices (results)
-    for df in results:
-        n_samples = df.shape[0]
-        if n_samples == 0:
-            continue
-        centered = df - df.mean()
-        variances = centered.var(ddof=0)
-        variances = variances.replace(0, 1)
-        scaling_factors = np.sqrt(1 / (n_samples * variances))
-        df_normalized = centered * scaling_factors
-        df.loc[:] = df_normalized.values
-    
-    return results, source_signals
+    return dfs
 
 
 def run_multiview_ica_native(
@@ -280,12 +231,14 @@ def run_multiview_ica_native(
     
     Args:
         species_X_matrices: Dictionary mapping species names to aligned X matrices
+                           Each X matrix has shape (genes, samples)
         a_values: Dictionary mapping species names to number of components
         c: Number of core components
         mode: 'gpu' or 'cpu' mode
+        **kwargs: Additional arguments passed to run_multi_view_ICA_on_datasets
         
     Returns:
-        Dictionary mapping species names to M matrices (ICA results)
+        Dictionary mapping species names to M matrices (samples, components)
     """
     
     # Validate inputs
@@ -301,7 +254,8 @@ def run_multiview_ica_native(
     X_matrices = [species_X_matrices[sp] for sp in species_list]
     a_list = [a_values[sp] for sp in species_list]
     
-    results, _ = run_multi_view_ICA_on_datasets(
+    # Run multi-view ICA
+    results = run_multi_view_ICA_on_datasets(
         X_matrices,
         a_list,
         c,
