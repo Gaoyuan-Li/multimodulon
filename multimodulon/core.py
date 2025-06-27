@@ -11,10 +11,13 @@ import pickle
 import subprocess
 import tempfile
 from collections import defaultdict
+from typing import Dict, Optional, Tuple
 
 from .utils.gff_parser import parse_gff
 from .utils.bbh import BBHAnalyzer
 from .utils.fasta_utils import extract_protein_sequences
+from .multiview_ica import run_multiview_ica_docker, run_multiview_ica_native
+from .multiview_ica_optimization import run_nre_optimization_docker, run_nre_optimization_native
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,7 @@ class SpeciesData:
         self._log_tpm = None
         self._log_tpm_norm = None
         self._X = None
+        self._M = None
         self._sample_sheet = None
         self._gene_table = None
     
@@ -61,6 +65,18 @@ class SpeciesData:
         if self._X is None:
             return self.log_tpm_norm
         return self._X
+    
+    @property
+    def M(self) -> pd.DataFrame:
+        """Get ICA mixing matrix (M matrix)."""
+        if self._M is None:
+            raise AttributeError(f"M matrix not yet computed for {self.species_name}. Run multiview ICA first.")
+        return self._M
+    
+    @M.setter
+    def M(self, value: pd.DataFrame):
+        """Set ICA mixing matrix."""
+        self._M = value
     
     @property
     def sample_sheet(self) -> pd.DataFrame:
@@ -1103,11 +1119,228 @@ class MultiModulon:
                 print(f"    - X matrix shape (alias for log_tpm_norm): {species_data.X.shape}")
             except Exception as e:
                 print(f"    - Error accessing data: {str(e)}")
-            
-        if self._combined_gene_db is not None:
-            print(f"\nGene alignment completed:")
-            print(f"  - Total gene groups: {len(self._combined_gene_db)}")
-            print(f"  - Aligned expression matrices created for all strains")
+    
+    def run_multiview_ica(self, **kwargs):
+        """
+        Run multi-view ICA on aligned expression matrices.
+        
+        Parameters
+        ----------
+        **kwargs : dict
+            Arguments for multi-view ICA:
+            - a1, a2, ..., a6 : int
+                Number of independent components for each species/strain
+            - c : int
+                Number of shared sources across all species
+            - mode : str, optional
+                'gpu' or 'cpu' mode (default: 'gpu')
+            - use_docker : bool, optional
+                Whether to use Docker for execution (default: True)
+            - docker_image : str, optional
+                Docker image to use (default: 'pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime')
+        
+        Returns
+        -------
+        None
+            Updates each species' M matrix in place
+        
+        Examples
+        --------
+        >>> multiModulon.run_multiview_ica(a1=50, a2=50, a3=50, a4=50, a5=50, a6=50, c=30)
+        """
+        # Check if X matrices have been generated
+        species_list = list(self._species_data.keys())
+        if len(species_list) != 6:
+            raise ValueError(f"Multi-view ICA requires exactly 6 species/strains, found {len(species_list)}")
+        
+        # Check if all species have X matrices
+        for species in species_list:
+            if self._species_data[species]._X is None:
+                raise ValueError(
+                    f"X matrix not found for {species}. "
+                    "Please run generate_X() first to create aligned expression matrices."
+                )
+        
+        # Extract a_values and c from kwargs
+        a_values = {}
+        c = kwargs.get('c')
+        if c is None:
+            raise ValueError("Parameter 'c' (number of shared sources) is required")
+        
+        # Extract a values for each species
+        for i, species in enumerate(species_list, 1):
+            a_key = f'a{i}'
+            if a_key not in kwargs:
+                raise ValueError(f"Parameter '{a_key}' is required for species {species}")
+            a_values[species] = kwargs[a_key]
+        
+        # Get other parameters
+        mode = kwargs.get('mode', 'gpu')
+        use_docker = kwargs.get('use_docker', True)
+        docker_image = kwargs.get('docker_image', 'pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime')
+        
+        # Prepare X matrices dictionary
+        species_X_matrices = {}
+        for species in species_list:
+            species_X_matrices[species] = self._species_data[species].X
+        
+        # Run multi-view ICA
+        if use_docker:
+            print(f"\nUsing Docker mode with image: {docker_image}")
+            results = run_multiview_ica_docker(
+                species_X_matrices=species_X_matrices,
+                a_values=a_values,
+                c=c,
+                mode=mode,
+                docker_image=docker_image
+            )
+        else:
+            print(f"\nUsing native mode (requires PyTorch installation)")
+            results = run_multiview_ica_native(
+                species_X_matrices=species_X_matrices,
+                a_values=a_values,
+                c=c,
+                mode=mode
+            )
+        
+        # Save M matrices to each species
+        print("\nSaving M matrices to species objects...")
+        for species, M_matrix in results.items():
+            self._species_data[species].M = M_matrix
+            print(f"✓ Saved M matrix for {species}: {M_matrix.shape}")
+        
+        print("\nMulti-view ICA completed successfully!")
+    
+    def optimize_number_of_core_components(
+        self,
+        max_k: Optional[int] = None,
+        step: int = 5,
+        max_a_per_view: Optional[int] = None,
+        train_frac: float = 0.75,
+        num_runs: int = 3,
+        mode: str = 'gpu',
+        use_docker: bool = True,
+        docker_image: str = 'pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime',
+        seed: int = 42,
+        save_plot: Optional[str] = None
+    ) -> Tuple[int, Dict[int, float]]:
+        """
+        Optimize the number of shared components using NRE (Noise Reduction Error).
+        
+        This method uses cross-validation to find the optimal number of shared
+        components (k) by minimizing the NRE score.
+        
+        Parameters
+        ----------
+        max_k : int, optional
+            Maximum k to test. If None, uses the maximum dimension from generate_X
+        step : int, default=5
+            Step size for k candidates (tests k = step, 2*step, 3*step, ...)
+        max_a_per_view : int, optional
+            Maximum components per view. If None, uses max_k
+        train_frac : float, default=0.75
+            Fraction of data to use for training
+        num_runs : int, default=3
+            Number of cross-validation runs
+        mode : str, default='gpu'
+            'gpu' or 'cpu' mode
+        use_docker : bool, default=True
+            Whether to use Docker for execution
+        docker_image : str, optional
+            Docker image to use
+        seed : int, default=42
+            Random seed for reproducibility
+        save_plot : str, optional
+            Path to save the NRE vs k plot. If None, displays the plot
+        
+        Returns
+        -------
+        best_k : int
+            Optimal number of shared components
+        nre_scores : dict
+            Dictionary mapping k values to mean NRE scores
+        
+        Examples
+        --------
+        >>> best_k, nre_scores = multiModulon.optimize_number_of_core_components()
+        >>> print(f"Optimal number of shared components: {best_k}")
+        """
+        # Check prerequisites
+        species_list = list(self._species_data.keys())
+        if len(species_list) != 6:
+            raise ValueError(
+                f"NRE optimization requires exactly 6 species/strains, found {len(species_list)}"
+            )
+        
+        # Check if all species have X matrices
+        for species in species_list:
+            if self._species_data[species]._X is None:
+                raise ValueError(
+                    f"X matrix not found for {species}. "
+                    "Please run generate_X() first to create aligned expression matrices."
+                )
+        
+        # Determine max_k if not provided
+        if max_k is None:
+            # Get dimensions of X matrices
+            X_dims = []
+            for species in species_list:
+                X = self._species_data[species].X
+                X_dims.append(min(X.shape))  # min of genes and samples
+            max_k = min(X_dims)
+            print(f"Auto-determined max_k = {max_k} based on data dimensions")
+        
+        # Generate k candidates
+        k_candidates = list(range(step, min(max_k + 1, 100), step))
+        if not k_candidates:
+            raise ValueError(f"No valid k candidates with step={step} and max_k={max_k}")
+        
+        # Set max_a_per_view if not provided
+        if max_a_per_view is None:
+            max_a_per_view = max_k
+        
+        # Prepare X matrices
+        species_X_matrices = {}
+        for species in species_list:
+            species_X_matrices[species] = self._species_data[species].X
+        
+        # Run optimization
+        if use_docker:
+            print(f"\nUsing Docker mode with image: {docker_image}")
+            best_k, nre_scores, W_matrices, K_matrices, fig = run_nre_optimization_docker(
+                species_X_matrices=species_X_matrices,
+                k_candidates=k_candidates,
+                max_a_per_view=max_a_per_view,
+                train_frac=train_frac,
+                num_runs=num_runs,
+                mode=mode,
+                docker_image=docker_image,
+                seed=seed
+            )
+        else:
+            print(f"\nUsing native mode (requires PyTorch installation)")
+            best_k, nre_scores, W_matrices, K_matrices, fig = run_nre_optimization_native(
+                species_X_matrices=species_X_matrices,
+                k_candidates=k_candidates,
+                max_a_per_view=max_a_per_view,
+                train_frac=train_frac,
+                num_runs=num_runs,
+                mode=mode,
+                seed=seed
+            )
+        
+        # Save or display plot
+        if save_plot:
+            fig.savefig(save_plot, dpi=300, bbox_inches='tight')
+            print(f"\nPlot saved to: {save_plot}")
+        else:
+            import matplotlib.pyplot as plt
+            plt.show()
+        
+        # Store the optimal k for later use
+        self._optimal_k = best_k
+        
+        return best_k, nre_scores
             
         if self._bbh is not None:
             print(f"\nBBH analysis completed:")
