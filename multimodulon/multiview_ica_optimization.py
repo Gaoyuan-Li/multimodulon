@@ -14,7 +14,11 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    print("Warning: matplotlib not available for plotting")
 
 
 def create_modified_multiview_ica_script() -> str:
@@ -639,7 +643,14 @@ print("\\nOptimization completed!")
     print(f"\nOptimal k = {best_k} (NRE = {mean_nre_per_k[best_k]:.6f})")
     
     # Create plot
-    fig, ax = plt.subplots(figsize=(10, 6))
+    if 'plt' in globals():
+        fig, ax = plt.subplots(figsize=(10, 6))
+    else:
+        # Create a dummy figure object if matplotlib is not available
+        class DummyFig:
+            def savefig(self, *args, **kwargs): pass
+        fig = DummyFig()
+        ax = None
     
     # Plot mean NRE with error bars
     k_values = sorted(mean_nre_per_k.keys())
@@ -683,9 +694,8 @@ def run_nre_optimization_native(
     """
     Native implementation of NRE optimization using PyTorch.
     """
-    # Import required functions
-    sys.path.append(str(Path(__file__).parent.parent.parent / "multimodulon_dev"))
-    from multiview_ica import run_multi_view_ICA_on_6_datasets
+    # Import required functions - use the local implementation
+    # Note: We avoid importing from the original multiview_ica due to syntax issues
     
     print("\n" + "="*60)
     print("NRE OPTIMIZATION FOR SHARED COMPONENTS (Native)")
@@ -732,9 +742,9 @@ def run_nre_optimization_native(
             
             # Run multi-view ICA with current k
             # Import the generalized function
-            from ..multiview_ica import run_multi_view_ICA_on_datasets_local
+            from .multiview_ica import run_multi_view_ICA_on_datasets
             
-            results = run_multi_view_ICA_on_datasets_local(
+            results = run_multi_view_ICA_on_datasets(
                 X_train_views,
                 [max_a_per_view] * n_species,  # Use same a for all views
                 k,  # c = k
@@ -769,24 +779,32 @@ def run_nre_optimization_native(
     print(f"\nOptimal k = {best_k} (NRE = {mean_nre_per_k[best_k]:.6f})")
     
     # Create plot
-    fig, ax = plt.subplots(figsize=(10, 6))
+    if 'plt' in globals():
+        fig, ax = plt.subplots(figsize=(10, 6))
+    else:
+        # Create a dummy figure object if matplotlib is not available
+        class DummyFig:
+            def savefig(self, *args, **kwargs): pass
+        fig = DummyFig()
+        ax = None
     
-    k_values = sorted(mean_nre_per_k.keys())
-    mean_values = [mean_nre_per_k[k] for k in k_values]
-    std_values = [np.std(all_nre_per_k[k]) if len(all_nre_per_k[k]) > 1 else 0 
-                  for k in k_values]
-    
-    ax.errorbar(k_values, mean_values, yerr=std_values, 
-                marker='o', markersize=8, capsize=5, capthick=2)
-    
-    ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, 
-               label=f'Optimal k = {best_k}')
-    ax.scatter([best_k], [mean_nre_per_k[best_k]], color='red', s=100, zorder=5)
-    
-    ax.set_xlabel('Number of Shared Components (k)', fontsize=12)
-    ax.set_ylabel('Mean NRE Score', fontsize=12)
-    ax.set_title('NRE vs Number of Shared Components', fontsize=14)
-    ax.grid(True, alpha=0.3)
-    ax.legend()
+    if ax is not None:
+        k_values = sorted(mean_nre_per_k.keys())
+        mean_values = [mean_nre_per_k[k] for k in k_values]
+        std_values = [np.std(all_nre_per_k[k]) if len(all_nre_per_k[k]) > 1 else 0 
+                      for k in k_values]
+        
+        ax.errorbar(k_values, mean_values, yerr=std_values, 
+                    marker='o', markersize=8, capsize=5, capthick=2)
+        
+        ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, 
+                   label=f'Optimal k = {best_k}')
+        ax.scatter([best_k], [mean_nre_per_k[best_k]], color='red', s=100, zorder=5)
+        
+        ax.set_xlabel('Number of Shared Components (k)', fontsize=12)
+        ax.set_ylabel('Mean NRE Score', fontsize=12)
+        ax.set_title('NRE vs Number of Shared Components', fontsize=14)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
     
     return best_k, mean_nre_per_k, W_matrices_per_k, K_matrices_per_k, fig
