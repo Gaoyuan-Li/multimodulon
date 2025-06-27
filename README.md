@@ -9,12 +9,16 @@ A Python package for analyzing multi-species/multi-strain/multi-modality profile
 - Generate Bidirectional Best Hits (BBH) for ortholog detection
 - Align genes across species using Union-Find algorithm
 - Create unified expression matrices with consistent gene indexing
+- **Multi-view ICA analysis with GPU acceleration using PyTorch**
+- **Automatic optimization of shared components using NRE (Noise Reduction Error)**
 - Built-in data validation and sanity checks
 
 ## Requirements
 
 - Python >= 3.10
 - NCBI BLAST+ tools (required for BBH generation)
+- **PyTorch 2.6.0+ with CUDA support (required for multi-view ICA)**
+- **geotorch 0.3.0+ (required for orthogonal constraints in ICA)**
 
 ## Installation
 
@@ -23,6 +27,16 @@ A Python package for analyzing multi-species/multi-strain/multi-modality profile
 ```bash
 # Conda
 conda install -c bioconda blast
+```
+
+### Install PyTorch (Required for multi-view ICA)
+
+```bash
+# Install PyTorch with CUDA support
+pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+
+# Install geotorch for orthogonal constraints
+pip install geotorch==0.3.0
 ```
 
 ### Install from GitHub
@@ -77,10 +91,55 @@ combined_gene_db = multiModulon.align_genes(
     bbh_threshold=90  # optional, minimum PID threshold
 )
 
+# Generate aligned expression matrices for multi-view ICA
+multiModulon.generate_X()
+
+# Print matrix dimensions and get recommendation for max components
+# Shows aligned X matrices for all species with non-zero gene groups
+# Provides maximum dimension recommendation for ICA
+
+# STEP 1: Optimize the number of shared components using NRE
+# This automatically finds the optimal number of shared components
+best_k, nre_scores = multiModulon.optimize_number_of_core_components(
+    step=5,           # Test k = 5, 10, 15, 20, ...
+    num_runs=3,       # Number of cross-validation runs
+    train_frac=0.75,  # 75% train, 25% test split
+    save_plot='nre_optimization.png'  # Save optimization plot
+)
+
+print(f"Optimal number of shared components: {best_k}")
+
+# STEP 2: Run multi-view ICA with optimized parameters
+# Multiple ways to specify component numbers:
+
+# Option 1: Traditional way (for exactly 6 species)
+if len(multiModulon._species_data) == 6:
+    multiModulon.run_multiview_ica(
+        a1=50, a2=50, a3=50, a4=50, a5=50, a6=50, 
+        c=best_k  # Use optimized number of shared components
+    )
+
+# Option 2: List format (for any number of species)
+multiModulon.run_multiview_ica(
+    a=[50, 50, 50],  # Components per species (adjust list length to match your species count)
+    c=best_k         # Use optimized number of shared components
+)
+
+# Option 3: Same number of components for all species
+multiModulon.run_multiview_ica(
+    a=50,      # Same number of components for all species
+    c=best_k   # Use optimized number of shared components
+)
+
+# Access the ICA results (M matrices) for each species
+for species_name in multiModulon._species_data.keys():
+    M_matrix = multiModulon[species_name].M  # ICA mixing matrix
+    print(f"{species_name} M matrix: {M_matrix.shape}")
+
 # Access aligned expression matrices (same row indexes across all strains)
-for strain in multiModulon.species:
-    aligned_X = multiModulon[strain].X  # Aligned expression matrix
-    print(f"{strain}: {aligned_X.shape}")
+for species_name in multiModulon._species_data.keys():
+    aligned_X = multiModulon[species_name].X  # Aligned expression matrix
+    print(f"{species_name} X matrix: {aligned_X.shape}")
 ```
 
 ## Data Structure
@@ -143,6 +202,9 @@ Main class for multi-species/strain analysis.
 - `__getitem__(species_name)`: Get data for a specific strain
 - `generate_BBH(output_path, threads=1)`: Generate BBH files for all strain pairs (threads: number of CPU threads for BLAST)
 - `align_genes(input_bbh_dir, output_dir, reference_order, bbh_threshold)`: Align genes across strains and create unified matrices
+- **`generate_X()`**: Generate aligned expression matrices for multi-view ICA
+- **`optimize_number_of_core_components(step=5, num_runs=3, train_frac=0.75, save_plot=None)`**: Optimize number of shared components using NRE
+- **`run_multiview_ica(**kwargs)`**: Run multi-view ICA on aligned expression matrices using PyTorch
 - `get_orthologs(species1, species2)`: Get ortholog pairs (after BBH)
 - `save_bbh(output_path)`: Save BBH results
 - `load_bbh(input_path)`: Load BBH results
@@ -155,9 +217,49 @@ Container for single strain data.
 **Properties:**
 - `log_tpm`: Log TPM expression matrix (from log_tpm.csv)
 - `log_tpm_norm`: Normalized log TPM expression matrix (from log_tpm_norm.csv)
-- `X`: Normalized log TPM expression matrix (alias for log_tpm_norm)
+- `X`: Aligned expression matrix (used for multi-view ICA)
+- **`M`: ICA mixing matrix (available after running multi-view ICA)**
 - `sample_sheet`: Sample metadata
 - `gene_table`: Gene annotations (parsed from GFF)
+
+## Multi-view ICA Analysis
+
+MultiModulon now supports GPU-accelerated multi-view Independent Component Analysis (ICA) for discovering shared and specific patterns across multiple species/strains.
+
+### Key Features
+
+- **Automatic Component Optimization**: Uses NRE (Noise Reduction Error) to automatically determine the optimal number of shared components
+- **GPU Acceleration**: Leverages PyTorch with CUDA support for fast computation
+- **Flexible Input**: Works with any number of species/strains (≥2)
+- **Orthogonal Constraints**: Uses geotorch for maintaining orthogonality in ICA unmixing matrices
+
+### Workflow
+
+1. **Prepare Data**: Run `generate_X()` to create aligned expression matrices
+2. **Optimize Parameters**: Use `optimize_number_of_core_components()` to find optimal shared components
+3. **Run ICA**: Execute `run_multiview_ica()` with optimized parameters
+4. **Access Results**: Get ICA mixing matrices from each species' `.M` property
+
+### Advanced Parameters
+
+**Component Optimization:**
+- `step`: Step size for testing k values (default: 5)
+- `num_runs`: Number of cross-validation runs for robustness (default: 3)
+- `train_frac`: Fraction of data for training (default: 0.75)
+- `mode`: 'gpu' or 'cpu' computation mode (default: 'gpu')
+
+**Multi-view ICA:**
+- `a`: Number of components per species (int, list, or individual a1, a2, ...)
+- `c`: Number of shared components (use optimized value)
+- `mode`: 'gpu' or 'cpu' computation mode (default: 'gpu')
+
+### Example Output
+
+After running the complete workflow, you'll have:
+- Aligned expression matrices (`species.X`) with consistent gene indexing
+- ICA mixing matrices (`species.M`) revealing modular patterns
+- Optimization plot showing NRE vs number of shared components
+- Recommendations for maximum dimensions based on data structure
 
 ## License
 
