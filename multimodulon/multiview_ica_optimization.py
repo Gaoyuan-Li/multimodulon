@@ -16,7 +16,85 @@ try:
 except ImportError:
     print("Warning: matplotlib not available for plotting")
 
+try:
+    from sklearn.mixture import GaussianMixture
+except ImportError:
+    print("Warning: sklearn not available for GMM analysis")
 
+
+
+
+def calculate_gmm_effect_size(weight_vector: np.ndarray) -> float:
+    """
+    Calculate effect size from 2-component GMM fit to weight vector.
+    
+    Effect Size = |μ₁ - μ₂| / max(σ₁, σ₂)
+    
+    Args:
+        weight_vector: 1D array of weights for a single component
+        
+    Returns:
+        Effect size measuring distinction between central and tail groups
+    """
+    if len(weight_vector) < 4:  # Need minimum samples for GMM
+        return 0.0
+    
+    # Reshape for sklearn
+    X = weight_vector.reshape(-1, 1)
+    
+    try:
+        # Fit 2-component GMM
+        gmm = GaussianMixture(n_components=2, random_state=42, max_iter=100)
+        gmm.fit(X)
+        
+        # Extract means and standard deviations
+        means = gmm.means_.flatten()
+        covs = gmm.covariances_.flatten()
+        stds = np.sqrt(covs)
+        
+        # Calculate effect size
+        mu1, mu2 = means[0], means[1]
+        sigma1, sigma2 = stds[0], stds[1]
+        
+        effect_size = abs(mu1 - mu2) / max(sigma1, sigma2)
+        
+        return effect_size
+        
+    except Exception:
+        # GMM failed to converge or other issues
+        return 0.0
+
+
+def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame]) -> List[float]:
+    """
+    Calculate average effect sizes across species for each component.
+    
+    Args:
+        M_matrices: Dict mapping species names to M matrices (samples, components)
+        
+    Returns:
+        List of average effect sizes, one per component
+    """
+    species_list = list(M_matrices.keys())
+    n_components = M_matrices[species_list[0]].shape[1]
+    
+    avg_effect_sizes = []
+    
+    for comp_idx in range(n_components):
+        component_effect_sizes = []
+        
+        # Calculate effect size for this component across all species
+        for species in species_list:
+            M_matrix = M_matrices[species]
+            weight_vector = M_matrix.iloc[:, comp_idx].values
+            effect_size = calculate_gmm_effect_size(weight_vector)
+            component_effect_sizes.append(effect_size)
+        
+        # Average across species
+        avg_effect_size = np.mean(component_effect_sizes)
+        avg_effect_sizes.append(avg_effect_size)
+    
+    return avg_effect_sizes
 
 
 def calculate_nre_proper(
@@ -94,16 +172,23 @@ def run_nre_optimization(
     train_frac: float = 0.75,
     num_runs: int = 3,
     mode: str = 'gpu',
-    seed: int = 42
+    seed: int = 42,
+    metric: str = 'nre'
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
-    NRE optimization using PyTorch.
+    Optimization using NRE or GMM metric.
+    
+    Args:
+        metric: 'nre' for Normalized Reconstruction Error, 'gmm' for GMM effect size
     """
     
     species_list = list(species_X_matrices.keys())
     n_species = len(species_list)
     if n_species < 2:
         raise ValueError(f"Expected at least 2 species, got {n_species}")
+    
+    if metric not in ['nre', 'gmm']:
+        raise ValueError(f"Unknown metric: {metric}. Use 'nre' or 'gmm'")
     
     # Check and display device status
     import torch
@@ -112,9 +197,9 @@ def run_nre_optimization(
     else:
         print("Using CPU")
     
-    # Initialize storage for NRE results
-    mean_nre_per_k = {}
-    all_nre_per_k = {k: [] for k in k_candidates}
+    # Initialize storage for metric results
+    mean_metric_per_k = {}
+    all_metric_per_k = {k: [] for k in k_candidates}
     
     for run in range(num_runs):
         
@@ -138,42 +223,77 @@ def run_nre_optimization(
             # Import the generalized function
             from .multiview_ica import run_multi_view_ICA_on_datasets
             
-            # Run multi-view ICA with current k (training)
-            train_sources = run_multi_view_ICA_on_datasets(
-                X_train_views,
-                [max_a_per_view] * n_species,
-                k,
-                mode=mode
-            )
+            if metric == 'nre':
+                # Run multi-view ICA with current k (training)
+                train_sources = run_multi_view_ICA_on_datasets(
+                    X_train_views,
+                    [max_a_per_view] * n_species,
+                    k,
+                    mode=mode
+                )
+                
+                # Train another model on test data to get comparable results
+                test_sources = run_multi_view_ICA_on_datasets(
+                    X_test_views,
+                    [max_a_per_view] * n_species,
+                    k,
+                    mode=mode
+                )
+                
+                # Calculate NRE using the test source signals
+                score = calculate_nre_proper(test_sources, k)
+                
+            else:  # gmm
+                # For GMM, we need the M matrices (unmixing matrices)
+                # Run multi-view ICA with a=c=k (square ICA)
+                from .multiview_ica import run_multi_view_ICA
+                
+                # Prepare a_values dict for GMM (a=c=k for all species)
+                a_values = {species: k for species in species_list}
+                
+                # Run on test data to get M matrices
+                M_matrices = run_multi_view_ICA(
+                    {species: X_test_views[i] for i, species in enumerate(species_list)},
+                    a_values,
+                    k,  # c = k
+                    mode=mode
+                )
+                
+                # Calculate average effect sizes across components
+                avg_effect_sizes = calculate_average_effect_sizes(M_matrices)
+                
+                # Use mean effect size as the metric
+                score = np.mean(avg_effect_sizes)
             
-            # Train another model on test data to get comparable results
-            test_sources = run_multi_view_ICA_on_datasets(
-                X_test_views,
-                [max_a_per_view] * n_species,
-                k,
-                mode=mode
-            )
-            
-            # Calculate NRE using the test source signals (components x samples)
-            nre = calculate_nre_proper(test_sources, k)
-            all_nre_per_k[k].append(nre)
+            all_metric_per_k[k].append(score)
             
             elapsed_time = time.time() - start_time
-            print(f"k={k}: {elapsed_time:.1f}s, NRE={nre:.6f}")
+            metric_name = metric.upper()
+            print(f"k={k}: {elapsed_time:.1f}s, {metric_name}={score:.6f}")
     
-    # Calculate mean NRE for each k
+    # Calculate mean metric for each k
     for k in k_candidates:
-        if all_nre_per_k[k]:
-            mean_nre_per_k[k] = np.mean(all_nre_per_k[k])
+        if all_metric_per_k[k]:
+            mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
     
     # Find optimal k
-    min_nre = min(mean_nre_per_k.values())
-    tolerance = 1e-8
-    optimal_k_candidates = [k for k, nre in mean_nre_per_k.items() 
-                           if abs(nre - min_nre) < tolerance]
-    best_k = max(optimal_k_candidates)
+    if metric == 'nre':
+        # For NRE, minimize
+        optimal_value = min(mean_metric_per_k.values())
+        tolerance = 1e-8
+        optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
+                               if abs(score - optimal_value) < tolerance]
+        best_k = max(optimal_k_candidates)
+    else:  # gmm
+        # For GMM effect size, maximize
+        optimal_value = max(mean_metric_per_k.values())
+        tolerance = optimal_value * 0.05  # 5% tolerance
+        optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
+                               if score >= optimal_value - tolerance]
+        best_k = min(optimal_k_candidates)  # Choose smallest k if tied
     
-    print(f"\nOptimal k = {best_k} (NRE = {mean_nre_per_k[best_k]:.6f})")
+    metric_name = metric.upper()
+    print(f"\nOptimal k = {best_k} ({metric_name} = {mean_metric_per_k[best_k]:.6f})")
     
     # Create NRE plot
     if 'plt' in globals():
@@ -186,30 +306,39 @@ def run_nre_optimization(
         ax = None
     
     if ax is not None:
-        k_values = sorted(mean_nre_per_k.keys())
+        k_values = sorted(mean_metric_per_k.keys())
         
-        mean_values = [mean_nre_per_k[k] for k in k_values]
-        std_values = [np.std(all_nre_per_k[k]) if len(all_nre_per_k[k]) > 1 else 0 for k in k_values]
+        mean_values = [mean_metric_per_k[k] for k in k_values]
+        std_values = [np.std(all_metric_per_k[k]) if len(all_metric_per_k[k]) > 1 else 0 for k in k_values]
         
-        # Plot NRE with error bars
+        # Plot metric with error bars
+        metric_label = 'NRE Score' if metric == 'nre' else 'GMM Effect Size'
+        color = 'blue' if metric == 'nre' else 'green'
+        
         ax.errorbar(k_values, mean_values, yerr=std_values, 
                    marker='o', markersize=8, capsize=5, capthick=2,
-                   color='blue', label='NRE Score', linewidth=2)
+                   color=color, label=metric_label, linewidth=2)
         
         # Highlight optimal k
         ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
                   label=f'Optimal k = {best_k}')
-        ax.scatter([best_k], [mean_nre_per_k[best_k]], color='red', s=120, zorder=5,
+        ax.scatter([best_k], [mean_metric_per_k[best_k]], color='red', s=120, zorder=5,
                   edgecolors='darkred', linewidth=2)
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
-        ax.set_ylabel('NRE Score (Lower is Better)', fontsize=12)
-        ax.set_title('Normalized Reconstruction Error (NRE) vs Number of Core Components', fontsize=14, fontweight='bold')
+        
+        if metric == 'nre':
+            ax.set_ylabel('NRE Score (Lower is Better)', fontsize=12)
+            ax.set_title('Normalized Reconstruction Error (NRE) vs Number of Core Components', fontsize=14, fontweight='bold')
+        else:
+            ax.set_ylabel('Average GMM Effect Size (Higher is Better)', fontsize=12)
+            ax.set_title('Average GMM Effect Size vs Number of Core Components', fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
         ax.legend()
         
         # Add optimal value text
-        ax.text(0.02, 0.98, f'Optimal k = {best_k}\nNRE = {mean_nre_per_k[best_k]:.6f}', 
+        metric_name = metric.upper()
+        ax.text(0.02, 0.98, f'Optimal k = {best_k}\n{metric_name} = {mean_metric_per_k[best_k]:.6f}', 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
                verticalalignment='top')
@@ -217,4 +346,4 @@ def run_nre_optimization(
         # Adjust layout
         plt.tight_layout()
     
-    return best_k, mean_nre_per_k, all_nre_per_k, fig
+    return best_k, mean_metric_per_k, all_metric_per_k, fig

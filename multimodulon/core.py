@@ -1234,23 +1234,29 @@ class MultiModulon:
         num_runs: int = 3,
         mode: str = 'gpu',
         seed: int = 42,
-        save_plot: Optional[str] = None
+        save_plot: Optional[str] = None,
+        metric: str = 'nre'
     ) -> Tuple[int, Dict[int, float]]:
         """
-        Optimize the number of core components using NRE (Noise Reduction Error).
+        Optimize the number of core components using specified metric.
         
         This method uses cross-validation to find the optimal number of core
-        components (k) by minimizing the normalized NRE score.
+        components (k) by optimizing the selected metric.
         
-        **NRE Theory:**
-        The NRE measures how much the "core" components differ across views.
-        - When k < k_true: Components are truly shared → low residuals → low NRE
-        - When k = k_true: Optimal sharing → minimum NRE
-        - When k > k_true: Including view-specific components → higher NRE
+        **Available Metrics:**
         
-        **Normalization:**
-        To avoid linear scaling with k, the NRE is normalized by the total
-        variance of components, making it a ratio rather than absolute value.
+        1. **NRE (Normalized Reconstruction Error):**
+           - Measures how much the "core" components differ across views
+           - When k < k_true: Components are truly shared → low residuals → low NRE
+           - When k = k_true: Optimal sharing → minimum NRE
+           - When k > k_true: Including view-specific components → higher NRE
+        
+        2. **GMM (Gaussian Mixture Model Effect Size):**
+           - Fits 2-component GMM to each component's weight vector
+           - Effect Size = |μ₁ - μ₂| / max(σ₁, σ₂)
+           - Measures how heavy-tailed the component distributions are
+           - Higher effect sizes indicate stronger regulatory structure
+           - Runs square ICA (a=c=k) to get mixing matrices M
         
         Parameters
         ----------
@@ -1269,18 +1275,25 @@ class MultiModulon:
         seed : int, default=42
             Random seed for reproducibility
         save_plot : str, optional
-            Path to save the NRE vs k plot. If None, displays the plot
+            Path to save the metric vs k plot. If None, displays the plot
+        metric : str, default='nre'
+            Optimization metric: 'nre' or 'gmm'
         
         Returns
         -------
         best_k : int
             Optimal number of core components
-        nre_scores : dict
-            Dictionary mapping k values to mean NRE scores
+        metric_scores : dict
+            Dictionary mapping k values to mean metric scores
         
         Examples
         --------
+        >>> # Using NRE metric (default)
         >>> best_k, nre_scores = multiModulon.optimize_number_of_core_components()
+        >>> print(f"Optimal number of core components: {best_k}")
+        
+        >>> # Using GMM effect size metric for regulatory structure analysis
+        >>> best_k, gmm_scores = multiModulon.optimize_number_of_core_components(metric='gmm')
         >>> print(f"Optimal number of core components: {best_k}")
         """
         # Check prerequisites
@@ -1330,14 +1343,15 @@ class MultiModulon:
             species_X_matrices[species] = self._species_data[species].X
         
         # Run optimization
-        best_k, nre_scores, all_nre_per_k, fig = run_nre_optimization(
+        best_k, metric_scores, all_metric_per_k, fig = run_nre_optimization(
             species_X_matrices=species_X_matrices,
             k_candidates=k_candidates,
             max_a_per_view=max_a_per_view,
             train_frac=train_frac,
             num_runs=num_runs,
             mode=mode,
-            seed=seed
+            seed=seed,
+            metric=metric
         )
         
         # Save or display plot
@@ -1351,7 +1365,7 @@ class MultiModulon:
         # Store the optimal k for later use
         self._optimal_k = best_k
         
-        return best_k, nre_scores
+        return best_k, metric_scores
             
         if self._bbh is not None:
             print(f"\nBBH analysis completed:")
