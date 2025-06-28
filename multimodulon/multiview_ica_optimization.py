@@ -67,13 +67,13 @@ def calculate_gmm_effect_size(weight_vector: np.ndarray) -> float:
 
 def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame]) -> List[float]:
     """
-    Calculate average effect sizes across species for each component.
+    Calculate mean effect sizes across species for each component.
     
     Args:
         M_matrices: Dict mapping species names to M matrices (samples, components)
         
     Returns:
-        List of average effect sizes, one per component
+        List of mean effect sizes, one per component
     """
     species_list = list(M_matrices.keys())
     n_components = M_matrices[species_list[0]].shape[1]
@@ -90,9 +90,9 @@ def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame]) -> List[
             effect_size = calculate_gmm_effect_size(weight_vector)
             component_effect_sizes.append(effect_size)
         
-        # Average across species
-        avg_effect_size = np.mean(component_effect_sizes)
-        avg_effect_sizes.append(avg_effect_size)
+        # Mean across species
+        mean_effect_size = np.mean(component_effect_sizes)
+        avg_effect_sizes.append(mean_effect_size)
     
     return avg_effect_sizes
 
@@ -276,14 +276,14 @@ def run_nre_optimization(
                     seed=seed  # Use exact same seed for reproducibility
                 )
                 
-                # Calculate average effect sizes across components
+                # Calculate mean effect sizes across components
                 avg_effect_sizes = calculate_average_effect_sizes(M_matrices)
                 
                 # Store individual component effect sizes for threshold analysis
                 if component_effect_sizes_per_k is not None:
                     component_effect_sizes_per_k[k].append(avg_effect_sizes)
                 
-                # Use mean effect size as the metric
+                # Use mean of all component effect sizes as the metric
                 score = np.mean(avg_effect_sizes)
             
             all_metric_per_k[k].append(score)
@@ -292,7 +292,7 @@ def run_nre_optimization(
             if metric == 'nre':
                 print(f"k={k}: time={elapsed_time:.1f}s, NRE={score:.6f}")
             else:  # gmm
-                print(f"k={k}: time={elapsed_time:.1f}s, average GMM effect size={score:.6f}")
+                print(f"k={k}: time={elapsed_time:.1f}s, mean GMM effect size={score:.6f}")
     
     # Calculate mean metric for each k
     for k in k_candidates:
@@ -412,8 +412,8 @@ def run_nre_optimization(
                 
                 # Add mean line
                 mean_values = [mean_metric_per_k[k] for k in k_values]
-                ax.plot(k_values, mean_values, 'ro-', linewidth=2, markersize=6, 
-                       label='Average Effect Size', color='red', alpha=0.8)
+                ax.plot(k_values, mean_values, 'o-', linewidth=2, markersize=6, 
+                       label='Mean Effect Size', color='red', alpha=0.8)
                 
                 # Add threshold line if specified
                 if threshold is not None:
@@ -430,9 +430,9 @@ def run_nre_optimization(
             else:
                 # Fallback to line plot if no component data available
                 mean_values = [mean_metric_per_k[k] for k in k_values]
-                ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=6, label='Average GMM Effect Size')
-                ax.set_ylabel('Average GMM Effect Size (Higher is Better)', fontsize=12)
-                ax.set_title('Average GMM Effect Size vs Number of Core Components', fontsize=14, fontweight='bold')
+                ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=6, label='Mean GMM Effect Size')
+                ax.set_ylabel('Mean GMM Effect Size (Higher is Better)', fontsize=12)
+                ax.set_title('Mean GMM Effect Size vs Number of Core Components', fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
         ax.grid(True, alpha=0.3)
