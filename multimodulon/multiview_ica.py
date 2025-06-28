@@ -13,7 +13,7 @@ from typing import Dict, Optional, Tuple, List
 import numpy as np
 import pandas as pd
 
-from .multiview_ica_optimization import calculate_gmm_effect_size, calculate_average_effect_sizes
+from .multiview_ica_optimization import calculate_cohens_d_effect_size, calculate_average_effect_sizes
 
 try:
     import torch
@@ -303,7 +303,7 @@ def run_multiview_ica(
         c: Number of core components
         mode: 'gpu' or 'cpu' mode
         return_unmixing_matrices: If True, returns unmixing matrices along with sources
-        gmm_threshold: Optional threshold for filtering components based on GMM effect size.
+        gmm_threshold: Optional threshold for filtering components based on Cohen's d effect size.
                       If provided, only keeps components above this threshold.
         **kwargs: Additional arguments passed to run_multi_view_ICA_on_datasets
         
@@ -391,20 +391,20 @@ def _apply_gmm_filtering_and_formatting(
     gmm_threshold: float
 ) -> Tuple[Dict[str, pd.DataFrame], int, int]:
     """
-    Apply GMM filtering and formatting to M matrices.
+    Apply Cohen's d filtering and formatting to M matrices.
     
     Args:
         M_matrices: Dictionary mapping species to M matrices
         species_X_matrices: Dictionary mapping species to X matrices (for row indices)
         c: Number of core components
-        gmm_threshold: Threshold for filtering components
+        gmm_threshold: Cohen's d threshold for filtering components
         
     Returns:
         Tuple of (filtered_M_matrices, kept_core_count, kept_unique_count)
     """
     species_list = sorted(M_matrices.keys())
     
-    # Calculate GMM effect sizes for core components (average across species)
+    # Calculate Cohen's d effect sizes for core components (average across species)
     core_effect_sizes = calculate_average_effect_sizes(
         {species: M_matrices[species].iloc[:, :c] for species in species_list}
     )
@@ -413,7 +413,7 @@ def _apply_gmm_filtering_and_formatting(
     core_keep_indices = [i for i, effect_size in enumerate(core_effect_sizes) if effect_size >= gmm_threshold]
     kept_core = len(core_keep_indices)
     
-    # Calculate GMM effect sizes for unique components (individual per species)
+    # Calculate Cohen's d effect sizes for unique components (individual per species)
     unique_keep_indices = {}
     total_kept_unique = 0
     
@@ -421,7 +421,7 @@ def _apply_gmm_filtering_and_formatting(
         if M_matrices[species].shape[1] > c:  # Has unique components
             unique_components = M_matrices[species].iloc[:, c:]
             unique_effect_sizes = [
-                calculate_gmm_effect_size(unique_components.iloc[:, i].values)
+                calculate_cohens_d_effect_size(unique_components.iloc[:, i].values)
                 for i in range(unique_components.shape[1])
             ]
             keep_indices = [i for i, effect_size in enumerate(unique_effect_sizes) if effect_size >= gmm_threshold]

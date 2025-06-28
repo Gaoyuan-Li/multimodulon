@@ -1148,7 +1148,7 @@ class MultiModulon:
             - mode : str, optional
                 'gpu' or 'cpu' mode (default: 'gpu')
             - gmm_threshold : float, optional
-                GMM effect size threshold for filtering components.
+                Cohen's d effect size threshold for filtering components (comparing top 20 genes vs rest).
                 If provided, only keeps components above this threshold.
         
         Returns
@@ -1167,7 +1167,7 @@ class MultiModulon:
         # For any number of species (same a for all)
         >>> multiModulon.run_multiview_ica(a=50, c=30)
         
-        # With GMM threshold filtering
+        # With Cohen's d threshold filtering (top 20 genes vs rest)
         >>> multiModulon.run_multiview_ica(a=50, c=30, gmm_threshold=0.2)
         """
         # Check if X matrices have been generated
@@ -1261,11 +1261,11 @@ class MultiModulon:
            - When k = k_true: Optimal sharing → minimum NRE
            - When k > k_true: Including view-specific components → higher NRE
         
-        2. **GMM (Gaussian Mixture Model Effect Size):**
-           - Fits 2-component GMM to each component's weight vector
-           - Effect Size = |μ₁ - μ₂| / max(σ₁, σ₂)
-           - Measures how heavy-tailed the component distributions are
-           - Higher effect sizes indicate stronger regulatory structure
+        2. **GMM (Cohen's d Effect Size):**
+           - Calculates Cohen's d between top 20 genes and remaining genes
+           - Effect Size = |mean_top20 - mean_rest| / pooled_std
+           - Measures separation between highly weighted genes and the rest
+           - Higher effect sizes indicate clearer gene membership
            - Runs square ICA (a=c=k) to get mixing matrices M
         
         Parameters
@@ -1287,9 +1287,9 @@ class MultiModulon:
         save_plot : str, optional
             Path to save the metric vs k plot. If None, displays the plot
         metric : str, default='nre'
-            Optimization metric: 'nre' or 'gmm'
+            Optimization metric: 'nre' or 'gmm' (Cohen's d effect size)
         threshold : float, optional
-            For GMM metric: threshold for effect size analysis and visualization
+            For GMM metric: Cohen's d threshold for effect size analysis and visualization
         
         Returns
         -------
@@ -1304,11 +1304,11 @@ class MultiModulon:
         >>> best_k, nre_scores = multiModulon.optimize_number_of_core_components()
         >>> print(f"Optimal number of core components: {best_k}")
         
-        >>> # Using GMM effect size metric for regulatory structure analysis
+        >>> # Using Cohen's d effect size metric for regulatory structure analysis
         >>> best_k, gmm_scores = multiModulon.optimize_number_of_core_components(metric='gmm')
         >>> print(f"Optimal number of core components: {best_k}")
         
-        >>> # Using GMM with threshold analysis
+        >>> # Using Cohen's d with threshold analysis
         >>> best_k, gmm_scores = multiModulon.optimize_number_of_core_components(metric='gmm', threshold=0.1)
         >>> print(f"Optimal number of core components: {best_k}")
         """

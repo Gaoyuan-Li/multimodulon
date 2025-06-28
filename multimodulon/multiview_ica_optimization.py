@@ -16,53 +16,59 @@ try:
 except ImportError:
     print("Warning: matplotlib not available for plotting")
 
-try:
-    from sklearn.mixture import GaussianMixture
-except ImportError:
-    print("Warning: sklearn not available for GMM analysis")
+# GaussianMixture no longer needed as we're using Cohen's d instead
 
 
 
 
-def calculate_gmm_effect_size(weight_vector: np.ndarray, seed: int = 42) -> float:
+def calculate_cohens_d_effect_size(weight_vector: np.ndarray, seed: int = 42) -> float:
     """
-    Calculate effect size from 2-component GMM fit to weight vector.
+    Calculate Cohen's d effect size between top 20 genes and the rest.
     
-    Effect Size = |μ₁ - μ₂| / max(σ₁, σ₂)
+    Cohen's d = (mean_top20 - mean_rest) / pooled_std
     
     Args:
         weight_vector: 1D array of weights for a single component
+        seed: Random seed (kept for compatibility but not used)
         
     Returns:
-        Effect size measuring distinction between central and tail groups
+        Cohen's d effect size measuring separation between top 20 genes and rest
     """
-    if len(weight_vector) < 4:  # Need minimum samples for GMM
+    if len(weight_vector) < 21:  # Need at least 21 genes (20 top + 1 rest)
         return 0.0
     
-    # Reshape for sklearn
-    X = weight_vector.reshape(-1, 1)
+    # Get absolute values and indices of top 20 genes
+    abs_weights = np.abs(weight_vector)
+    top_20_indices = np.argpartition(abs_weights, -20)[-20:]
+    rest_indices = np.setdiff1d(np.arange(len(weight_vector)), top_20_indices)
     
-    try:
-        # Fit 2-component GMM with fixed random state for reproducibility
-        gmm = GaussianMixture(n_components=2, random_state=seed, max_iter=100, init_params='kmeans')
-        gmm.fit(X)
-        
-        # Extract means and standard deviations
-        means = gmm.means_.flatten()
-        covs = gmm.covariances_.flatten()
-        stds = np.sqrt(covs)
-        
-        # Calculate effect size
-        mu1, mu2 = means[0], means[1]
-        sigma1, sigma2 = stds[0], stds[1]
-        
-        effect_size = abs(mu1 - mu2) / max(sigma1, sigma2)
-        
-        return effect_size
-        
-    except Exception:
-        # GMM failed to converge or other issues
+    # Get the actual weight values for each group
+    top_20_weights = weight_vector[top_20_indices]
+    rest_weights = weight_vector[rest_indices]
+    
+    # Calculate means
+    mean_top20 = np.mean(top_20_weights)
+    mean_rest = np.mean(rest_weights)
+    
+    # Calculate standard deviations
+    std_top20 = np.std(top_20_weights, ddof=1)
+    std_rest = np.std(rest_weights, ddof=1)
+    
+    # Sample sizes
+    n1 = len(top_20_weights)
+    n2 = len(rest_weights)
+    
+    # Calculate pooled standard deviation
+    pooled_std = np.sqrt(((n1 - 1) * std_top20**2 + (n2 - 1) * std_rest**2) / (n1 + n2 - 2))
+    
+    # Avoid division by zero
+    if pooled_std == 0:
         return 0.0
+    
+    # Calculate Cohen's d
+    cohens_d = abs(mean_top20 - mean_rest) / pooled_std
+    
+    return cohens_d
 
 
 def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame], seed: int = 42) -> List[float]:
@@ -88,7 +94,7 @@ def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame], seed: in
         for species in species_list:
             M_matrix = M_matrices[species]
             weight_vector = M_matrix.iloc[:, comp_idx].values
-            effect_size = calculate_gmm_effect_size(weight_vector, seed)
+            effect_size = calculate_cohens_d_effect_size(weight_vector, seed)
             component_effect_sizes.append(effect_size)
         
         # Mean across species
@@ -178,10 +184,10 @@ def run_nre_optimization(
     threshold: Optional[float] = None
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
-    Optimization using NRE or GMM metric.
+    Optimization using NRE or Cohen's d metric.
     
     Args:
-        metric: 'nre' for Normalized Reconstruction Error, 'gmm' for GMM effect size
+        metric: 'nre' for Normalized Reconstruction Error, 'gmm' for Cohen's d effect size
     """
     
     # Sort species list for consistent ordering across runs
@@ -191,7 +197,7 @@ def run_nre_optimization(
         raise ValueError(f"Expected at least 2 species, got {n_species}")
     
     if metric not in ['nre', 'gmm']:
-        raise ValueError(f"Unknown metric: {metric}. Use 'nre' or 'gmm'")
+        raise ValueError(f"Unknown metric: {metric}. Use 'nre' or 'gmm' (Cohen's d)")
     
     # Set all random seeds for reproducibility (crucial after kernel restart)
     import torch
@@ -216,7 +222,7 @@ def run_nre_optimization(
     mean_metric_per_k = {}
     all_metric_per_k = {k: [] for k in k_candidates}
     
-    # For GMM, also store individual component effect sizes for threshold analysis
+    # For Cohen's d, also store individual component effect sizes for threshold analysis
     component_effect_sizes_per_k = {k: [] for k in k_candidates} if metric == 'gmm' else None
     
     for run in range(num_runs):
@@ -262,11 +268,11 @@ def run_nre_optimization(
                 score = calculate_nre_proper(test_sources, k)
                 
             else:  # gmm
-                # For GMM, we need the M matrices (unmixing matrices)
+                # For Cohen's d, we need the M matrices (unmixing matrices)
                 # Run multi-view ICA with a=c=k (square ICA)
                 from .multiview_ica import run_multiview_ica
                 
-                # Prepare a_values dict for GMM (a=c=k for all species)
+                # Prepare a_values dict for Cohen's d (a=c=k for all species)
                 a_values = {species: k for species in species_list}
                 
                 # Run on test data to get M matrices
@@ -429,8 +435,8 @@ def run_nre_optimization(
                     ax.axhline(y=threshold, color='orange', linestyle=':', alpha=0.8, linewidth=2,
                               label=f'Threshold = {threshold:.3f}')
                 
-                ax.set_ylabel('GMM Effect Size (Higher is Better)', fontsize=12)
-                ax.set_title('Distribution of GMM Effect Sizes per Component vs Number of Core Components', fontsize=14, fontweight='bold')
+                ax.set_ylabel("Cohen's d Effect Size (Higher is Better)", fontsize=12)
+                ax.set_title("Distribution of Cohen's d Effect Sizes per Component vs Number of Core Components", fontsize=14, fontweight='bold')
                 
                 # Highlight optimal k
                 ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
@@ -439,9 +445,9 @@ def run_nre_optimization(
             else:
                 # Fallback to line plot if no component data available
                 mean_values = [mean_metric_per_k[k] for k in k_values]
-                ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=6, label='Mean GMM Effect Size')
-                ax.set_ylabel('Mean GMM Effect Size (Higher is Better)', fontsize=12)
-                ax.set_title('Mean GMM Effect Size vs Number of Core Components', fontsize=14, fontweight='bold')
+                ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=6, label="Mean Cohen's d Effect Size")
+                ax.set_ylabel("Mean Cohen's d Effect Size (Higher is Better)", fontsize=12)
+                ax.set_title("Mean Cohen's d Effect Size vs Number of Core Components", fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
         ax.grid(True, alpha=0.3)
@@ -451,7 +457,7 @@ def run_nre_optimization(
         if metric == 'nre':
             label_text = f'Optimal k = {best_k}\nNRE = {mean_metric_per_k[best_k]:.6f}'
         else:
-            label_text = f'Optimal k = {best_k}\nMedian GMM effect size = {mean_metric_per_k[best_k]:.6f}'
+            label_text = f'Optimal k = {best_k}\nMedian Cohen\'s d effect size = {mean_metric_per_k[best_k]:.6f}'
         
         ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
