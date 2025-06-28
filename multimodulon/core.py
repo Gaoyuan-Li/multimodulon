@@ -1235,7 +1235,8 @@ class MultiModulon:
         mode: str = 'gpu',
         seed: int = 42,
         save_plot: Optional[str] = None,
-        metric: str = 'nre'
+        metric: str = 'nre',
+        threshold: Optional[float] = None
     ) -> Tuple[int, Dict[int, float]]:
         """
         Optimize the number of core components using specified metric.
@@ -1278,6 +1279,8 @@ class MultiModulon:
             Path to save the metric vs k plot. If None, displays the plot
         metric : str, default='nre'
             Optimization metric: 'nre' or 'gmm'
+        threshold : float, optional
+            For GMM metric: threshold for effect size analysis and visualization
         
         Returns
         -------
@@ -1294,6 +1297,10 @@ class MultiModulon:
         
         >>> # Using GMM effect size metric for regulatory structure analysis
         >>> best_k, gmm_scores = multiModulon.optimize_number_of_core_components(metric='gmm')
+        >>> print(f"Optimal number of core components: {best_k}")
+        
+        >>> # Using GMM with threshold analysis
+        >>> best_k, gmm_scores = multiModulon.optimize_number_of_core_components(metric='gmm', threshold=0.1)
         >>> print(f"Optimal number of core components: {best_k}")
         """
         # Check prerequisites
@@ -1351,7 +1358,8 @@ class MultiModulon:
             num_runs=num_runs,
             mode=mode,
             seed=seed,
-            metric=metric
+            metric=metric,
+            threshold=threshold
         )
         
         # Save or display plot

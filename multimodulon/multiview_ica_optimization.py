@@ -173,7 +173,8 @@ def run_nre_optimization(
     num_runs: int = 3,
     mode: str = 'gpu',
     seed: int = 42,
-    metric: str = 'nre'
+    metric: str = 'nre',
+    threshold: Optional[float] = None
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
     Optimization using NRE or GMM metric.
@@ -200,6 +201,9 @@ def run_nre_optimization(
     # Initialize storage for metric results
     mean_metric_per_k = {}
     all_metric_per_k = {k: [] for k in k_candidates}
+    
+    # For GMM, also store individual component effect sizes for threshold analysis
+    component_effect_sizes_per_k = {k: [] for k in k_candidates} if metric == 'gmm' else None
     
     for run in range(num_runs):
         
@@ -246,13 +250,13 @@ def run_nre_optimization(
             else:  # gmm
                 # For GMM, we need the M matrices (unmixing matrices)
                 # Run multi-view ICA with a=c=k (square ICA)
-                from .multiview_ica import run_multi_view_ICA
+                from .multiview_ica import run_multiview_ica
                 
                 # Prepare a_values dict for GMM (a=c=k for all species)
                 a_values = {species: k for species in species_list}
                 
                 # Run on test data to get M matrices
-                M_matrices = run_multi_view_ICA(
+                M_matrices = run_multiview_ica(
                     {species: X_test_views[i] for i, species in enumerate(species_list)},
                     a_values,
                     k,  # c = k
@@ -261,6 +265,10 @@ def run_nre_optimization(
                 
                 # Calculate average effect sizes across components
                 avg_effect_sizes = calculate_average_effect_sizes(M_matrices)
+                
+                # Store individual component effect sizes for threshold analysis
+                if component_effect_sizes_per_k is not None:
+                    component_effect_sizes_per_k[k].append(avg_effect_sizes)
                 
                 # Use mean effect size as the metric
                 score = np.mean(avg_effect_sizes)
@@ -294,6 +302,32 @@ def run_nre_optimization(
     
     metric_name = metric.upper()
     print(f"\nOptimal k = {best_k} ({metric_name} = {mean_metric_per_k[best_k]:.6f})")
+    
+    # Threshold analysis for GMM metric
+    if metric == 'gmm' and threshold is not None and component_effect_sizes_per_k is not None:
+        print(f"\nThreshold Analysis (threshold = {threshold:.3f}):")
+        print("-" * 50)
+        
+        for k in sorted(k_candidates):
+            if component_effect_sizes_per_k[k]:
+                # Average effect sizes across runs for each component
+                all_runs_effects = component_effect_sizes_per_k[k]
+                n_components = len(all_runs_effects[0])
+                
+                # Average each component across runs
+                avg_component_effects = []
+                for comp_idx in range(n_components):
+                    comp_effects_across_runs = [run_effects[comp_idx] for run_effects in all_runs_effects]
+                    avg_component_effects.append(np.mean(comp_effects_across_runs))
+                
+                # Count components above threshold
+                above_threshold = [eff for eff in avg_component_effects if eff > threshold]
+                n_above = len(above_threshold)
+                percentage = (n_above / n_components) * 100
+                
+                print(f"k={k:2d}: {n_above:2d}/{n_components:2d} components above threshold ({percentage:5.1f}%)")
+        
+        print("-" * 50)
     
     # Create NRE plot
     if 'plt' in globals():
@@ -333,6 +367,12 @@ def run_nre_optimization(
         else:
             ax.set_ylabel('Average GMM Effect Size (Higher is Better)', fontsize=12)
             ax.set_title('Average GMM Effect Size vs Number of Core Components', fontsize=14, fontweight='bold')
+            
+            # Add threshold line for GMM if specified
+            if threshold is not None:
+                ax.axhline(y=threshold, color='orange', linestyle=':', alpha=0.8, linewidth=2,
+                          label=f'Threshold = {threshold:.3f}')
+        
         ax.grid(True, alpha=0.3)
         ax.legend()
         
