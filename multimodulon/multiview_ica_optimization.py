@@ -191,8 +191,20 @@ def run_nre_optimization(
     if metric not in ['nre', 'gmm']:
         raise ValueError(f"Unknown metric: {metric}. Use 'nre' or 'gmm'")
     
-    # Check and display device status
+    # Set all random seeds for reproducibility (crucial after kernel restart)
     import torch
+    import random
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        # Additional CUDA determinism
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    
+    # Check and display device status
     if mode == 'gpu' and torch.cuda.is_available():
         print(f"Using GPU: {torch.cuda.get_device_name(0)}")
     else:
@@ -332,9 +344,14 @@ def run_nre_optimization(
         
         print("-" * 50)
     
-    # Create NRE plot
+    # Create plot
     if 'plt' in globals():
-        fig, ax = plt.subplots(figsize=(10, 6))
+        if metric == 'gmm' and component_effect_sizes_per_k is not None:
+            # Create box plot for GMM showing distribution of component effect sizes
+            fig, ax = plt.subplots(figsize=(14, 8))
+        else:
+            # Regular line plot for NRE
+            fig, ax = plt.subplots(figsize=(10, 6))
     else:
         # Create a dummy figure object if matplotlib is not available
         class DummyFig:
@@ -345,37 +362,79 @@ def run_nre_optimization(
     if ax is not None:
         k_values = sorted(mean_metric_per_k.keys())
         
-        mean_values = [mean_metric_per_k[k] for k in k_values]
-        std_values = [np.std(all_metric_per_k[k]) if len(all_metric_per_k[k]) > 1 else 0 for k in k_values]
-        
-        # Plot metric with error bars
-        metric_label = 'NRE Score' if metric == 'nre' else 'GMM Effect Size'
-        color = 'blue' if metric == 'nre' else 'green'
-        
-        ax.errorbar(k_values, mean_values, yerr=std_values, 
-                   marker='o', markersize=8, capsize=5, capthick=2,
-                   color=color, label=metric_label, linewidth=2)
-        
-        # Highlight optimal k
-        ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
-                  label=f'Optimal k = {best_k}')
-        ax.scatter([best_k], [mean_metric_per_k[best_k]], color='red', s=120, zorder=5,
-                  edgecolors='darkred', linewidth=2)
-        
-        ax.set_xlabel('Number of Core Components (k)', fontsize=12)
-        
         if metric == 'nre':
+            # Standard line plot for NRE
+            mean_values = [mean_metric_per_k[k] for k in k_values]
+            std_values = [np.std(all_metric_per_k[k]) if len(all_metric_per_k[k]) > 1 else 0 for k in k_values]
+            
+            ax.errorbar(k_values, mean_values, yerr=std_values, 
+                       marker='o', markersize=8, capsize=5, capthick=2,
+                       color='blue', label='NRE Score', linewidth=2)
+            
+            # Highlight optimal k
+            ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
+                      label=f'Optimal k = {best_k}')
+            ax.scatter([best_k], [mean_metric_per_k[best_k]], color='red', s=120, zorder=5,
+                      edgecolors='darkred', linewidth=2)
+            
             ax.set_ylabel('NRE Score (Lower is Better)', fontsize=12)
             ax.set_title('Normalized Reconstruction Error (NRE) vs Number of Core Components', fontsize=14, fontweight='bold')
-        else:
-            ax.set_ylabel('Average GMM Effect Size (Higher is Better)', fontsize=12)
-            ax.set_title('Average GMM Effect Size vs Number of Core Components', fontsize=14, fontweight='bold')
             
-            # Add threshold line for GMM if specified
-            if threshold is not None:
-                ax.axhline(y=threshold, color='orange', linestyle=':', alpha=0.8, linewidth=2,
-                          label=f'Threshold = {threshold:.3f}')
+        else:
+            # Box plot for GMM showing distribution of component effect sizes
+            if component_effect_sizes_per_k is not None:
+                # Prepare data for box plot
+                box_data = []
+                box_positions = []
+                
+                for k in k_values:
+                    if component_effect_sizes_per_k[k]:
+                        # Get all component effect sizes for this k (averaged across runs)
+                        all_runs_effects = component_effect_sizes_per_k[k]
+                        n_components = len(all_runs_effects[0])
+                        
+                        # Average each component across runs
+                        avg_component_effects = []
+                        for comp_idx in range(n_components):
+                            comp_effects_across_runs = [run_effects[comp_idx] for run_effects in all_runs_effects]
+                            avg_component_effects.append(np.mean(comp_effects_across_runs))
+                        
+                        box_data.append(avg_component_effects)
+                        box_positions.append(k)
+                
+                # Create box plot
+                bp = ax.boxplot(box_data, positions=box_positions, widths=2.5, patch_artist=True,
+                               boxprops=dict(facecolor='lightgreen', alpha=0.7),
+                               medianprops=dict(color='darkgreen', linewidth=2),
+                               whiskerprops=dict(color='darkgreen'),
+                               capprops=dict(color='darkgreen'),
+                               flierprops=dict(marker='o', markerfacecolor='red', markersize=4, alpha=0.5))
+                
+                # Add mean line
+                mean_values = [mean_metric_per_k[k] for k in k_values]
+                ax.plot(k_values, mean_values, 'ro-', linewidth=2, markersize=6, 
+                       label='Average Effect Size', color='red', alpha=0.8)
+                
+                # Add threshold line if specified
+                if threshold is not None:
+                    ax.axhline(y=threshold, color='orange', linestyle=':', alpha=0.8, linewidth=2,
+                              label=f'Threshold = {threshold:.3f}')
+                
+                ax.set_ylabel('GMM Effect Size (Higher is Better)', fontsize=12)
+                ax.set_title('Distribution of GMM Effect Sizes per Component vs Number of Core Components', fontsize=14, fontweight='bold')
+                
+                # Highlight optimal k
+                ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
+                          label=f'Optimal k = {best_k}')
+            
+            else:
+                # Fallback to line plot if no component data available
+                mean_values = [mean_metric_per_k[k] for k in k_values]
+                ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=6, label='Average GMM Effect Size')
+                ax.set_ylabel('Average GMM Effect Size (Higher is Better)', fontsize=12)
+                ax.set_title('Average GMM Effect Size vs Number of Core Components', fontsize=14, fontweight='bold')
         
+        ax.set_xlabel('Number of Core Components (k)', fontsize=12)
         ax.grid(True, alpha=0.3)
         ax.legend()
         
