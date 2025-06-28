@@ -875,17 +875,18 @@ class MultiModulon:
         # Create DataFrame and sort by leftmost non-None value
         df = pd.DataFrame(rows)
         
-        # Add sorting logic: find leftmost non-None value for each row
-        def get_leftmost_value(row):
-            for strain in strains:
+        # Add sorting logic: prioritize rows with non-None values in leftmost columns
+        def get_sort_key(row):
+            # Create a tuple for sorting: (column_index_of_first_non_none, value_at_that_position)
+            for i, strain in enumerate(strains):
                 val = row[strain]
                 if pd.notna(val) and val != "None" and val is not None:
-                    return val
-            return ""  # Return empty string if no valid gene found
+                    return (i, val)
+            return (len(strains), "")  # Rows with all None values go to the end
         
-        df['_sort_key'] = df.apply(get_leftmost_value, axis=1)
+        df['_sort_key'] = df.apply(get_sort_key, axis=1)
         
-        # Sort by the leftmost non-None value in increasing order
+        # Sort by column index first, then by value within each column group
         df = df.sort_values('_sort_key').drop('_sort_key', axis=1).reset_index(drop=True)
         
         output_file = output_path / "combined_gene_db.csv"

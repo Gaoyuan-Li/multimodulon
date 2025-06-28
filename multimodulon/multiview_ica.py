@@ -13,6 +13,8 @@ from typing import Dict, Optional, Tuple, List
 import numpy as np
 import pandas as pd
 
+from .multiview_ica_optimization import calculate_gmm_effect_size, calculate_average_effect_sizes
+
 try:
     import torch
     import torch.nn as nn
@@ -288,6 +290,7 @@ def run_multiview_ica(
     c: int,
     mode: str = 'gpu',
     return_unmixing_matrices: bool = False,
+    gmm_threshold: Optional[float] = None,
     **kwargs
 ) -> Dict[str, pd.DataFrame]:
     """
@@ -300,6 +303,8 @@ def run_multiview_ica(
         c: Number of core components
         mode: 'gpu' or 'cpu' mode
         return_unmixing_matrices: If True, returns unmixing matrices along with sources
+        gmm_threshold: Optional threshold for filtering components based on GMM effect size.
+                      If provided, only keeps components above this threshold.
         **kwargs: Additional arguments passed to run_multi_view_ICA_on_datasets
         
     Returns:
@@ -349,6 +354,16 @@ def run_multiview_ica(
             W_matrices[species] = W
             K_matrices[species] = K
         
+        # Apply GMM filtering and formatting if threshold is provided
+        if gmm_threshold is not None:
+            M_matrices, kept_core, kept_unique = _apply_gmm_filtering_and_formatting(
+                M_matrices, species_X_matrices, c, gmm_threshold
+            )
+            print(f"Components saved: {kept_core} core, {kept_unique} unique")
+        else:
+            # Still apply formatting without filtering
+            M_matrices = _apply_formatting_only(M_matrices, species_X_matrices, c)
+        
         return M_matrices, W_matrices, K_matrices
     else:
         # Create results dictionary
@@ -356,6 +371,149 @@ def run_multiview_ica(
         for species, result in zip(species_list, results):
             results_dict[species] = result
         
+        # Apply GMM filtering and formatting if threshold is provided
+        if gmm_threshold is not None:
+            results_dict, kept_core, kept_unique = _apply_gmm_filtering_and_formatting(
+                results_dict, species_X_matrices, c, gmm_threshold
+            )
+            print(f"Components saved: {kept_core} core, {kept_unique} unique")
+        else:
+            # Still apply formatting without filtering
+            results_dict = _apply_formatting_only(results_dict, species_X_matrices, c)
+        
         return results_dict
+
+
+def _apply_gmm_filtering_and_formatting(
+    M_matrices: Dict[str, pd.DataFrame],
+    species_X_matrices: Dict[str, pd.DataFrame], 
+    c: int,
+    gmm_threshold: float
+) -> Tuple[Dict[str, pd.DataFrame], int, int]:
+    """
+    Apply GMM filtering and formatting to M matrices.
+    
+    Args:
+        M_matrices: Dictionary mapping species to M matrices
+        species_X_matrices: Dictionary mapping species to X matrices (for row indices)
+        c: Number of core components
+        gmm_threshold: Threshold for filtering components
+        
+    Returns:
+        Tuple of (filtered_M_matrices, kept_core_count, kept_unique_count)
+    """
+    species_list = sorted(M_matrices.keys())
+    
+    # Calculate GMM effect sizes for core components (average across species)
+    core_effect_sizes = calculate_average_effect_sizes(
+        {species: M_matrices[species].iloc[:, :c] for species in species_list}
+    )
+    
+    # Filter core components
+    core_keep_indices = [i for i, effect_size in enumerate(core_effect_sizes) if effect_size >= gmm_threshold]
+    kept_core = len(core_keep_indices)
+    
+    # Calculate GMM effect sizes for unique components (individual per species)
+    unique_keep_indices = {}
+    total_kept_unique = 0
+    
+    for species in species_list:
+        if M_matrices[species].shape[1] > c:  # Has unique components
+            unique_components = M_matrices[species].iloc[:, c:]
+            unique_effect_sizes = [
+                calculate_gmm_effect_size(unique_components.iloc[:, i].values)
+                for i in range(unique_components.shape[1])
+            ]
+            keep_indices = [i for i, effect_size in enumerate(unique_effect_sizes) if effect_size >= gmm_threshold]
+            unique_keep_indices[species] = keep_indices
+            total_kept_unique += len(keep_indices)
+        else:
+            unique_keep_indices[species] = []
+    
+    # Filter and format M matrices
+    filtered_M_matrices = {}
+    for species in species_list:
+        # Get row indices from corresponding X matrix
+        row_indices = species_X_matrices[species].index
+        
+        # Filter core components
+        if kept_core > 0:
+            core_filtered = M_matrices[species].iloc[:, core_keep_indices]
+            core_columns = [f"Core_{i+1}" for i in range(kept_core)]
+        else:
+            core_filtered = pd.DataFrame(index=row_indices)
+            core_columns = []
+        
+        # Filter unique components for this species
+        if unique_keep_indices[species]:
+            unique_indices = [c + i for i in unique_keep_indices[species]]
+            unique_filtered = M_matrices[species].iloc[:, unique_indices]
+            unique_columns = [f"Unique_{i+1}" for i in range(len(unique_keep_indices[species]))]
+        else:
+            unique_filtered = pd.DataFrame(index=row_indices)
+            unique_columns = []
+        
+        # Combine core and unique components
+        if kept_core > 0 and unique_columns:
+            filtered_df = pd.concat([core_filtered, unique_filtered], axis=1)
+            column_names = core_columns + unique_columns
+        elif kept_core > 0:
+            filtered_df = core_filtered
+            column_names = core_columns
+        elif unique_columns:
+            filtered_df = unique_filtered
+            column_names = unique_columns
+        else:
+            filtered_df = pd.DataFrame(index=row_indices)
+            column_names = []
+        
+        # Set proper row indices and column names
+        filtered_df.index = row_indices
+        filtered_df.columns = column_names
+        
+        filtered_M_matrices[species] = filtered_df
+    
+    return filtered_M_matrices, kept_core, total_kept_unique
+
+
+def _apply_formatting_only(
+    M_matrices: Dict[str, pd.DataFrame],
+    species_X_matrices: Dict[str, pd.DataFrame],
+    c: int
+) -> Dict[str, pd.DataFrame]:
+    """
+    Apply formatting to M matrices without filtering.
+    
+    Args:
+        M_matrices: Dictionary mapping species to M matrices
+        species_X_matrices: Dictionary mapping species to X matrices (for row indices)
+        c: Number of core components
+        
+    Returns:
+        Dictionary of formatted M matrices
+    """
+    formatted_M_matrices = {}
+    
+    for species, M_matrix in M_matrices.items():
+        # Get row indices from corresponding X matrix
+        row_indices = species_X_matrices[species].index
+        
+        # Create column names
+        total_components = M_matrix.shape[1]
+        unique_components = total_components - c
+        
+        core_columns = [f"Core_{i+1}" for i in range(c)]
+        unique_columns = [f"Unique_{i+1}" for i in range(unique_components)] if unique_components > 0 else []
+        
+        column_names = core_columns + unique_columns
+        
+        # Set proper row indices and column names
+        formatted_df = M_matrix.copy()
+        formatted_df.index = row_indices
+        formatted_df.columns = column_names
+        
+        formatted_M_matrices[species] = formatted_df
+    
+    return formatted_M_matrices
 
 
