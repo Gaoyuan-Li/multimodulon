@@ -1147,6 +1147,9 @@ class MultiModulon:
                 Number of core components across all species
             - mode : str, optional
                 'gpu' or 'cpu' mode (default: 'gpu')
+            - gmm_threshold : float, optional
+                GMM effect size threshold for filtering components.
+                If provided, only keeps components above this threshold.
         
         Returns
         -------
@@ -1163,6 +1166,9 @@ class MultiModulon:
         
         # For any number of species (same a for all)
         >>> multiModulon.run_multiview_ica(a=50, c=30)
+        
+        # With GMM threshold filtering
+        >>> multiModulon.run_multiview_ica(a=50, c=30, gmm_threshold=0.2)
         """
         # Check if X matrices have been generated
         species_list = list(self._species_data.keys())
@@ -1204,6 +1210,7 @@ class MultiModulon:
         
         # Get other parameters
         mode = kwargs.get('mode', 'gpu')
+        gmm_threshold = kwargs.get('gmm_threshold', None)
         
         # Prepare X matrices dictionary
         species_X_matrices = {}
@@ -1215,7 +1222,8 @@ class MultiModulon:
             species_X_matrices=species_X_matrices,
             a_values=a_values,
             c=c,
-            mode=mode
+            mode=mode,
+            gmm_threshold=gmm_threshold
         )
         
         # Save M matrices to each species
