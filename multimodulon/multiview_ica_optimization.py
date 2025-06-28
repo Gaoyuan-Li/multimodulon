@@ -170,7 +170,7 @@ def run_nre_optimization(
     k_candidates: List[int],
     max_a_per_view: int,
     train_frac: float = 0.75,
-    num_runs: int = 3,
+    num_runs: int = 1,
     mode: str = 'gpu',
     seed: int = 42,
     metric: str = 'nre',
@@ -276,8 +276,10 @@ def run_nre_optimization(
             all_metric_per_k[k].append(score)
             
             elapsed_time = time.time() - start_time
-            metric_name = metric.upper()
-            print(f"k={k}: {elapsed_time:.1f}s, {metric_name}={score:.6f}")
+            if metric == 'nre':
+                print(f"k={k}: time={elapsed_time:.1f}s, NRE={score:.6f}")
+            else:  # gmm
+                print(f"k={k}: time={elapsed_time:.1f}s, average GMM effect size={score:.6f}")
     
     # Calculate mean metric for each k
     for k in k_candidates:

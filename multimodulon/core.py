@@ -1231,7 +1231,7 @@ class MultiModulon:
         step: int = 5,
         max_a_per_view: Optional[int] = None,
         train_frac: float = 0.75,
-        num_runs: int = 3,
+        num_runs: int = 1,
         mode: str = 'gpu',
         seed: int = 42,
         save_plot: Optional[str] = None,
@@ -1269,7 +1269,7 @@ class MultiModulon:
             Maximum components per view. If None, uses max_k
         train_frac : float, default=0.75
             Fraction of data to use for training
-        num_runs : int, default=3
+        num_runs : int, default=1
             Number of cross-validation runs
         mode : str, default='gpu'
             'gpu' or 'cpu' mode
