@@ -43,8 +43,8 @@ def calculate_gmm_effect_size(weight_vector: np.ndarray) -> float:
     X = weight_vector.reshape(-1, 1)
     
     try:
-        # Fit 2-component GMM
-        gmm = GaussianMixture(n_components=2, random_state=42, max_iter=100)
+        # Fit 2-component GMM with fixed random state for reproducibility
+        gmm = GaussianMixture(n_components=2, random_state=42, max_iter=100, init_params='kmeans')
         gmm.fit(X)
         
         # Extract means and standard deviations
@@ -211,7 +211,7 @@ def run_nre_optimization(
         n_samples = species_X_matrices[species_list[0]].shape[0]  # samples are rows
         indices = np.arange(n_samples)
         train_idx, test_idx = train_test_split(
-            indices, train_size=train_frac, random_state=seed + run
+            indices, train_size=train_frac, random_state=seed
         )
         
         X_train_views = []
