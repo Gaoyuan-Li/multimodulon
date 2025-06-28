@@ -183,7 +183,8 @@ def run_nre_optimization(
         metric: 'nre' for Normalized Reconstruction Error, 'gmm' for GMM effect size
     """
     
-    species_list = list(species_X_matrices.keys())
+    # Sort species list for consistent ordering across runs
+    species_list = sorted(list(species_X_matrices.keys()))
     n_species = len(species_list)
     if n_species < 2:
         raise ValueError(f"Expected at least 2 species, got {n_species}")
@@ -283,8 +284,8 @@ def run_nre_optimization(
                 if component_effect_sizes_per_k is not None:
                     component_effect_sizes_per_k[k].append(avg_effect_sizes)
                 
-                # Use mean of all component effect sizes as the metric
-                score = np.mean(avg_effect_sizes)
+                # Use median of all component effect sizes as the metric
+                score = np.median(avg_effect_sizes)
             
             all_metric_per_k[k].append(score)
             
@@ -292,12 +293,17 @@ def run_nre_optimization(
             if metric == 'nre':
                 print(f"k={k}: time={elapsed_time:.1f}s, NRE={score:.6f}")
             else:  # gmm
-                print(f"k={k}: time={elapsed_time:.1f}s, mean GMM effect size={score:.6f}")
+                print(f"k={k}: time={elapsed_time:.1f}s, median GMM effect size={score:.6f}")
     
-    # Calculate mean metric for each k
+    # Calculate mean metric for each k (for NRE) or median metric (for GMM)
     for k in k_candidates:
         if all_metric_per_k[k]:
-            mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
+            if metric == 'gmm':
+                # For GMM, we already stored median values, just take mean of runs
+                mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
+            else:
+                # For NRE, take mean as before
+                mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
     
     # Find optimal k
     if metric == 'nre':
@@ -315,8 +321,10 @@ def run_nre_optimization(
                                if score >= optimal_value - tolerance]
         best_k = min(optimal_k_candidates)  # Choose smallest k if tied
     
-    metric_name = metric.upper()
-    print(f"\nOptimal k = {best_k} ({metric_name} = {mean_metric_per_k[best_k]:.6f})")
+    if metric == 'nre':
+        print(f"\nOptimal k = {best_k} (NRE = {mean_metric_per_k[best_k]:.6f})")
+    else:
+        print(f"\nOptimal k = {best_k} (Median GMM effect size = {mean_metric_per_k[best_k]:.6f})")
     
     # Threshold analysis for GMM metric
     if metric == 'gmm' and threshold is not None and component_effect_sizes_per_k is not None:
@@ -439,8 +447,12 @@ def run_nre_optimization(
         ax.legend()
         
         # Add optimal value text
-        metric_name = metric.upper()
-        ax.text(0.02, 0.98, f'Optimal k = {best_k}\n{metric_name} = {mean_metric_per_k[best_k]:.6f}', 
+        if metric == 'nre':
+            label_text = f'Optimal k = {best_k}\nNRE = {mean_metric_per_k[best_k]:.6f}'
+        else:
+            label_text = f'Optimal k = {best_k}\nMedian GMM effect size = {mean_metric_per_k[best_k]:.6f}'
+        
+        ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
                verticalalignment='top')

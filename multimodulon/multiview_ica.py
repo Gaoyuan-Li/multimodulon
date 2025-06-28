@@ -142,12 +142,23 @@ def run_multi_view_ICA_on_datasets(
             - W_matrices: List of numpy arrays with unmixing matrices W
             - K_matrices: List of numpy arrays with whitening matrices K
     """
-    # reproducibility
-    torch.manual_seed(seed)
+    # reproducibility - comprehensive seeding
+    import random
+    random.seed(seed)
     np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
     # device
     device = torch.device("cuda:0" if mode == "gpu" and torch.cuda.is_available() else "cpu")
+    
+    # Set generator for device-specific operations
+    if str(device) == "cuda:0":
+        torch.cuda.set_device(device)
 
     # to torch, transpose to (features, samples)
     X_np = [d.values.T.copy() for d in datasets]
@@ -163,16 +174,25 @@ def run_multi_view_ICA_on_datasets(
     # (samples, rank)
     X_model = [xw[0].T.contiguous() for xw in Xw]
 
-    # models
-    models = [MSIICA(k, a).to(device) for k, a in zip(ks, a_values)]
+    # models with deterministic initialization
+    models = []
+    for k, a in zip(ks, a_values):
+        model = MSIICA(k, a)
+        # Reinitialize with fixed seed for each model
+        torch.manual_seed(seed + k + a)  # Unique but deterministic seed per model
+        model.W.weight.data = torch.nn.init.orthogonal_(torch.empty(a, k))
+        model = model.to(device)
+        models.append(model)
 
     # Use full dataset size if batch_size not specified
     if batch_size is None:
         batch_size = X_model[0].shape[0]  # number of samples
 
-    # loader
+    # loader with fixed random generator for reproducibility
+    generator = torch.Generator()
+    generator.manual_seed(seed)
     train_loader = DataLoader(TensorDataset(*X_model),
-                              batch_size=batch_size, shuffle=True)
+                              batch_size=batch_size, shuffle=True, generator=generator)
 
     # optimiser
     params = [p for m in models for p in m.parameters()]
