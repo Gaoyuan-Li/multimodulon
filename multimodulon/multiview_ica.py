@@ -69,6 +69,16 @@ def whiten(X, rank):
     eigvals = eigvals.flip(dims=[-1])
     eigvecs = eigvecs.flip(dims=[-1])
     
+    # Stabilize eigenvector signs for reproducibility
+    # Make the component with largest absolute value positive
+    for i in range(eigvecs.shape[-1]):
+        # Find index of maximum absolute value component for each batch and eigenvector
+        max_idx = torch.argmax(torch.abs(eigvecs[:, :, i]), dim=1, keepdim=True)
+        # Get the sign of that component
+        signs = torch.sign(torch.gather(eigvecs[:, :, i], 1, max_idx))
+        # Apply sign to make largest component positive
+        eigvecs[:, :, i] *= signs
+    
     # Select the top 'rank' components.
     eigvals = eigvals[:, :rank]
     eigvecs = eigvecs[:, :, :rank]
@@ -143,15 +153,24 @@ def run_multi_view_ICA_on_datasets(
             - K_matrices: List of numpy arrays with whitening matrices K
     """
     # reproducibility - comprehensive seeding
+    import os
     import random
+    
+    # Set environment variables for deterministic behavior
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+    
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+        # Additional CUDA determinism
+        torch.use_deterministic_algorithms(True)
 
     # device
     device = torch.device("cuda:0" if mode == "gpu" and torch.cuda.is_available() else "cpu")
@@ -176,11 +195,21 @@ def run_multi_view_ICA_on_datasets(
 
     # models with deterministic initialization
     models = []
-    for k, a in zip(ks, a_values):
+    for i, (k, a) in enumerate(zip(ks, a_values)):
+        # Set deterministic seed for this specific model
+        model_seed = seed + i  # Simple deterministic seed per model
+        torch.manual_seed(model_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(model_seed)
+        
         model = MSIICA(k, a)
-        # Reinitialize with fixed seed for each model
-        torch.manual_seed(seed + k + a)  # Unique but deterministic seed per model
-        model.W.weight.data = torch.nn.init.orthogonal_(torch.empty(a, k))
+        
+        # Explicitly reinitialize the orthogonal weights deterministically
+        with torch.no_grad():
+            # Create orthogonal matrix on CPU first for determinism
+            orth_matrix = torch.nn.init.orthogonal_(torch.empty(a, k))
+            model.W.weight.data = orth_matrix
+        
         model = model.to(device)
         models.append(model)
 
@@ -291,8 +320,8 @@ def run_multiview_ica(
     if len(a_values) != n_species:
         raise ValueError(f"Expected {n_species} a_values, got {len(a_values)}")
     
-    # Prepare data
-    species_list = list(species_X_matrices.keys())
+    # Prepare data with consistent ordering
+    species_list = sorted(list(species_X_matrices.keys()))
     X_matrices = [species_X_matrices[sp] for sp in species_list]
     a_list = [a_values[sp] for sp in species_list]
     

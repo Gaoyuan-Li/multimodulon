@@ -24,7 +24,7 @@ except ImportError:
 
 
 
-def calculate_gmm_effect_size(weight_vector: np.ndarray) -> float:
+def calculate_gmm_effect_size(weight_vector: np.ndarray, seed: int = 42) -> float:
     """
     Calculate effect size from 2-component GMM fit to weight vector.
     
@@ -44,7 +44,7 @@ def calculate_gmm_effect_size(weight_vector: np.ndarray) -> float:
     
     try:
         # Fit 2-component GMM with fixed random state for reproducibility
-        gmm = GaussianMixture(n_components=2, random_state=42, max_iter=100, init_params='kmeans')
+        gmm = GaussianMixture(n_components=2, random_state=seed, max_iter=100, init_params='kmeans')
         gmm.fit(X)
         
         # Extract means and standard deviations
@@ -65,7 +65,7 @@ def calculate_gmm_effect_size(weight_vector: np.ndarray) -> float:
         return 0.0
 
 
-def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame]) -> List[float]:
+def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame], seed: int = 42) -> List[float]:
     """
     Calculate mean effect sizes across species for each component.
     
@@ -75,7 +75,8 @@ def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame]) -> List[
     Returns:
         List of mean effect sizes, one per component
     """
-    species_list = list(M_matrices.keys())
+    # Sort species list for consistent ordering across runs
+    species_list = sorted(list(M_matrices.keys()))
     n_components = M_matrices[species_list[0]].shape[1]
     
     avg_effect_sizes = []
@@ -87,7 +88,7 @@ def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame]) -> List[
         for species in species_list:
             M_matrix = M_matrices[species]
             weight_vector = M_matrix.iloc[:, comp_idx].values
-            effect_size = calculate_gmm_effect_size(weight_vector)
+            effect_size = calculate_gmm_effect_size(weight_vector, seed)
             component_effect_sizes.append(effect_size)
         
         # Mean across species
@@ -278,7 +279,7 @@ def run_nre_optimization(
                 )
                 
                 # Calculate mean effect sizes across components
-                avg_effect_sizes = calculate_average_effect_sizes(M_matrices)
+                avg_effect_sizes = calculate_average_effect_sizes(M_matrices, seed)
                 
                 # Store individual component effect sizes for threshold analysis
                 if component_effect_sizes_per_k is not None:
