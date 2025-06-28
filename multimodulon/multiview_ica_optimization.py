@@ -260,7 +260,8 @@ def run_nre_optimization(
                     {species: X_test_views[i] for i, species in enumerate(species_list)},
                     a_values,
                     k,  # c = k
-                    mode=mode
+                    mode=mode,
+                    seed=seed  # Use exact same seed for reproducibility
                 )
                 
                 # Calculate average effect sizes across components
