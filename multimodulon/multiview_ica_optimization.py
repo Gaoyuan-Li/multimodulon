@@ -348,26 +348,61 @@ def run_nre_optimization(
                                if abs(score - optimal_value) < tolerance]
         best_k = max(optimal_k_candidates)
     else:  # effect_size
-        # For effect_size, find where the growth plateaus
+        # More robust method: find the elbow point where we've captured most of the benefit
         k_sorted = sorted(mean_metric_per_k.keys())
+        counts = [mean_metric_per_k[k] for k in k_sorted]
         
-        # Find the k where growth stops or plateaus
-        best_k = k_sorted[0]  # Default to smallest k
-        
-        for i in range(len(k_sorted) - 1):
-            current_k = k_sorted[i]
-            next_k = k_sorted[i + 1]
+        if len(k_sorted) < 3:
+            # Too few points, just take the max
+            best_k = k_sorted[np.argmax(counts)]
+        else:
+            # Calculate the percentage of max count achieved at each k
+            max_count = max(counts)
+            min_count = min(counts)
+            count_range = max_count - min_count
             
-            current_count = mean_metric_per_k[current_k]
-            next_count = mean_metric_per_k[next_k]
-            
-            # If the count doesn't increase for the next k, we've found our plateau
-            if next_count <= current_count:
-                best_k = current_k
-                break
-            # If we reach the end and it's still growing, take the last k
-            elif i == len(k_sorted) - 2:
-                best_k = next_k
+            if count_range == 0:
+                # All counts are the same
+                best_k = k_sorted[0]
+            else:
+                # Find where we reach 90% of the range
+                threshold_percentage = 0.9
+                target_count = min_count + threshold_percentage * count_range
+                
+                # Find the smallest k that achieves at least the target count
+                for i, (k, count) in enumerate(zip(k_sorted, counts)):
+                    if count >= target_count:
+                        # Check if this is part of a stable plateau by looking ahead
+                        if i < len(k_sorted) - 2:
+                            # Check the next few points for stability
+                            next_counts = counts[i:i+3]
+                            count_std = np.std(next_counts)
+                            # If relatively stable (std < 10% of current value), we found our k
+                            if count_std < 0.1 * count:
+                                best_k = k
+                                break
+                        else:
+                            best_k = k
+                            break
+                else:
+                    # If we didn't find a good plateau, use the elbow method
+                    # Calculate the rate of change
+                    if len(k_sorted) >= 3:
+                        rates = []
+                        for i in range(1, len(counts)):
+                            rate = (counts[i] - counts[i-1]) / (k_sorted[i] - k_sorted[i-1])
+                            rates.append(rate)
+                        
+                        # Find where the rate drops significantly (elbow)
+                        for i in range(1, len(rates)):
+                            if rates[i] < 0.1 * rates[0]:  # Rate dropped to less than 10% of initial rate
+                                best_k = k_sorted[i]
+                                break
+                        else:
+                            # If no clear elbow, take the k at 90% of max
+                            best_k = k_sorted[-1]
+                    else:
+                        best_k = k_sorted[-1]
     
     if metric == 'nre':
         print(f"\nOptimal k = {best_k} (NRE = {mean_metric_per_k[best_k]:.6f})")
@@ -452,6 +487,11 @@ def run_nre_optimization(
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
         ax.grid(True, alpha=0.3)
         ax.legend()
+        
+        # Force y-axis to show only integers
+        if metric == 'effect_size':
+            from matplotlib.ticker import MaxNLocator
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
         # Add optimal value text
         if metric == 'nre':

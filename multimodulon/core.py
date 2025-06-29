@@ -17,7 +17,7 @@ from .utils.gff_parser import parse_gff
 from .utils.bbh import BBHAnalyzer
 from .utils.fasta_utils import extract_protein_sequences
 from .multiview_ica import run_multiview_ica
-from .multiview_ica_optimization import run_nre_optimization
+from .multiview_ica_optimization import run_nre_optimization, calculate_cohens_d_effect_size
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,7 @@ class SpeciesData:
         self._log_tpm_norm = None
         self._X = None
         self._M = None
+        self._A = None
         self._sample_sheet = None
         self._gene_table = None
     
@@ -77,6 +78,18 @@ class SpeciesData:
     def M(self, value: pd.DataFrame):
         """Set ICA mixing matrix."""
         self._M = value
+    
+    @property
+    def A(self) -> pd.DataFrame:
+        """Get ICA activity matrix (A matrix)."""
+        if self._A is None:
+            raise AttributeError(f"A matrix not yet computed for {self.species_name}. Run generate_A() first.")
+        return self._A
+    
+    @A.setter
+    def A(self, value: pd.DataFrame):
+        """Set ICA activity matrix."""
+        self._A = value
     
     @property
     def sample_sheet(self) -> pd.DataFrame:
@@ -301,6 +314,49 @@ class MultiModulon:
     def species(self) -> list[str]:
         """Get list of loaded species."""
         return list(self._species_data.keys())
+    
+    def generate_A(self):
+        """
+        Generate A matrices for all species from M matrices and X matrices.
+        
+        A = M.T @ X
+        
+        Where:
+        - M is the mixing matrix (genes x components)
+        - X is the expression matrix (genes x samples)
+        - A is the activity matrix (components x samples)
+        
+        The resulting A matrix has:
+        - Row indices: component names from M columns
+        - Column indices: sample names from X columns
+        """
+        print("\nGenerating A matrices...")
+        
+        for species_name in self._species_data.keys():
+            species_data = self._species_data[species_name]
+            
+            # Check if M matrix exists
+            if species_data._M is None:
+                logger.warning(f"M matrix not found for {species_name}. Skipping A generation.")
+                continue
+            
+            # Get M and X matrices
+            M = species_data.M
+            X = species_data.X
+            
+            # Calculate A = M.T @ X
+            A = M.T @ X
+            
+            # A should have component names as rows and sample names as columns
+            A.index = M.columns  # Component names
+            A.columns = X.columns  # Sample names
+            
+            # Store A matrix in species data
+            species_data._A = A
+            
+            print(f"✓ Generated A matrix for {species_name}: {A.shape}")
+        
+        print("\nA matrix generation completed!")
     
     def save_bbh(self, output_path: str):
         """
@@ -1392,6 +1448,265 @@ class MultiModulon:
         self._optimal_k = best_k
         
         return best_k, metric_scores
+    
+    def _check_component_consistency(self, A: pd.DataFrame, sample_sheet: pd.DataFrame, component_name: str) -> bool:
+        """
+        Check if a component is consistent across biological replicates.
+        
+        Returns True if component is consistent, False if it should be dropped.
+        """
+        # Build replicate groups
+        if "biological_replicate" not in sample_sheet.columns:
+            # If no biological_replicate column, assume all samples are independent
+            return True
+        
+        st = sample_sheet.copy()
+        grp_id = 0
+        replicate_groups = []
+        for v in st["biological_replicate"]:
+            if v == 1 and replicate_groups:
+                grp_id += 1
+            replicate_groups.append(grp_id)
+        st["replicate_group"] = replicate_groups
+        sample_to_grp = st["replicate_group"].to_dict()
+        
+        # Get component values
+        row = A.loc[component_name]
+        
+        # Check each replicate group
+        for gid in st["replicate_group"].unique():
+            cols = [c for c in A.columns if c in sample_to_grp and sample_to_grp[c] == gid]
+            if not cols:
+                continue
+                
+            vals = row[cols].astype(float).values
+            if vals.size == 0:
+                continue
+            
+            abs_vals = np.abs(vals)
+            mixed_signs = (vals > 0).any() and (vals < 0).any()
+            all_big = (abs_vals > 5).all()
+            wide_span = abs_vals.max() - abs_vals.min() > 20
+            
+            if (mixed_signs and all_big) or wide_span:
+                return False  # Inconsistent
+        
+        return True  # Consistent
+    
+    def optimize_number_of_unique_components(
+        self,
+        best_k: Optional[int] = None,
+        step: int = 5,
+        mode: str = 'gpu',
+        seed: int = 42,
+        save_plots: Optional[str] = None,
+        effective_size_threshold: float = 5,
+        num_top_gene: int = 20
+    ) -> Dict[str, int]:
+        """
+        Optimize the number of unique components for each species.
+        
+        This method runs ICA with varying numbers of unique components for each species
+        while keeping other species at c=k_best, and finds the optimal number that
+        maximizes consistent unique components.
+        
+        Parameters
+        ----------
+        best_k : int, optional
+            Number of core components. If None, uses the value from optimize_number_of_core_components
+        step : int, default=5
+            Step size for testing unique components (tests k_best+5, k_best+10, ...)
+        mode : str, default='gpu'
+            'gpu' or 'cpu' mode
+        seed : int, default=42
+            Random seed for reproducibility
+        save_plots : str, optional
+            Directory to save plots. If None, displays the plots
+        effective_size_threshold : float, default=5
+            Minimum Cohen's d effect size threshold for counting components
+        num_top_gene : int, default=20
+            Number of top genes to use when calculating Cohen's d effect size
+            
+        Returns
+        -------
+        dict
+            Dictionary mapping species names to optimal number of components (a values)
+        """
+        from tqdm import tqdm
+        import matplotlib.pyplot as plt
+        from matplotlib.ticker import MaxNLocator
+        
+        # Use stored optimal k if not provided
+        if best_k is None:
+            if hasattr(self, '_optimal_k'):
+                best_k = self._optimal_k
+            else:
+                raise ValueError("best_k not provided and no optimal k found. Run optimize_number_of_core_components first.")
+        
+        print(f"\nOptimizing unique components with core k = {best_k}")
+        
+        species_list = list(self._species_data.keys())
+        n_species = len(species_list)
+        
+        # Prepare X matrices
+        species_X_matrices = {}
+        for species in species_list:
+            species_X_matrices[species] = self._species_data[species].X
+        
+        # Results storage
+        optimal_a_values = {}
+        
+        # Process each species
+        for target_species in species_list:
+            print(f"\n{'='*60}")
+            print(f"Optimizing unique components for {target_species}")
+            print(f"{'='*60}")
+            
+            # Get minimum dimension (number of samples)
+            min_dim = species_X_matrices[target_species].shape[1]
+            
+            # Generate a candidates: from k_best to closest multiple of 5 below min_dim
+            a_candidates = []
+            a = best_k
+            while a < min_dim - 5:
+                a_candidates.append(a)
+                a += step
+            # Add the last valid a
+            if a_candidates[-1] < min_dim - 5:
+                a_candidates.append(((min_dim - 5) // step) * step)
+            
+            if not a_candidates:
+                a_candidates = [best_k]
+            
+            print(f"Testing a values: {a_candidates}")
+            
+            # Store results
+            consistent_counts = {}
+            
+            # Test each a value
+            for a_test in tqdm(a_candidates, desc=f"Testing a values for {target_species}"):
+                # Set up a_values: a_test for target species, best_k for others
+                a_values = {}
+                for species in species_list:
+                    if species == target_species:
+                        a_values[species] = a_test
+                    else:
+                        a_values[species] = best_k
+                
+                # Run ICA
+                M_matrices = run_multiview_ica(
+                    species_X_matrices,
+                    a_values,
+                    best_k,  # c = best_k
+                    mode=mode,
+                    seed=seed
+                )
+                
+                # Generate A matrix for target species
+                M = M_matrices[target_species]
+                X = species_X_matrices[target_species]
+                A = M.T @ X
+                A.index = M.columns
+                A.columns = X.columns
+                
+                # Get sample sheet
+                sample_sheet = self._species_data[target_species].sample_sheet
+                
+                # Count consistent unique components
+                consistent_unique = 0
+                
+                for comp in A.index:
+                    if comp.startswith("Unique"):
+                        # Get component index (Unique components start after core components)
+                        comp_idx = int(comp.split('_')[1]) - 1 + best_k
+                        
+                        # Check Cohen's d threshold
+                        weight_vector = M.iloc[:, comp_idx].values
+                        effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
+                        
+                        if effect_size >= effective_size_threshold:
+                            # Check consistency
+                            if self._check_component_consistency(A, sample_sheet, comp):
+                                consistent_unique += 1
+                
+                consistent_counts[a_test] = consistent_unique
+            
+            # Find optimal a using 90% growth method
+            a_sorted = sorted(consistent_counts.keys())
+            counts = [consistent_counts[a] for a in a_sorted]
+            
+            if len(a_sorted) < 2:
+                optimal_a = a_sorted[0]
+            else:
+                max_count = max(counts)
+                min_count = min(counts)
+                count_range = max_count - min_count
+                
+                if count_range == 0:
+                    optimal_a = a_sorted[0]
+                else:
+                    # Find where we reach 90% of the range
+                    threshold_percentage = 0.9
+                    target_count = min_count + threshold_percentage * count_range
+                    
+                    # Find the smallest a that achieves at least the target count
+                    optimal_a = a_sorted[0]
+                    for i, (a, count) in enumerate(zip(a_sorted, counts)):
+                        if count >= target_count:
+                            optimal_a = a
+                            break
+            
+            optimal_a_values[target_species] = optimal_a
+            
+            # Create plot
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            ax.plot(a_sorted, counts, 'bo-', linewidth=2, markersize=8, 
+                   label='Consistent unique components')
+            
+            # Highlight optimal a
+            ax.axvline(x=optimal_a, color='red', linestyle='--', alpha=0.7, linewidth=2,
+                      label=f'Optimal a = {optimal_a}')
+            ax.scatter([optimal_a], [consistent_counts[optimal_a]], color='red', s=120, zorder=5,
+                      edgecolors='darkred', linewidth=2)
+            
+            ax.set_xlabel('Number of Total Components (a)', fontsize=12)
+            ax.set_ylabel('Number of Consistent Unique Components', fontsize=12)
+            ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            
+            # Force integer y-axis
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            
+            # Add text box with result
+            label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} consistent unique components'
+            ax.text(0.02, 0.98, label_text, 
+                   transform=ax.transAxes, fontsize=11, fontweight='bold',
+                   bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
+                   verticalalignment='top')
+            
+            plt.tight_layout()
+            
+            # Save or display plot
+            if save_plots:
+                Path(save_plots).mkdir(exist_ok=True)
+                plot_path = Path(save_plots) / f"unique_optimization_{target_species}.png"
+                fig.savefig(plot_path, dpi=300, bbox_inches='tight')
+                print(f"Plot saved to: {plot_path}")
+            else:
+                plt.show()
+            
+            print(f"\nOptimal a for {target_species}: {optimal_a} ({consistent_counts[optimal_a]} consistent unique components)")
+        
+        print(f"\n{'='*60}")
+        print("Optimization Summary")
+        print(f"{'='*60}")
+        print(f"Core components (c): {best_k}")
+        for species, a in optimal_a_values.items():
+            print(f"{species}: a = {a} (unique components: {a - best_k})")
+        
+        return optimal_a_values
             
         if self._bbh is not None:
             print(f"\nBBH analysis completed:")
