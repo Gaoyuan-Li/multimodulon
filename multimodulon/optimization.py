@@ -79,10 +79,15 @@ def optimize_number_of_core_components(
     
     Returns
     -------
-    optimal_num_core_components : int
-        Optimal number of core components
-    metric_scores : dict
-        Dictionary mapping k values to mean metric scores (or number of above-threshold components for effect_size metric)
+    For metric='effect_size':
+        optimal_num_core_components : int
+            Optimal number of core components
+    
+    For metric='nre':
+        optimal_num_core_components : int
+            Optimal number of core components
+        metric_scores : dict
+            Dictionary mapping k values to mean NRE scores
     
     Examples
     --------
@@ -163,7 +168,11 @@ def optimize_number_of_core_components(
     # Store the optimal k for later use
     multimodulon._optimal_k = optimal_num_core_components
     
-    return optimal_num_core_components, metric_scores
+    # Return different values based on metric
+    if metric == 'effect_size':
+        return optimal_num_core_components
+    else:  # metric == 'nre'
+        return optimal_num_core_components, metric_scores
 
 
 def optimize_number_of_unique_components(
