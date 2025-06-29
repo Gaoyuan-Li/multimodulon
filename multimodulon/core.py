@@ -1572,8 +1572,10 @@ class MultiModulon:
                 a_candidates.append(a)
                 a += step
             # Add the last valid a
-            if a_candidates[-1] < min_dim - 5:
-                a_candidates.append(((min_dim - 5) // step) * step)
+            if a_candidates and a_candidates[-1] < min_dim - 5:
+                last_valid = ((min_dim - 5) // step) * step
+                if last_valid not in a_candidates:
+                    a_candidates.append(last_valid)
             
             if not a_candidates:
                 a_candidates = [best_k]
