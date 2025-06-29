@@ -346,7 +346,7 @@ def run_nre_optimization(
         tolerance = 1e-8
         optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
                                if abs(score - optimal_value) < tolerance]
-        best_k = max(optimal_k_candidates)
+        optimal_num_core_components = max(optimal_k_candidates)
     else:  # effect_size
         # More robust method: find the elbow point where we've captured most of the benefit
         k_sorted = sorted(mean_metric_per_k.keys())
@@ -354,7 +354,7 @@ def run_nre_optimization(
         
         if len(k_sorted) < 3:
             # Too few points, just take the max
-            best_k = k_sorted[np.argmax(counts)]
+            optimal_num_core_components = k_sorted[np.argmax(counts)]
         else:
             # Calculate the percentage of max count achieved at each k
             max_count = max(counts)
@@ -363,7 +363,7 @@ def run_nre_optimization(
             
             if count_range == 0:
                 # All counts are the same
-                best_k = k_sorted[0]
+                optimal_num_core_components = k_sorted[0]
             else:
                 # Find where we reach 90% of the range
                 threshold_percentage = 0.9
@@ -379,10 +379,10 @@ def run_nre_optimization(
                             count_std = np.std(next_counts)
                             # If relatively stable (std < 10% of current value), we found our k
                             if count_std < 0.1 * count:
-                                best_k = k
+                                optimal_num_core_components = k
                                 break
                         else:
-                            best_k = k
+                            optimal_num_core_components = k
                             break
                 else:
                     # If we didn't find a good plateau, use the elbow method
@@ -396,18 +396,18 @@ def run_nre_optimization(
                         # Find where the rate drops significantly (elbow)
                         for i in range(1, len(rates)):
                             if rates[i] < 0.1 * rates[0]:  # Rate dropped to less than 10% of initial rate
-                                best_k = k_sorted[i]
+                                optimal_num_core_components = k_sorted[i]
                                 break
                         else:
                             # If no clear elbow, take the k at 90% of max
-                            best_k = k_sorted[-1]
+                            optimal_num_core_components = k_sorted[-1]
                     else:
-                        best_k = k_sorted[-1]
+                        optimal_num_core_components = k_sorted[-1]
     
     if metric == 'nre':
-        print(f"\nOptimal k = {best_k} (NRE = {mean_metric_per_k[best_k]:.6f})")
+        print(f"\nOptimal k = {optimal_num_core_components} (NRE = {mean_metric_per_k[optimal_num_core_components]:.6f})")
     else:
-        print(f"\nOptimal k = {best_k} (Number of components above threshold = {mean_metric_per_k[best_k]:.1f})")
+        print(f"\nOptimal k = {optimal_num_core_components} (Number of components above threshold = {mean_metric_per_k[optimal_num_core_components]:.1f})")
     
     # Threshold analysis for effect_size metric
     if metric == 'effect_size' and threshold is not None and component_effect_sizes_per_k is not None:
@@ -459,9 +459,9 @@ def run_nre_optimization(
                        color='blue', label='NRE Score', linewidth=2)
             
             # Highlight optimal k
-            ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
-                      label=f'Optimal k = {best_k}')
-            ax.scatter([best_k], [mean_metric_per_k[best_k]], color='red', s=120, zorder=5,
+            ax.axvline(x=optimal_num_core_components, color='red', linestyle='--', alpha=0.7, linewidth=2,
+                      label=f'Optimal k = {optimal_num_core_components}')
+            ax.scatter([optimal_num_core_components], [mean_metric_per_k[optimal_num_core_components]], color='red', s=120, zorder=5,
                       edgecolors='darkred', linewidth=2)
             
             ax.set_ylabel('NRE Score (Lower is Better)', fontsize=12)
@@ -475,9 +475,9 @@ def run_nre_optimization(
                    label='Number of components above threshold')
             
             # Highlight optimal k
-            ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
-                      label=f'Optimal k = {best_k}')
-            ax.scatter([best_k], [mean_metric_per_k[best_k]], color='red', s=120, zorder=5,
+            ax.axvline(x=optimal_num_core_components, color='red', linestyle='--', alpha=0.7, linewidth=2,
+                      label=f'Optimal k = {optimal_num_core_components}')
+            ax.scatter([optimal_num_core_components], [mean_metric_per_k[optimal_num_core_components]], color='red', s=120, zorder=5,
                       edgecolors='darkred', linewidth=2)
             
             ax.set_ylabel('Number of Components Above Threshold', fontsize=12)
@@ -495,9 +495,9 @@ def run_nre_optimization(
         
         # Add optimal value text
         if metric == 'nre':
-            label_text = f'Optimal k = {best_k}\nNRE = {mean_metric_per_k[best_k]:.6f}'
+            label_text = f'Optimal k = {optimal_num_core_components}\nNRE = {mean_metric_per_k[optimal_num_core_components]:.6f}'
         else:
-            label_text = f'Optimal k = {best_k}\n{int(mean_metric_per_k[best_k])} components above threshold'
+            label_text = f'Optimal k = {optimal_num_core_components}\n{int(mean_metric_per_k[optimal_num_core_components])} components above threshold'
         
         ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
@@ -507,4 +507,4 @@ def run_nre_optimization(
         # Adjust layout
         plt.tight_layout()
     
-    return best_k, mean_metric_per_k, all_metric_per_k, fig
+    return optimal_num_core_components, mean_metric_per_k, all_metric_per_k, fig
