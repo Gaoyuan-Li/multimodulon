@@ -536,7 +536,7 @@ class MultiModulon:
         effect_size_threshold_unique: Optional[float] = None,
         num_top_gene: int = 20,
         save_plots: Optional[str] = None
-    ) -> Dict[str, pd.DataFrame]:
+    ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
         """
         Run robust multi-view ICA with clustering to identify consistent components.
         
@@ -573,15 +573,18 @@ class MultiModulon:
             
         Returns
         -------
-        dict
+        M_matrices : dict
             Dictionary mapping species names to M matrices containing robust components.
             Each M matrix has columns for core components followed by unique components.
+        A_matrices : dict
+            Dictionary mapping species names to A matrices (component activities).
+            Each A matrix has components as rows and samples as columns.
             
         Examples
         --------
         >>> # Run with optimized parameters
         >>> a_values = {'strain1': 50, 'strain2': 55, 'strain3': 60}
-        >>> robust_results = multiModulon.run_robust_multiview_ica(
+        >>> M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
         ...     a=a_values,
         ...     c=30,
         ...     num_runs=100,
@@ -589,12 +592,16 @@ class MultiModulon:
         ... )
         
         >>> # Use different thresholds for core and unique components
-        >>> robust_results = multiModulon.run_robust_multiview_ica(
+        >>> M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
         ...     a=a_values,
         ...     c=30,
         ...     effect_size_threshold_core=5,
         ...     effect_size_threshold_unique=3
         ... )
+        
+        >>> # Access the results
+        >>> M_strain1 = M_matrices['strain1']  # Mixing matrix for strain1
+        >>> A_strain1 = A_matrices['strain1']  # Activity matrix for strain1
         """
         # Set effect size thresholds
         if effect_size_threshold_core is None:
@@ -736,6 +743,27 @@ class MultiModulon:
             n_unique = len([c for c in M_matrix.columns if c.startswith('Unique_')])
             print(f"✓ {species}: {M_matrix.shape} ({n_core} core, {n_unique} unique components)")
         
+        # Generate A matrices using the robust M matrices
+        print("\nGenerating A matrices from robust M matrices...")
+        final_A_matrices = {}
+        
+        for species in species_list:
+            M = final_M_matrices[species]
+            X = species_X_matrices[species]
+            
+            # Calculate A = M.T @ X
+            A = M.T @ X
+            
+            # A should have component names as rows and sample names as columns
+            A.index = M.columns  # Component names
+            A.columns = X.columns  # Sample names
+            
+            # Store A matrix
+            final_A_matrices[species] = A
+            self._species_data[species]._A = A
+            
+            print(f"✓ Generated A matrix for {species}: {A.shape}")
+        
         # Print summary
         print(f"\n{'='*60}")
         print("Robust multi-view ICA completed!")
@@ -746,7 +774,7 @@ class MultiModulon:
             print(f"{species}: {n_unique} unique components")
         print(f"{'='*60}")
         
-        return final_M_matrices
+        return final_M_matrices, final_A_matrices
     
     def _enforce_sign_convention(self, component: np.ndarray) -> np.ndarray:
         """Ensure component's largest absolute value is positive."""
