@@ -69,6 +69,28 @@ def main():
     print(f"\nCombined gene database shape: {combined_gene_db.shape}")
     print(f"Columns: {list(combined_gene_db.columns)}")
     
+    # Create gene tables from GFF files
+    print("\n" + "=" * 60)
+    print("Creating gene tables from GFF files...")
+    print("=" * 60)
+    
+    # This will read GFF files from ref_genome folder in each species directory
+    multiModulon.create_gene_table()
+    
+    # Access gene tables
+    print("\n" + "=" * 60)
+    print("Accessing gene tables:")
+    print("=" * 60)
+    
+    for strain_name in available_strains:
+        strain_data = multiModulon[strain_name]
+        if hasattr(strain_data, '_gene_table') and strain_data._gene_table is not None:
+            print(f"\n{strain_name} gene table:")
+            print(f"  - Shape: {strain_data.gene_table.shape}")
+            print(f"  - Columns: {list(strain_data.gene_table.columns)}")
+            print(f"  - First 3 genes:")
+            print(strain_data.gene_table.head(3))
+    
     # Access aligned expression matrices
     print("\n" + "=" * 60)
     print("Accessing aligned expression matrices:")
@@ -81,6 +103,7 @@ def main():
     
     print("\nExample completed successfully!")
     print("You can now access:")
+    print("- multiModulon['strain_name'].gene_table for gene annotations")
     print("- multiModulon['strain_name'].X for aligned expression matrices")
     print("- Combined gene database saved to Output_Gene_Info/combined_gene_db.csv")
     print("- BBH files saved to Output_BBH/")

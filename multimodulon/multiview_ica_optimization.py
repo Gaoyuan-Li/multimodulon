@@ -10,7 +10,7 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 try:
     import matplotlib.pyplot as plt

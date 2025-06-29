@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 from typing import Dict, Tuple, Optional
 import os
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import logging
 
 logger = logging.getLogger(__name__)
