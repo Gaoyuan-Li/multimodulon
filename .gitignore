@@ -83,6 +83,7 @@ cython_debug/
 output/
 *.faa
 *.blast
+*.claude
 bbh_results*
 
 # IDE
