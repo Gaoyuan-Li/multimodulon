@@ -107,20 +107,40 @@ def find_ordering(S_list):
         Tuple of (u, orders, vals)
     """
     n_pb = len(S_list)
-    p = None
-    for i in range(n_pb):
-        p = S_list[i].shape[0] if p is None else np.min((p, S_list[i].shape[0]))
-
+    
+    # Normalize each source matrix
     for i in range(len(S_list)):
         S_list[i] /= np.linalg.norm(S_list[i], axis=1, keepdims=1)
+    
+    # Use first dataset as reference
     S = S_list[0].copy()
-    order = np.arange(p)[None, :] * np.ones(n_pb, dtype=int)[:, None]
+    n_components_ref = S.shape[0]
+    
+    # Store orderings for each dataset - list of arrays with different sizes
+    orderings = [np.arange(n_components_ref)]  # First dataset keeps original order
+    vals_list = []
+    
+    # Find best matching for other datasets
     for i, s in enumerate(S_list[1:]):
-        M = np.dot(S, s.T)
-        u, orders = scipy.optimize.linear_sum_assignment(-abs(M.T))
-        order[i + 1] = orders
-        vals = abs(M[orders, u])
-    return u, orders, vals
+        # Compute correlation matrix between reference and current dataset
+        # S shape: (n_components_ref, n_features)
+        # s shape: (n_components_current, n_features)
+        M = np.dot(S, s.T)  # Shape: (n_components_ref, n_components_current)
+        
+        # Find optimal assignment
+        # This will match components from current dataset to reference
+        ref_indices, current_indices = scipy.optimize.linear_sum_assignment(-abs(M))
+        
+        # Store the ordering for current dataset
+        orderings.append(current_indices)
+        
+        # Store matching values
+        vals = abs(M[ref_indices, current_indices])
+        vals_list.append(vals)
+    
+    # Return the last assignment results for compatibility
+    # But note that orderings now contains all the orderings
+    return ref_indices, current_indices, vals if vals_list else (None, None, None)
 
 
 def run_multi_view_ICA_on_datasets(
