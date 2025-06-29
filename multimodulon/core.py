@@ -1245,7 +1245,9 @@ class MultiModulon:
         seed: int = 42,
         save_plot: Optional[str] = None,
         metric: str = 'nre',
-        threshold: Optional[float] = None
+        threshold: Optional[float] = None,
+        effective_size_threshold: float = 5,
+        num_top_gene: int = 20
     ) -> Tuple[int, Dict[int, float]]:
         """
         Optimize the number of core components using specified metric.
@@ -1290,13 +1292,18 @@ class MultiModulon:
             Optimization metric: 'nre' or 'effect_size' (Cohen's d effect size)
         threshold : float, optional
             For effect_size metric: Cohen's d threshold for effect size analysis and visualization
+        effective_size_threshold : float, default=5
+            Minimum Cohen's d effect size threshold for counting components.
+            Only components with effect size above this threshold are counted as "effective".
+        num_top_gene : int, default=20
+            Number of top genes to use when calculating Cohen's d effect size
         
         Returns
         -------
         best_k : int
             Optimal number of core components
         metric_scores : dict
-            Dictionary mapping k values to mean metric scores
+            Dictionary mapping k values to mean metric scores (or number of above-threshold components for effect_size metric)
         
         Examples
         --------
@@ -1368,7 +1375,9 @@ class MultiModulon:
             mode=mode,
             seed=seed,
             metric=metric,
-            threshold=threshold
+            threshold=threshold,
+            effective_size_threshold=effective_size_threshold,
+            num_top_gene=num_top_gene
         )
         
         # Save or display plot

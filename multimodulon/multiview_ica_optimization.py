@@ -10,6 +10,7 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 try:
     import matplotlib.pyplot as plt
@@ -21,62 +22,64 @@ except ImportError:
 
 
 
-def calculate_cohens_d_effect_size(weight_vector: np.ndarray, seed: int = 42) -> float:
+def calculate_cohens_d_effect_size(weight_vector: np.ndarray, seed: int = 42, num_top_gene: int = 20) -> float:
     """
-    Calculate Cohen's d effect size between top 20 genes and the rest.
+    Calculate Cohen's d effect size between top N genes and the rest.
     
-    Cohen's d = (mean_top20 - mean_rest) / pooled_std
+    Cohen's d = (mean_topN - mean_rest) / pooled_std
     
     Args:
         weight_vector: 1D array of weights for a single component
         seed: Random seed (kept for compatibility but not used)
+        num_top_gene: Number of top genes to use for effect size calculation
         
     Returns:
-        Cohen's d effect size measuring separation between top 20 genes and rest
+        Cohen's d effect size measuring separation between top N genes and rest
     """
-    if len(weight_vector) < 21:  # Need at least 21 genes (20 top + 1 rest)
+    if len(weight_vector) < num_top_gene + 1:  # Need at least num_top_gene + 1 genes
         return 0.0
     
-    # Get absolute values and indices of top 20 genes
+    # Get absolute values and indices of top N genes
     abs_weights = np.abs(weight_vector)
-    top_20_indices = np.argpartition(abs_weights, -20)[-20:]
-    rest_indices = np.setdiff1d(np.arange(len(weight_vector)), top_20_indices)
+    top_n_indices = np.argpartition(abs_weights, -num_top_gene)[-num_top_gene:]
+    rest_indices = np.setdiff1d(np.arange(len(weight_vector)), top_n_indices)
     
     # Get the actual weight values for each group
-    top_20_weights = weight_vector[top_20_indices]
+    top_n_weights = weight_vector[top_n_indices]
     rest_weights = weight_vector[rest_indices]
     
     # Calculate means
-    mean_top20 = np.mean(top_20_weights)
+    mean_top_n = np.mean(top_n_weights)
     mean_rest = np.mean(rest_weights)
     
     # Calculate standard deviations
-    std_top20 = np.std(top_20_weights, ddof=1)
+    std_top_n = np.std(top_n_weights, ddof=1)
     std_rest = np.std(rest_weights, ddof=1)
     
     # Sample sizes
-    n1 = len(top_20_weights)
+    n1 = len(top_n_weights)
     n2 = len(rest_weights)
     
     # Calculate pooled standard deviation
-    pooled_std = np.sqrt(((n1 - 1) * std_top20**2 + (n2 - 1) * std_rest**2) / (n1 + n2 - 2))
+    pooled_std = np.sqrt(((n1 - 1) * std_top_n**2 + (n2 - 1) * std_rest**2) / (n1 + n2 - 2))
     
     # Avoid division by zero
     if pooled_std == 0:
         return 0.0
     
     # Calculate Cohen's d
-    cohens_d = abs(mean_top20 - mean_rest) / pooled_std
+    cohens_d = abs(mean_top_n - mean_rest) / pooled_std
     
     return cohens_d
 
 
-def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame], seed: int = 42) -> List[float]:
+def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame], seed: int = 42, num_top_gene: int = 20) -> List[float]:
     """
     Calculate mean effect sizes across species for each component.
     
     Args:
         M_matrices: Dict mapping species names to M matrices (samples, components)
+        num_top_gene: Number of top genes to use for effect size calculation
         
     Returns:
         List of mean effect sizes, one per component
@@ -94,7 +97,7 @@ def calculate_average_effect_sizes(M_matrices: Dict[str, pd.DataFrame], seed: in
         for species in species_list:
             M_matrix = M_matrices[species]
             weight_vector = M_matrix.iloc[:, comp_idx].values
-            effect_size = calculate_cohens_d_effect_size(weight_vector, seed)
+            effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
             component_effect_sizes.append(effect_size)
         
         # Mean across species
@@ -181,7 +184,9 @@ def run_nre_optimization(
     mode: str = 'gpu',
     seed: int = 42,
     metric: str = 'nre',
-    threshold: Optional[float] = None
+    threshold: Optional[float] = None,
+    effective_size_threshold: float = 5,
+    num_top_gene: int = 20
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
     Optimization using NRE or Cohen's d metric.
@@ -224,6 +229,8 @@ def run_nre_optimization(
     
     # For Cohen's d, also store individual component effect sizes for threshold analysis
     component_effect_sizes_per_k = {k: [] for k in k_candidates} if metric == 'effect_size' else None
+    # For the new logic, store number of components above threshold
+    num_above_threshold_per_k = {} if metric == 'effect_size' else None
     
     for run in range(num_runs):
         
@@ -241,7 +248,10 @@ def run_nre_optimization(
             X_train_views.append(X.iloc[train_idx, :])  # Select rows (samples)
             X_test_views.append(X.iloc[test_idx, :])    # Select rows (samples)
         
-        for k in k_candidates:
+        # Use tqdm for progress bar
+        k_iterator = tqdm(k_candidates, desc=f"Run {run+1}/{num_runs}") if metric == 'effect_size' else k_candidates
+        
+        for k in k_iterator:
             start_time = time.time()
             
             # Import the generalized function
@@ -285,32 +295,35 @@ def run_nre_optimization(
                 )
                 
                 # Calculate mean effect sizes across components
-                avg_effect_sizes = calculate_average_effect_sizes(M_matrices, seed)
+                avg_effect_sizes = calculate_average_effect_sizes(M_matrices, seed, num_top_gene)
                 
                 # Store individual component effect sizes for threshold analysis
                 if component_effect_sizes_per_k is not None:
                     component_effect_sizes_per_k[k].append(avg_effect_sizes)
                 
-                # Use median of all component effect sizes as the metric
-                score = np.median(avg_effect_sizes)
+                # Count components above effective_size_threshold
+                num_above_threshold = sum(1 for effect_size in avg_effect_sizes if effect_size > effective_size_threshold)
+                
+                # Store the count for this k
+                if num_above_threshold_per_k is not None:
+                    if k not in num_above_threshold_per_k:
+                        num_above_threshold_per_k[k] = []
+                    num_above_threshold_per_k[k].append(num_above_threshold)
+                
+                # Use number of components above threshold as the metric
+                score = num_above_threshold
             
             all_metric_per_k[k].append(score)
             
             elapsed_time = time.time() - start_time
             if metric == 'nre':
                 print(f"k={k}: time={elapsed_time:.1f}s, NRE={score:.6f}")
-            else:  # effect_size
-                print(f"k={k}: time={elapsed_time:.1f}s, median Cohen's d effect size={score:.6f}")
     
-    # Calculate mean metric for each k (for NRE) or median metric (for Cohen's d effect size)
+    # Calculate mean metric for each k
     for k in k_candidates:
         if all_metric_per_k[k]:
-            if metric == 'effect_size':
-                # For effect_size, we already stored median values, just take mean of runs
-                mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
-            else:
-                # For NRE, take mean as before
-                mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
+            # For both metrics, take mean of runs
+            mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
     
     # Find optimal k
     if metric == 'nre':
@@ -321,17 +334,17 @@ def run_nre_optimization(
                                if abs(score - optimal_value) < tolerance]
         best_k = max(optimal_k_candidates)
     else:  # effect_size
-        # For Cohen's d effect size, maximize
+        # For effect_size with new logic, maximize number of components above threshold
         optimal_value = max(mean_metric_per_k.values())
-        tolerance = optimal_value * 0.05  # 5% tolerance
+        # Find all k values that have the maximum number of components above threshold
         optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
-                               if score >= optimal_value - tolerance]
+                               if score == optimal_value]
         best_k = min(optimal_k_candidates)  # Choose smallest k if tied
     
     if metric == 'nre':
         print(f"\nOptimal k = {best_k} (NRE = {mean_metric_per_k[best_k]:.6f})")
     else:
-        print(f"\nOptimal k = {best_k} (Median Cohen's d effect size = {mean_metric_per_k[best_k]:.6f})")
+        print(f"\nOptimal k = {best_k} (Number of components above threshold = {mean_metric_per_k[best_k]:.1f})")
     
     # Threshold analysis for effect_size metric
     if metric == 'effect_size' and threshold is not None and component_effect_sizes_per_k is not None:
@@ -361,12 +374,8 @@ def run_nre_optimization(
     
     # Create plot
     if 'plt' in globals():
-        if metric == 'effect_size' and component_effect_sizes_per_k is not None:
-            # Create box plot for effect_size showing distribution of component effect sizes
-            fig, ax = plt.subplots(figsize=(14, 8))
-        else:
-            # Regular line plot for NRE
-            fig, ax = plt.subplots(figsize=(10, 6))
+        # Create line plot for both metrics
+        fig, ax = plt.subplots(figsize=(10, 6))
     else:
         # Create a dummy figure object if matplotlib is not available
         class DummyFig:
@@ -396,58 +405,21 @@ def run_nre_optimization(
             ax.set_title('Normalized Reconstruction Error (NRE) vs Number of Core Components', fontsize=14, fontweight='bold')
             
         else:
-            # Box plot for effect_size showing distribution of component effect sizes
-            if component_effect_sizes_per_k is not None:
-                # Prepare data for box plot
-                box_data = []
-                box_positions = []
-                
-                for k in k_values:
-                    if component_effect_sizes_per_k[k]:
-                        # Get all component effect sizes for this k (averaged across runs)
-                        all_runs_effects = component_effect_sizes_per_k[k]
-                        n_components = len(all_runs_effects[0])
-                        
-                        # Average each component across runs
-                        avg_component_effects = []
-                        for comp_idx in range(n_components):
-                            comp_effects_across_runs = [run_effects[comp_idx] for run_effects in all_runs_effects]
-                            avg_component_effects.append(np.mean(comp_effects_across_runs))
-                        
-                        box_data.append(avg_component_effects)
-                        box_positions.append(k)
-                
-                # Create box plot
-                bp = ax.boxplot(box_data, positions=box_positions, widths=2.5, patch_artist=True,
-                               boxprops=dict(facecolor='lightgreen', alpha=0.7),
-                               medianprops=dict(color='darkgreen', linewidth=2),
-                               whiskerprops=dict(color='darkgreen'),
-                               capprops=dict(color='darkgreen'),
-                               flierprops=dict(marker='o', markerfacecolor='red', markersize=4, alpha=0.5))
-                
-                # Add mean line
-                mean_values = [mean_metric_per_k[k] for k in k_values]
-                ax.plot(k_values, mean_values, 'o-', linewidth=2, markersize=6, 
-                       label='Mean Effect Size', color='red', alpha=0.8)
-                
-                # Add threshold line if specified
-                if threshold is not None:
-                    ax.axhline(y=threshold, color='orange', linestyle=':', alpha=0.8, linewidth=2,
-                              label=f'Threshold = {threshold:.3f}')
-                
-                ax.set_ylabel("Cohen's d Effect Size (Higher is Better)", fontsize=12)
-                ax.set_title("Distribution of Cohen's d Effect Sizes per Component vs Number of Core Components", fontsize=14, fontweight='bold')
-                
-                # Highlight optimal k
-                ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
-                          label=f'Optimal k = {best_k}')
+            # Line plot for effect_size showing number of components above threshold
+            mean_values = [mean_metric_per_k[k] for k in k_values]
             
-            else:
-                # Fallback to line plot if no component data available
-                mean_values = [mean_metric_per_k[k] for k in k_values]
-                ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=6, label="Mean Cohen's d Effect Size")
-                ax.set_ylabel("Mean Cohen's d Effect Size (Higher is Better)", fontsize=12)
-                ax.set_title("Mean Cohen's d Effect Size vs Number of Core Components", fontsize=14, fontweight='bold')
+            ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=8, 
+                   label='Number of components above threshold')
+            
+            # Highlight optimal k
+            ax.axvline(x=best_k, color='red', linestyle='--', alpha=0.7, linewidth=2,
+                      label=f'Optimal k = {best_k}')
+            ax.scatter([best_k], [mean_metric_per_k[best_k]], color='red', s=120, zorder=5,
+                      edgecolors='darkred', linewidth=2)
+            
+            ax.set_ylabel('Number of Components Above Threshold', fontsize=12)
+            ax.set_title(f'Number of Components with Cohen\'s d > {effective_size_threshold} vs Number of Core Components', 
+                        fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
         ax.grid(True, alpha=0.3)
@@ -457,7 +429,7 @@ def run_nre_optimization(
         if metric == 'nre':
             label_text = f'Optimal k = {best_k}\nNRE = {mean_metric_per_k[best_k]:.6f}'
         else:
-            label_text = f'Optimal k = {best_k}\nMedian Cohen\'s d effect size = {mean_metric_per_k[best_k]:.6f}'
+            label_text = f'Optimal k = {best_k}\n{int(mean_metric_per_k[best_k])} components above threshold'
         
         ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
