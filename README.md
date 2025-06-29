@@ -2,23 +2,12 @@
 
 A Python package for analyzing multi-species/multi-strain/multi-modality profiles.
 
-## Features
-
-- Load and manage expression data from multiple species/strains
-- Parse GFF annotations to extract gene information using locus_tags
-- Generate Bidirectional Best Hits (BBH) for ortholog detection
-- Align genes across species using Union-Find algorithm
-- Create unified expression matrices with consistent gene indexing
-- **Multi-view ICA analysis with GPU acceleration using PyTorch**
-- **Automatic optimization of core components using NRE (Noise Reduction Error)**
-- Built-in data validation and sanity checks
-
 ## Requirements
 
 - Python >= 3.10
 - NCBI BLAST+ tools (required for BBH generation)
-- **PyTorch 2.6.0+ with CUDA support (required for multi-view ICA)**
-- **geotorch 0.3.0+ (required for orthogonal constraints in ICA)**
+- **PyTorch 2.6.0 with CUDA support (required for multi-view ICA)**
+- **geotorch 0.3.0**
 
 ## Installation
 
