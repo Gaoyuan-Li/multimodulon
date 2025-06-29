@@ -86,11 +86,11 @@ def optimize_number_of_core_components(
     
     Examples
     --------
-    >>> # Using NRE metric (default)
-    >>> optimal_k, scores = multiModulon.optimize_number_of_core_components()
-    
     >>> # Using effect size metric
-    >>> optimal_k, scores = multiModulon.optimize_number_of_core_components(metric='effect_size')
+    >>> optimal_num_core_components, scores = multiModulon.optimize_number_of_core_components(
+    ...     metric='effect_size',
+    ...     effective_size_threshold=5
+    ... )
     """
     # Check prerequisites
     species_list = list(multimodulon._species_data.keys())

@@ -98,16 +98,16 @@ multiModulon.generate_X()
 # Shows aligned X matrices for all species with non-zero gene groups
 # Provides maximum dimension recommendation for ICA
 
-# STEP 1: Optimize the number of core components using NRE
+# STEP 1: Optimize the number of core components using Cohen's d effect size
 # This automatically finds the optimal number of core components
-best_k, nre_scores = multiModulon.optimize_number_of_core_components(
-    step=5,           # Test k = 5, 10, 15, 20, ...
-    num_runs=3,       # Number of cross-validation runs
-    train_frac=0.75,  # 75% train, 25% test split
-    save_plot='nre_optimization.png'  # Save optimization plot
+optimal_num_core_components, effect_scores = multiModulon.optimize_number_of_core_components(
+    metric='effect_size',          # Use Cohen's d effect size metric
+    effective_size_threshold=5,    # Components must have Cohen's d > 5
+    step=5,                        # Test k = 5, 10, 15, 20, ...
+    save_plot='optimization.png'   # Save optimization plot
 )
 
-print(f"Optimal number of core components: {best_k}")
+print(f"Optimal number of core components: {optimal_num_core_components}")
 
 # STEP 2: Run multi-view ICA with optimized parameters
 # Multiple ways to specify component numbers:
@@ -116,19 +116,19 @@ print(f"Optimal number of core components: {best_k}")
 if len(multiModulon._species_data) == 6:
     multiModulon.run_multiview_ica(
         a1=50, a2=50, a3=50, a4=50, a5=50, a6=50, 
-        c=best_k  # Use optimized number of core components
+        c=optimal_num_core_components  # Use optimized number of core components
     )
 
 # Option 2: List format (for any number of species)
 multiModulon.run_multiview_ica(
     a=[50, 50, 50],  # Components per species (adjust list length to match your species count)
-    c=best_k         # Use optimized number of core components
+    c=optimal_num_core_components  # Use optimized number of core components
 )
 
 # Option 3: Same number of components for all species
 multiModulon.run_multiview_ica(
-    a=50,      # Same number of components for all species
-    c=best_k   # Use optimized number of core components
+    a=50,                         # Same number of components for all species
+    c=optimal_num_core_components  # Use optimized number of core components
 )
 
 # Access the ICA results (M matrices) for each species
