@@ -1734,7 +1734,23 @@ class MultiModulon:
         
         if attr_id in attributes:
             return attributes[attr_id]
-        elif ignore:
+        
+        # Special handling for locus_tag - try to extract from Note field
+        if attr_id == 'locus_tag' and 'Note' in attributes:
+            note_value = attributes['Note']
+            # Parse "ECK0001:JW4367:b0001" format
+            if ':' in note_value:
+                parts = note_value.split(':')
+                # Look for JW-number first (preferred for W3110)
+                for part in parts:
+                    if part.startswith('JW') and len(part) > 2:
+                        return part
+                # If no JW-number found, fall back to b-number
+                for part in reversed(parts):
+                    if part.startswith('b') and len(part) > 1:
+                        return part
+        
+        if ignore:
             return None
         else:
             raise ValueError(f"Attribute {attr_id} not found in: {attr_string}")
@@ -1828,8 +1844,8 @@ class MultiModulon:
 
         if index:
             if DF_gff[index].duplicated().any():
-                logger.warning("Duplicate {} detected. Dropping duplicates.".format(index))
-                DF_gff = DF_gff.drop_duplicates(index)
+                logger.debug("Duplicate {} detected. Dropping duplicates.".format(index))
+                DF_gff = DF_gff.drop_duplicates(index, keep='first')
             DF_gff.set_index("locus_tag", drop=True, inplace=True)
 
         return DF_gff
