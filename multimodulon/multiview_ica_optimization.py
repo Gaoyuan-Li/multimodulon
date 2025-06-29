@@ -234,19 +234,24 @@ def run_nre_optimization(
     
     for run in range(num_runs):
         
-        # Split data consistently across views
-        n_samples = species_X_matrices[species_list[0]].shape[0]  # samples are rows
-        indices = np.arange(n_samples)
-        train_idx, test_idx = train_test_split(
-            indices, train_size=train_frac, random_state=seed
-        )
-        
-        X_train_views = []
-        X_test_views = []
-        for species in species_list:
-            X = species_X_matrices[species]
-            X_train_views.append(X.iloc[train_idx, :])  # Select rows (samples)
-            X_test_views.append(X.iloc[test_idx, :])    # Select rows (samples)
+        if metric == 'nre':
+            # Split data consistently across views for NRE
+            n_samples = species_X_matrices[species_list[0]].shape[0]  # samples are rows
+            indices = np.arange(n_samples)
+            train_idx, test_idx = train_test_split(
+                indices, train_size=train_frac, random_state=seed
+            )
+            
+            X_train_views = []
+            X_test_views = []
+            for species in species_list:
+                X = species_X_matrices[species]
+                X_train_views.append(X.iloc[train_idx, :])  # Select rows (samples)
+                X_test_views.append(X.iloc[test_idx, :])    # Select rows (samples)
+        else:
+            # For effect_size, use full dataset (no train/test split)
+            X_train_views = None  # Not used for effect_size
+            X_test_views = None   # Not used for effect_size
         
         # Use tqdm for progress bar
         k_iterator = tqdm(k_candidates, desc=f"Run {run+1}/{num_runs}") if metric == 'effect_size' else k_candidates
@@ -279,30 +284,39 @@ def run_nre_optimization(
                 
             else:  # effect_size
                 # For Cohen's d, we need the M matrices (unmixing matrices)
-                # Run multi-view ICA with a=c=k (square ICA)
                 from .multiview_ica import run_multiview_ica
                 
-                # Prepare a_values dict for Cohen's d (a=c=k for all species)
+                # For effect_size metric, use square ICA (a=c=k)
                 a_values = {species: k for species in species_list}
                 
-                # Run on test data to get M matrices
+                # Use full dataset for effect_size calculation
                 M_matrices = run_multiview_ica(
-                    {species: X_test_views[i] for i, species in enumerate(species_list)},
+                    species_X_matrices,  # Use the full dataset directly
                     a_values,
-                    k,  # c = k
+                    k,  # c = k (number of core components, square ICA)
                     mode=mode,
                     seed=seed  # Use exact same seed for reproducibility
                 )
                 
-                # Calculate mean effect sizes across components
-                avg_effect_sizes = calculate_average_effect_sizes(M_matrices, seed, num_top_gene)
+                # Calculate mean effect sizes ONLY for the first k (core) components
+                core_avg_effect_sizes = []
+                for comp_idx in range(k):  # Only first k components are core
+                    component_effect_sizes = []
+                    for species in species_list:
+                        M_matrix = M_matrices[species]
+                        weight_vector = M_matrix.iloc[:, comp_idx].values
+                        effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
+                        component_effect_sizes.append(effect_size)
+                    # Mean across species
+                    mean_effect_size = np.mean(component_effect_sizes)
+                    core_avg_effect_sizes.append(mean_effect_size)
                 
                 # Store individual component effect sizes for threshold analysis
                 if component_effect_sizes_per_k is not None:
-                    component_effect_sizes_per_k[k].append(avg_effect_sizes)
+                    component_effect_sizes_per_k[k].append(core_avg_effect_sizes)
                 
-                # Count components above effective_size_threshold
-                num_above_threshold = sum(1 for effect_size in avg_effect_sizes if effect_size > effective_size_threshold)
+                # Count CORE components above effective_size_threshold
+                num_above_threshold = sum(1 for effect_size in core_avg_effect_sizes if effect_size > effective_size_threshold)
                 
                 # Store the count for this k
                 if num_above_threshold_per_k is not None:
@@ -334,12 +348,26 @@ def run_nre_optimization(
                                if abs(score - optimal_value) < tolerance]
         best_k = max(optimal_k_candidates)
     else:  # effect_size
-        # For effect_size with new logic, maximize number of components above threshold
-        optimal_value = max(mean_metric_per_k.values())
-        # Find all k values that have the maximum number of components above threshold
-        optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
-                               if score == optimal_value]
-        best_k = min(optimal_k_candidates)  # Choose smallest k if tied
+        # For effect_size, find where the growth plateaus
+        k_sorted = sorted(mean_metric_per_k.keys())
+        
+        # Find the k where growth stops or plateaus
+        best_k = k_sorted[0]  # Default to smallest k
+        
+        for i in range(len(k_sorted) - 1):
+            current_k = k_sorted[i]
+            next_k = k_sorted[i + 1]
+            
+            current_count = mean_metric_per_k[current_k]
+            next_count = mean_metric_per_k[next_k]
+            
+            # If the count doesn't increase for the next k, we've found our plateau
+            if next_count <= current_count:
+                best_k = current_k
+                break
+            # If we reach the end and it's still growing, take the last k
+            elif i == len(k_sorted) - 2:
+                best_k = next_k
     
     if metric == 'nre':
         print(f"\nOptimal k = {best_k} (NRE = {mean_metric_per_k[best_k]:.6f})")
