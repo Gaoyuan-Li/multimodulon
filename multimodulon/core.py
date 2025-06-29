@@ -452,7 +452,7 @@ class MultiModulon:
             Number of core components
         mode : str, optional
             'gpu' or 'cpu' (default: 'gpu')
-        effective_size_threshold : float, optional
+        effect_size_threshold : float, optional
             Cohen's d threshold for component filtering
         
         Examples
@@ -500,7 +500,7 @@ class MultiModulon:
         
         # Get other parameters
         mode = kwargs.get('mode', 'gpu')
-        effective_size_threshold = kwargs.get('effective_size_threshold', None)
+        effect_size_threshold = kwargs.get('effect_size_threshold', None)
         
         # Prepare X matrices dictionary
         species_X_matrices = {}
@@ -513,7 +513,7 @@ class MultiModulon:
             a_values=a_values,
             c=c,
             mode=mode,
-            effective_size_threshold=effective_size_threshold
+            effect_size_threshold=effect_size_threshold
         )
         
         # Save M matrices to each species
@@ -531,9 +531,9 @@ class MultiModulon:
         num_runs: int = 100,
         mode: str = 'gpu',
         seed: int = 42,
-        effective_size_threshold: Optional[float] = 5,
-        effective_size_threshold_core: Optional[float] = None,
-        effective_size_threshold_unique: Optional[float] = None,
+        effect_size_threshold: Optional[float] = 5,
+        effect_size_threshold_core: Optional[float] = None,
+        effect_size_threshold_unique: Optional[float] = None,
         num_top_gene: int = 20,
         save_plots: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
@@ -557,15 +557,15 @@ class MultiModulon:
             'gpu' or 'cpu' mode for computation
         seed : int, default=42
             Random seed for reproducibility
-        effective_size_threshold : float, optional, default=5
+        effect_size_threshold : float, optional, default=5
             Cohen's d threshold for both core and unique components.
             Only used if specific thresholds are not provided.
-        effective_size_threshold_core : float, optional
+        effect_size_threshold_core : float, optional
             Cohen's d threshold specifically for core components.
-            If provided, overrides effective_size_threshold for core components.
-        effective_size_threshold_unique : float, optional
+            If provided, overrides effect_size_threshold for core components.
+        effect_size_threshold_unique : float, optional
             Cohen's d threshold specifically for unique components.
-            If provided, overrides effective_size_threshold for unique components.
+            If provided, overrides effect_size_threshold for unique components.
         num_top_gene : int, default=20
             Number of top genes to use when calculating Cohen's d effect size
         save_plots : str, optional
@@ -585,22 +585,22 @@ class MultiModulon:
         ...     a=a_values,
         ...     c=30,
         ...     num_runs=100,
-        ...     effective_size_threshold=5
+        ...     effect_size_threshold=5
         ... )
         
         >>> # Use different thresholds for core and unique components
         >>> robust_results = multiModulon.run_robust_multiview_ica(
         ...     a=a_values,
         ...     c=30,
-        ...     effective_size_threshold_core=5,
-        ...     effective_size_threshold_unique=3
+        ...     effect_size_threshold_core=5,
+        ...     effect_size_threshold_unique=3
         ... )
         """
         # Set effect size thresholds
-        if effective_size_threshold_core is None:
-            effective_size_threshold_core = effective_size_threshold if effective_size_threshold is not None else 5
-        if effective_size_threshold_unique is None:
-            effective_size_threshold_unique = effective_size_threshold if effective_size_threshold is not None else 5
+        if effect_size_threshold_core is None:
+            effect_size_threshold_core = effect_size_threshold if effect_size_threshold is not None else 5
+        if effect_size_threshold_unique is None:
+            effect_size_threshold_unique = effect_size_threshold if effect_size_threshold is not None else 5
             
         species_list = list(self._species_data.keys())
         n_species = len(species_list)
@@ -617,7 +617,7 @@ class MultiModulon:
         print(f"Species: {species_list}")
         print(f"Total components (a): {a}")
         print(f"Core components (c): {c}")
-        print(f"Effect size thresholds - Core: {effective_size_threshold_core}, Unique: {effective_size_threshold_unique}")
+        print(f"Effect size thresholds - Core: {effect_size_threshold_core}, Unique: {effect_size_threshold_unique}")
         
         # Check if all species have X matrices
         for species in species_list:
@@ -660,7 +660,7 @@ class MultiModulon:
                     effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
                     
                     # Only keep components above threshold
-                    if effect_size >= effective_size_threshold_core:
+                    if effect_size >= effect_size_threshold_core:
                         # Apply sign convention
                         component = self._enforce_sign_convention(weight_vector)
                         core_components[species].append(component)
@@ -673,7 +673,7 @@ class MultiModulon:
                     effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
                     
                     # Only keep components above threshold
-                    if effect_size >= effective_size_threshold_unique:
+                    if effect_size >= effect_size_threshold_unique:
                         # Apply sign convention
                         component = self._enforce_sign_convention(weight_vector)
                         unique_components[species].append(component)

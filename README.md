@@ -91,7 +91,7 @@ multiModulon.generate_X()
 # This automatically finds the optimal number of core components
 optimal_num_core_components, effect_scores = multiModulon.optimize_number_of_core_components(
     metric='effect_size',          # Use Cohen's d effect size metric
-    effective_size_threshold=5,    # Components must have Cohen's d > 5
+    effect_size_threshold=5,    # Components must have Cohen's d > 5
     step=5,                        # Test k = 5, 10, 15, 20, ...
     save_plot='optimization.png'   # Save optimization plot
 )

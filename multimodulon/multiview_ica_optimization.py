@@ -185,7 +185,7 @@ def run_nre_optimization(
     seed: int = 42,
     metric: str = 'nre',
     threshold: Optional[float] = None,
-    effective_size_threshold: float = 5,
+    effect_size_threshold: float = 5,
     num_top_gene: int = 20
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
@@ -315,8 +315,8 @@ def run_nre_optimization(
                 if component_effect_sizes_per_k is not None:
                     component_effect_sizes_per_k[k].append(core_avg_effect_sizes)
                 
-                # Count CORE components above effective_size_threshold
-                num_above_threshold = sum(1 for effect_size in core_avg_effect_sizes if effect_size > effective_size_threshold)
+                # Count CORE components above effect_size_threshold
+                num_above_threshold = sum(1 for effect_size in core_avg_effect_sizes if effect_size > effect_size_threshold)
                 
                 # Store the count for this k
                 if num_above_threshold_per_k is not None:
@@ -481,7 +481,7 @@ def run_nre_optimization(
                       edgecolors='darkred', linewidth=2)
             
             ax.set_ylabel('Number of Components Above Threshold', fontsize=12)
-            ax.set_title(f'Number of Components with Cohen\'s d > {effective_size_threshold} vs Number of Core Components', 
+            ax.set_title(f'Number of Components with Cohen\'s d > {effect_size_threshold} vs Number of Core Components', 
                         fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)

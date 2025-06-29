@@ -32,7 +32,7 @@ def optimize_number_of_core_components(
     save_plot: Optional[str] = None,
     metric: str = 'nre',
     threshold: Optional[float] = None,
-    effective_size_threshold: float = 5,
+    effect_size_threshold: float = 5,
     num_top_gene: int = 20
 ) -> Tuple[int, Dict[int, float]]:
     """
@@ -71,7 +71,7 @@ def optimize_number_of_core_components(
         Optimization metric: 'nre' or 'effect_size' (Cohen's d effect size)
     threshold : float, optional
         For effect_size metric: Cohen's d threshold for effect size analysis and visualization
-    effective_size_threshold : float, default=5
+    effect_size_threshold : float, default=5
         Minimum Cohen's d effect size threshold for counting components.
         Only components with effect size above this threshold are counted as "effective".
     num_top_gene : int, default=20
@@ -94,7 +94,7 @@ def optimize_number_of_core_components(
     >>> # Using effect size metric
     >>> optimal_num_core_components, scores = multiModulon.optimize_number_of_core_components(
     ...     metric='effect_size',
-    ...     effective_size_threshold=5
+    ...     effect_size_threshold=5
     ... )
     """
     # Check prerequisites
@@ -154,7 +154,7 @@ def optimize_number_of_core_components(
         seed=seed,
         metric=metric,
         threshold=threshold,
-        effective_size_threshold=effective_size_threshold,
+        effect_size_threshold=effect_size_threshold,
         num_top_gene=num_top_gene
     )
     
@@ -182,7 +182,7 @@ def optimize_number_of_unique_components(
     mode: str = 'gpu',
     seed: int = 42,
     save_plots: Optional[str] = None,
-    effective_size_threshold: float = 5,
+    effect_size_threshold: float = 5,
     num_top_gene: int = 20
 ) -> Tuple[Dict[str, int], Dict[str, int]]:
     """
@@ -206,7 +206,7 @@ def optimize_number_of_unique_components(
         Random seed for reproducibility
     save_plots : str, optional
         Directory to save plots. If None, displays the plots
-    effective_size_threshold : float, default=5
+    effect_size_threshold : float, default=5
         Minimum Cohen's d effect size threshold for counting components
     num_top_gene : int, default=20
         Number of top genes to use when calculating Cohen's d effect size
@@ -309,7 +309,7 @@ def optimize_number_of_unique_components(
                     weight_vector = M.iloc[:, comp_idx].values
                     effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
                     
-                    if effect_size >= effective_size_threshold:
+                    if effect_size >= effect_size_threshold:
                         # Check consistency
                         if _check_component_consistency(multimodulon, A, sample_sheet, comp):
                             consistent_unique += 1

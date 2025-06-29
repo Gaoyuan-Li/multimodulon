@@ -290,7 +290,7 @@ def run_multiview_ica(
     c: int,
     mode: str = 'gpu',
     return_unmixing_matrices: bool = False,
-    effective_size_threshold: Optional[float] = None,
+    effect_size_threshold: Optional[float] = None,
     **kwargs
 ) -> Dict[str, pd.DataFrame]:
     """
@@ -303,7 +303,7 @@ def run_multiview_ica(
         c: Number of core components
         mode: 'gpu' or 'cpu' mode
         return_unmixing_matrices: If True, returns unmixing matrices along with sources
-        effective_size_threshold: Optional threshold for filtering components based on Cohen's d effect size.
+        effect_size_threshold: Optional threshold for filtering components based on Cohen's d effect size.
                                  If provided, only keeps components above this threshold.
         **kwargs: Additional arguments passed to run_multi_view_ICA_on_datasets
         
@@ -355,9 +355,9 @@ def run_multiview_ica(
             K_matrices[species] = K
         
         # Apply effect size filtering and formatting if threshold is provided
-        if effective_size_threshold is not None:
+        if effect_size_threshold is not None:
             M_matrices, kept_core, kept_unique = _apply_effect_size_filtering_and_formatting(
-                M_matrices, species_X_matrices, c, effective_size_threshold
+                M_matrices, species_X_matrices, c, effect_size_threshold
             )
             print(f"Components saved: {kept_core} core, {kept_unique} unique")
         else:
@@ -372,9 +372,9 @@ def run_multiview_ica(
             results_dict[species] = result
         
         # Apply effect size filtering and formatting if threshold is provided
-        if effective_size_threshold is not None:
+        if effect_size_threshold is not None:
             results_dict, kept_core, kept_unique = _apply_effect_size_filtering_and_formatting(
-                results_dict, species_X_matrices, c, effective_size_threshold
+                results_dict, species_X_matrices, c, effect_size_threshold
             )
             print(f"Components saved: {kept_core} core, {kept_unique} unique")
         else:
@@ -388,7 +388,7 @@ def _apply_effect_size_filtering_and_formatting(
     M_matrices: Dict[str, pd.DataFrame],
     species_X_matrices: Dict[str, pd.DataFrame], 
     c: int,
-    effective_size_threshold: float
+    effect_size_threshold: float
 ) -> Tuple[Dict[str, pd.DataFrame], int, int]:
     """
     Apply Cohen's d filtering and formatting to M matrices.
@@ -397,7 +397,7 @@ def _apply_effect_size_filtering_and_formatting(
         M_matrices: Dictionary mapping species to M matrices
         species_X_matrices: Dictionary mapping species to X matrices (for row indices)
         c: Number of core components
-        effective_size_threshold: Cohen's d threshold for filtering components
+        effect_size_threshold: Cohen's d threshold for filtering components
         
     Returns:
         Tuple of (filtered_M_matrices, kept_core_count, kept_unique_count)
@@ -410,7 +410,7 @@ def _apply_effect_size_filtering_and_formatting(
     )
     
     # Filter core components
-    core_keep_indices = [i for i, effect_size in enumerate(core_effect_sizes) if effect_size >= effective_size_threshold]
+    core_keep_indices = [i for i, effect_size in enumerate(core_effect_sizes) if effect_size >= effect_size_threshold]
     kept_core = len(core_keep_indices)
     
     # Calculate Cohen's d effect sizes for unique components (individual per species)
@@ -424,7 +424,7 @@ def _apply_effect_size_filtering_and_formatting(
                 calculate_cohens_d_effect_size(unique_components.iloc[:, i].values)
                 for i in range(unique_components.shape[1])
             ]
-            keep_indices = [i for i, effect_size in enumerate(unique_effect_sizes) if effect_size >= effective_size_threshold]
+            keep_indices = [i for i, effect_size in enumerate(unique_effect_sizes) if effect_size >= effect_size_threshold]
             unique_keep_indices[species] = keep_indices
             total_kept_unique += len(keep_indices)
         else:
