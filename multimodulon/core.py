@@ -905,7 +905,7 @@ class MultiModulon:
         """Optimize the number of core components using specified metric."""
         return optimize_number_of_core_components(self, **kwargs)
     
-    def optimize_number_of_unique_components(self, **kwargs) -> Dict[str, int]:
+    def optimize_number_of_unique_components(self, **kwargs) -> Tuple[Dict[str, int], Dict[str, int]]:
         """Optimize the number of unique components for each species."""
         return optimize_number_of_unique_components(self, **kwargs)
     

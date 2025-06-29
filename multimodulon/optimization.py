@@ -184,7 +184,7 @@ def optimize_number_of_unique_components(
     save_plots: Optional[str] = None,
     effective_size_threshold: float = 5,
     num_top_gene: int = 20
-) -> Dict[str, int]:
+) -> Tuple[Dict[str, int], Dict[str, int]]:
     """
     Optimize the number of unique components for each species.
     
@@ -213,8 +213,11 @@ def optimize_number_of_unique_components(
         
     Returns
     -------
-    dict
+    optimal_num_unique_components : dict
         Dictionary mapping species names to optimal number of unique components
+    optimal_num_total_components : dict
+        Dictionary mapping species names to optimal total components (a values).
+        Can be used directly with run_robust_multiview_ica.
     """
     # Use stored optimal k if not provided
     if optimal_num_core_components is None:
@@ -381,14 +384,19 @@ def optimize_number_of_unique_components(
         
         print(f"\nOptimal a for {target_species}: {optimal_a} ({consistent_counts[optimal_a]} consistent unique components)")
     
+    # Create optimal total components dictionary
+    optimal_num_total_components = {}
+    for species, num_unique in optimal_num_unique_components.items():
+        optimal_num_total_components[species] = num_unique + optimal_num_core_components
+    
     print(f"\n{'='*60}")
     print("Optimization Summary")
     print(f"{'='*60}")
     print(f"Core components (c): {optimal_num_core_components}")
     for species, num_unique in optimal_num_unique_components.items():
-        print(f"{species}: a = {num_unique + optimal_num_core_components} (unique components: {num_unique})")
+        print(f"{species}: a = {optimal_num_total_components[species]} (unique components: {num_unique})")
     
-    return optimal_num_unique_components
+    return optimal_num_unique_components, optimal_num_total_components
 
 
 def _check_component_consistency(multimodulon: 'MultiModulon', A: pd.DataFrame, sample_sheet: pd.DataFrame, component_name: str) -> bool:
