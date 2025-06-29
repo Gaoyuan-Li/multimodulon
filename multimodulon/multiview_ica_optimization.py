@@ -16,7 +16,7 @@ try:
 except ImportError:
     print("Warning: matplotlib not available for plotting")
 
-# GaussianMixture no longer needed as we're using Cohen's d instead
+# Cohen's d effect size calculation for component selection
 
 
 
@@ -187,7 +187,7 @@ def run_nre_optimization(
     Optimization using NRE or Cohen's d metric.
     
     Args:
-        metric: 'nre' for Normalized Reconstruction Error, 'gmm' for Cohen's d effect size
+        metric: 'nre' for Normalized Reconstruction Error, 'effect_size' for Cohen's d effect size
     """
     
     # Sort species list for consistent ordering across runs
@@ -196,8 +196,8 @@ def run_nre_optimization(
     if n_species < 2:
         raise ValueError(f"Expected at least 2 species, got {n_species}")
     
-    if metric not in ['nre', 'gmm']:
-        raise ValueError(f"Unknown metric: {metric}. Use 'nre' or 'gmm' (Cohen's d)")
+    if metric not in ['nre', 'effect_size']:
+        raise ValueError(f"Unknown metric: {metric}. Use 'nre' or 'effect_size' (Cohen's d)")
     
     # Set all random seeds for reproducibility (crucial after kernel restart)
     import torch
@@ -223,7 +223,7 @@ def run_nre_optimization(
     all_metric_per_k = {k: [] for k in k_candidates}
     
     # For Cohen's d, also store individual component effect sizes for threshold analysis
-    component_effect_sizes_per_k = {k: [] for k in k_candidates} if metric == 'gmm' else None
+    component_effect_sizes_per_k = {k: [] for k in k_candidates} if metric == 'effect_size' else None
     
     for run in range(num_runs):
         
@@ -267,7 +267,7 @@ def run_nre_optimization(
                 # Calculate NRE using the test source signals
                 score = calculate_nre_proper(test_sources, k)
                 
-            else:  # gmm
+            else:  # effect_size
                 # For Cohen's d, we need the M matrices (unmixing matrices)
                 # Run multi-view ICA with a=c=k (square ICA)
                 from .multiview_ica import run_multiview_ica
@@ -299,14 +299,14 @@ def run_nre_optimization(
             elapsed_time = time.time() - start_time
             if metric == 'nre':
                 print(f"k={k}: time={elapsed_time:.1f}s, NRE={score:.6f}")
-            else:  # gmm
-                print(f"k={k}: time={elapsed_time:.1f}s, median GMM effect size={score:.6f}")
+            else:  # effect_size
+                print(f"k={k}: time={elapsed_time:.1f}s, median Cohen's d effect size={score:.6f}")
     
-    # Calculate mean metric for each k (for NRE) or median metric (for GMM)
+    # Calculate mean metric for each k (for NRE) or median metric (for Cohen's d effect size)
     for k in k_candidates:
         if all_metric_per_k[k]:
-            if metric == 'gmm':
-                # For GMM, we already stored median values, just take mean of runs
+            if metric == 'effect_size':
+                # For effect_size, we already stored median values, just take mean of runs
                 mean_metric_per_k[k] = np.mean(all_metric_per_k[k])
             else:
                 # For NRE, take mean as before
@@ -320,8 +320,8 @@ def run_nre_optimization(
         optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
                                if abs(score - optimal_value) < tolerance]
         best_k = max(optimal_k_candidates)
-    else:  # gmm
-        # For GMM effect size, maximize
+    else:  # effect_size
+        # For Cohen's d effect size, maximize
         optimal_value = max(mean_metric_per_k.values())
         tolerance = optimal_value * 0.05  # 5% tolerance
         optimal_k_candidates = [k for k, score in mean_metric_per_k.items() 
@@ -331,10 +331,10 @@ def run_nre_optimization(
     if metric == 'nre':
         print(f"\nOptimal k = {best_k} (NRE = {mean_metric_per_k[best_k]:.6f})")
     else:
-        print(f"\nOptimal k = {best_k} (Median GMM effect size = {mean_metric_per_k[best_k]:.6f})")
+        print(f"\nOptimal k = {best_k} (Median Cohen's d effect size = {mean_metric_per_k[best_k]:.6f})")
     
-    # Threshold analysis for GMM metric
-    if metric == 'gmm' and threshold is not None and component_effect_sizes_per_k is not None:
+    # Threshold analysis for effect_size metric
+    if metric == 'effect_size' and threshold is not None and component_effect_sizes_per_k is not None:
         print(f"\nThreshold Analysis (threshold = {threshold:.3f}):")
         print("-" * 50)
         
@@ -361,8 +361,8 @@ def run_nre_optimization(
     
     # Create plot
     if 'plt' in globals():
-        if metric == 'gmm' and component_effect_sizes_per_k is not None:
-            # Create box plot for GMM showing distribution of component effect sizes
+        if metric == 'effect_size' and component_effect_sizes_per_k is not None:
+            # Create box plot for effect_size showing distribution of component effect sizes
             fig, ax = plt.subplots(figsize=(14, 8))
         else:
             # Regular line plot for NRE
@@ -396,7 +396,7 @@ def run_nre_optimization(
             ax.set_title('Normalized Reconstruction Error (NRE) vs Number of Core Components', fontsize=14, fontweight='bold')
             
         else:
-            # Box plot for GMM showing distribution of component effect sizes
+            # Box plot for effect_size showing distribution of component effect sizes
             if component_effect_sizes_per_k is not None:
                 # Prepare data for box plot
                 box_data = []

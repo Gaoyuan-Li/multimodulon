@@ -1147,7 +1147,7 @@ class MultiModulon:
                 Number of core components across all species
             - mode : str, optional
                 'gpu' or 'cpu' mode (default: 'gpu')
-            - gmm_threshold : float, optional
+            - effective_size_threshold : float, optional
                 Cohen's d effect size threshold for filtering components (comparing top 20 genes vs rest).
                 If provided, only keeps components above this threshold.
         
@@ -1168,7 +1168,7 @@ class MultiModulon:
         >>> multiModulon.run_multiview_ica(a=50, c=30)
         
         # With Cohen's d threshold filtering (top 20 genes vs rest)
-        >>> multiModulon.run_multiview_ica(a=50, c=30, gmm_threshold=0.2)
+        >>> multiModulon.run_multiview_ica(a=50, c=30, effective_size_threshold=0.2)
         """
         # Check if X matrices have been generated
         species_list = list(self._species_data.keys())
@@ -1210,7 +1210,7 @@ class MultiModulon:
         
         # Get other parameters
         mode = kwargs.get('mode', 'gpu')
-        gmm_threshold = kwargs.get('gmm_threshold', None)
+        effective_size_threshold = kwargs.get('effective_size_threshold', None)
         
         # Prepare X matrices dictionary
         species_X_matrices = {}
@@ -1223,7 +1223,7 @@ class MultiModulon:
             a_values=a_values,
             c=c,
             mode=mode,
-            gmm_threshold=gmm_threshold
+            effective_size_threshold=effective_size_threshold
         )
         
         # Save M matrices to each species
@@ -1261,7 +1261,7 @@ class MultiModulon:
            - When k = k_true: Optimal sharing → minimum NRE
            - When k > k_true: Including view-specific components → higher NRE
         
-        2. **GMM (Cohen's d Effect Size):**
+        2. **effect_size (Cohen's d Effect Size):**
            - Calculates Cohen's d between top 20 genes and remaining genes
            - Effect Size = |mean_top20 - mean_rest| / pooled_std
            - Measures separation between highly weighted genes and the rest
@@ -1287,9 +1287,9 @@ class MultiModulon:
         save_plot : str, optional
             Path to save the metric vs k plot. If None, displays the plot
         metric : str, default='nre'
-            Optimization metric: 'nre' or 'gmm' (Cohen's d effect size)
+            Optimization metric: 'nre' or 'effect_size' (Cohen's d effect size)
         threshold : float, optional
-            For GMM metric: Cohen's d threshold for effect size analysis and visualization
+            For effect_size metric: Cohen's d threshold for effect size analysis and visualization
         
         Returns
         -------
@@ -1305,11 +1305,11 @@ class MultiModulon:
         >>> print(f"Optimal number of core components: {best_k}")
         
         >>> # Using Cohen's d effect size metric for regulatory structure analysis
-        >>> best_k, gmm_scores = multiModulon.optimize_number_of_core_components(metric='gmm')
+        >>> best_k, effect_size_scores = multiModulon.optimize_number_of_core_components(metric='effect_size')
         >>> print(f"Optimal number of core components: {best_k}")
         
         >>> # Using Cohen's d with threshold analysis
-        >>> best_k, gmm_scores = multiModulon.optimize_number_of_core_components(metric='gmm', threshold=0.1)
+        >>> best_k, effect_size_scores = multiModulon.optimize_number_of_core_components(metric='effect_size', threshold=0.1)
         >>> print(f"Optimal number of core components: {best_k}")
         """
         # Check prerequisites
