@@ -969,6 +969,319 @@ class MultiModulon:
         """Create gene tables for all species."""
         return create_gene_table(self)
     
+    def create_eggnog_annotation(self, tax_scope: str = '', tax_scope_mode: str = '', cpu: int = 0):
+        """
+        Create eggNOG annotations for all genes in the gene tables of all species.
+        
+        This method runs eggNOG-mapper on the protein sequences from the faa files
+        and adds the annotations to the gene_table DataFrames.
+        
+        Parameters
+        ----------
+        tax_scope : str, optional
+            Taxonomic scope for annotation (passed to --tax_scope).
+            Examples: 'bacteria', '2', '1224' (proteobacteria), etc.
+        tax_scope_mode : str, optional
+            How to use the taxonomic scope (passed to --tax_scope_mode).
+            Options: 'narrow', 'broad', 'relaxed'
+        cpu : int, optional
+            Number of CPUs to use. Default is 0 (use all available CPUs).
+            
+        Notes
+        -----
+        This function requires Docker to be installed and the eggnog-mapper
+        container (quay.io/biocontainers/eggnog-mapper:2.1.13--pyhdfd78af_0)
+        to be available.
+        """
+        import subprocess
+        import tempfile
+        import shutil
+        from pathlib import Path
+        import os
+        
+        logger.info("Starting eggNOG annotation for all species")
+        
+        # Check if gene tables exist
+        for species_name, species_data in self._species_data.items():
+            if species_data.gene_table is None:
+                raise ValueError(f"Gene table not found for {species_name}. Please run create_gene_table() first.")
+        
+        # Process each species
+        for species_name, species_data in self._species_data.items():
+            print(f"\nProcessing eggNOG annotations for {species_name}...")
+            
+            # Find protein faa file
+            faa_path = species_data.data_path / "ref_genome" / "protein.faa"
+            if not faa_path.exists():
+                # Try alternative naming
+                faa_files = list(species_data.data_path.glob("ref_genome/*.faa"))
+                if not faa_files:
+                    logger.warning(f"No protein faa file found for {species_name}, skipping eggNOG annotation")
+                    continue
+                faa_path = faa_files[0]
+            
+            # Get current working directory (where jupyter notebook is)
+            current_dir = Path(os.getcwd())
+            
+            # Create temporary directory for eggNOG output in current directory
+            temp_dir_name = f"eggnog_temp_{species_name}"
+            temp_path = current_dir / temp_dir_name
+            temp_path.mkdir(exist_ok=True)
+            
+            try:
+                # Copy faa file to temp directory
+                temp_faa = temp_path / "proteins.faa"
+                shutil.copy(faa_path, temp_faa)
+                
+                # Prepare eggNOG-mapper command
+                cmd = [
+                    'docker', 'run', '--rm',
+                    '-v', f'{temp_path}:/data',
+                    '-w', '/data',  # Set working directory inside container
+                    'quay.io/biocontainers/eggnog-mapper:2.1.13--pyhdfd78af_0',
+                    'emapper.py',
+                    '-i', '/data/proteins.faa',
+                    '-o', '/data/eggnog_output',
+                    '--cpu', str(cpu),  # Use specified number of CPUs
+                    '-m', 'mmseqs',  # Use MMseqs2 for faster search
+                    '--no_file_comments'
+                ]
+                
+                # Add taxonomic scope if provided
+                if tax_scope:
+                    cmd.extend(['--tax_scope', tax_scope])
+                if tax_scope_mode:
+                    cmd.extend(['--tax_scope_mode', tax_scope_mode])
+                
+                # Run eggNOG-mapper
+                logger.info(f"Running eggNOG-mapper for {species_name}")
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    logger.info(f"eggNOG-mapper completed successfully for {species_name}")
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"eggNOG-mapper failed for {species_name}: {e.stderr}")
+                    print(f"Error running eggNOG-mapper for {species_name}: {e.stderr}")
+                    continue
+                
+                # Parse eggNOG output
+                output_file = temp_path / "eggnog_output.emapper.annotations"
+                if not output_file.exists():
+                    logger.error(f"eggNOG output file not found for {species_name}")
+                    continue
+                
+                # Read eggNOG annotations
+                try:
+                    eggnog_df = pd.read_csv(
+                        output_file,
+                        sep='\t',
+                        comment='#',
+                        header=None,
+                        names=['query', 'seed_ortholog', 'evalue', 'score', 'eggNOG_OGs',
+                               'max_annot_lvl', 'COG_category', 'Description', 'Preferred_name',
+                               'GOs', 'EC', 'KEGG_ko', 'KEGG_Pathway', 'KEGG_Module',
+                               'KEGG_Reaction', 'KEGG_rclass', 'BRITE', 'KEGG_TC',
+                               'CAZy', 'BiGG_Reaction', 'PFAMs']
+                    )
+                    
+                    # Set query as index for easier merging
+                    eggnog_df.set_index('query', inplace=True)
+                    
+                    # Get current gene table
+                    gene_table = species_data.gene_table
+                    
+                    # Merge annotations with gene table
+                    # The gene_table is indexed by locus_tag, eggnog_df by protein ID
+                    # We need to match based on the ncbi_protein column if available
+                    if 'ncbi_protein' in gene_table.columns:
+                        # Create a mapping from ncbi_protein to locus_tag
+                        protein_to_locus = {}
+                        for locus_tag, row in gene_table.iterrows():
+                            if pd.notna(row.get('ncbi_protein')):
+                                protein_to_locus[row['ncbi_protein']] = locus_tag
+                        
+                        # Add eggNOG annotations to gene table
+                        for protein_id, annotations in eggnog_df.iterrows():
+                            if protein_id in protein_to_locus:
+                                locus_tag = protein_to_locus[protein_id]
+                                for col in eggnog_df.columns:
+                                    gene_table.loc[locus_tag, f'eggnog_{col}'] = annotations[col]
+                    else:
+                        # Try to match by locus tag directly
+                        for locus_tag in gene_table.index:
+                            if locus_tag in eggnog_df.index:
+                                for col in eggnog_df.columns:
+                                    gene_table.loc[locus_tag, f'eggnog_{col}'] = eggnog_df.loc[locus_tag, col]
+                    
+                    # Update the gene table in species data
+                    species_data._gene_table = gene_table
+                    
+                    # Count how many genes got annotations
+                    annotated_count = gene_table.filter(regex='^eggnog_').notna().any(axis=1).sum()
+                    print(f"✓ Added eggNOG annotations for {annotated_count}/{len(gene_table)} genes in {species_name}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to parse eggNOG output for {species_name}: {str(e)}")
+                    print(f"Error parsing eggNOG output for {species_name}: {str(e)}")
+                    
+            finally:
+                # Clean up temporary directory
+                if temp_path.exists():
+                    try:
+                        shutil.rmtree(temp_path)
+                        logger.info(f"Cleaned up temporary directory for {species_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary directory {temp_path}: {str(e)}")
+        
+        print("\neggNOG annotation completed!")
+    
+    def optimize_M_thresholds(self, method: str = "Otsu's method"):
+        """
+        Optimize thresholds for M matrices across all species.
+        
+        This method calculates optimal thresholds for each component in the M matrices
+        using the specified method, then creates M_thresholds and presence_matrix
+        for each species.
+        
+        Parameters
+        ----------
+        method : str, optional
+            Method to use for threshold optimization. Default is "Otsu's method".
+            Currently only "Otsu's method" is supported.
+            
+        Notes
+        -----
+        The Otsu's method implementation uses quantile-based pre-filtering to handle
+        heavy-tailed distributions typical in gene expression data.
+        """
+        if method != "Otsu's method":
+            raise ValueError(f"Method '{method}' not supported. Only 'Otsu's method' is currently available.")
+        
+        logger.info("Optimizing M thresholds using Otsu's method")
+        
+        # Check if M matrices exist
+        for species_name, species_data in self._species_data.items():
+            if species_data._M is None:
+                raise ValueError(f"M matrix not found for {species_name}. Please run ICA first.")
+        
+        # Process each species
+        for species_name, species_data in self._species_data.items():
+            print(f"\nOptimizing thresholds for {species_name}...")
+            
+            M = species_data.M
+            
+            # Create M_thresholds dataframe
+            thresholds = {}
+            
+            # Calculate threshold for each component
+            for component in M.columns:
+                threshold = self._quantile_otsu_threshold(M, component)
+                thresholds[component] = threshold
+            
+            # Create M_thresholds dataframe with component names as index
+            M_thresholds_df = pd.DataFrame(
+                thresholds.values(),
+                index=thresholds.keys(),
+                columns=['M_threshold']
+            )
+            
+            # Create presence matrix
+            presence_matrix = pd.DataFrame(
+                index=M.index,
+                columns=M.columns,
+                dtype=int
+            )
+            
+            # Binarize based on thresholds
+            for component in M.columns:
+                threshold = thresholds[component]
+                # Set to 1 if absolute value is above threshold, 0 otherwise
+                presence_matrix[component] = (M[component].abs() > threshold).astype(int)
+            
+            # Store results
+            species_data._M_thresholds = M_thresholds_df
+            species_data._presence_matrix = presence_matrix
+            
+            # Report statistics
+            n_components = len(M.columns)
+            avg_genes_per_component = presence_matrix.sum().mean()
+            print(f"✓ Optimized thresholds for {n_components} components")
+            print(f"  Average genes per component: {avg_genes_per_component:.1f}")
+        
+        print("\nThreshold optimization completed!")
+    
+    def _quantile_otsu_threshold(self, multiModulon_M: pd.DataFrame, component_name: str) -> float:
+        """
+        Calculate Otsu threshold using quantile-based pre-filtering.
+        This method removes the central mass of data before applying Otsu,
+        which helps identify true outliers in heavy-tailed distributions.
+        
+        Parameters
+        ----------
+        multiModulon_M : pd.DataFrame
+            DataFrame with gene weights (genes as rows, components as columns)
+        component_name : str
+            Name of the component column to analyze
+        
+        Returns
+        -------
+        threshold : float
+            Optimal threshold value for the component
+        """
+        import numpy as np
+        
+        # Get weights for the specified component
+        weights = multiModulon_M[component_name].values
+        abs_weights = np.abs(weights)
+        
+        # Pre-filter: remove the bottom 90% of absolute values
+        pre_percentile = 90
+        pre_threshold = np.percentile(abs_weights, pre_percentile)
+        filtered_weights = abs_weights[abs_weights > pre_threshold]
+        
+        # If too few points remain, return the percentile threshold
+        if len(filtered_weights) < 10:
+            return pre_threshold
+        
+        # Apply Otsu to the filtered data
+        n_bins = 500
+        counts, bin_edges = np.histogram(filtered_weights, bins=n_bins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Otsu algorithm on filtered data
+        best_threshold = pre_threshold
+        max_variance = 0
+        
+        total = counts.sum()
+        if total == 0:
+            return pre_threshold
+            
+        sum_total = (counts * bin_centers).sum()
+        
+        w0 = 0
+        sum0 = 0
+        
+        for i in range(len(counts)):
+            w0 += counts[i]
+            if w0 == 0:
+                continue
+                
+            w1 = total - w0
+            if w1 == 0:
+                break
+                
+            sum0 += counts[i] * bin_centers[i]
+            m0 = sum0 / w0
+            m1 = (sum_total - sum0) / w1
+            
+            # Between-class variance
+            variance = w0 * w1 * (m0 - m1) ** 2
+            
+            if variance > max_variance:
+                max_variance = variance
+                best_threshold = bin_centers[i]
+        
+        return best_threshold
+    
     def calculate_explained_variance(self) -> Dict[str, float]:
         """
         Calculate the explained variance for each species using X, M, and A matrices.
@@ -1190,6 +1503,12 @@ class MultiModulon:
         x_positions = [gene_positions[g] / 1e6 for g in genes_with_pos]  # Convert to Mb
         y_weights = [extended_weights[g] for g in genes_with_pos]
         
+        # Get threshold if available
+        threshold = None
+        if hasattr(species_data, '_M_thresholds') and species_data._M_thresholds is not None:
+            if component in species_data._M_thresholds.index:
+                threshold = species_data._M_thresholds.loc[component, 'M_threshold']
+        
         # Create figure
         fig, ax = plt.subplots(figsize=fig_size)
         
@@ -1198,8 +1517,23 @@ class MultiModulon:
             font_prop = fm.FontProperties(fname=font_path)
             plt.rcParams['font.family'] = font_prop.get_name()
         
-        # Create scatter plot
-        ax.scatter(x_positions, y_weights, alpha=0.6, s=20)
+        # Create scatter plot with color coding based on threshold
+        if threshold is not None:
+            # Color points based on threshold
+            colors = []
+            for weight in y_weights:
+                if abs(weight) > threshold:
+                    colors.append('blue')  # Above threshold
+                else:
+                    colors.append('grey')  # Below threshold
+            ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
+            
+            # Add horizontal threshold lines
+            ax.axhline(y=threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
+            ax.axhline(y=-threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
+        else:
+            # No threshold available, use default plotting
+            ax.scatter(x_positions, y_weights, alpha=0.6, s=20)
         
         # Set labels and title
         ax.set_xlabel('Gene Start (1e6)', fontsize=12)

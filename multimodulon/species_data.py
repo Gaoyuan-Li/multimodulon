@@ -34,6 +34,8 @@ class SpeciesData:
         self._A = None
         self._sample_sheet = None
         self._gene_table = None
+        self._M_thresholds = None
+        self._presence_matrix = None
     
     @property
     def log_tpm(self) -> pd.DataFrame:
@@ -93,6 +95,30 @@ class SpeciesData:
         if self._gene_table is None:
             self._load_gene_table()
         return self._gene_table
+    
+    @property
+    def M_thresholds(self) -> pd.DataFrame:
+        """Get M matrix thresholds."""
+        if self._M_thresholds is None:
+            raise AttributeError(f"M_thresholds not yet computed for {self.species_name}. Run optimize_M_thresholds() first.")
+        return self._M_thresholds
+    
+    @M_thresholds.setter
+    def M_thresholds(self, value: pd.DataFrame):
+        """Set M matrix thresholds."""
+        self._M_thresholds = value
+    
+    @property
+    def presence_matrix(self) -> pd.DataFrame:
+        """Get presence matrix (binarized M matrix based on thresholds)."""
+        if self._presence_matrix is None:
+            raise AttributeError(f"presence_matrix not yet computed for {self.species_name}. Run optimize_M_thresholds() first.")
+        return self._presence_matrix
+    
+    @presence_matrix.setter
+    def presence_matrix(self, value: pd.DataFrame):
+        """Set presence matrix."""
+        self._presence_matrix = value
     
     def _load_log_tpm(self):
         """Load log TPM expression matrix."""
