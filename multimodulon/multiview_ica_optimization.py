@@ -14,8 +14,10 @@ from tqdm.auto import tqdm
 
 try:
     import matplotlib.pyplot as plt
+    import matplotlib.font_manager as fm
 except ImportError:
     print("Warning: matplotlib not available for plotting")
+import os
 
 # Cohen's d effect size calculation for component selection
 
@@ -186,7 +188,9 @@ def run_nre_optimization(
     metric: str = 'nre',
     threshold: Optional[float] = None,
     effect_size_threshold: float = 5,
-    num_top_gene: int = 20
+    num_top_gene: int = 20,
+    fig_size: Tuple[float, float] = (5, 3),
+    font_path: Optional[str] = None
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
     Optimization using NRE or Cohen's d metric.
@@ -438,7 +442,12 @@ def run_nre_optimization(
     # Create plot
     if 'plt' in globals():
         # Create line plot for both metrics
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=fig_size)
+        
+        # Set font properties if provided
+        if font_path and os.path.exists(font_path):
+            font_prop = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.family'] = font_prop.get_name()
     else:
         # Create a dummy figure object if matplotlib is not available
         class DummyFig:
@@ -485,8 +494,21 @@ def run_nre_optimization(
                         fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
-        ax.grid(True, alpha=0.3)
         ax.legend()
+        
+        # Apply font settings if provided
+        if font_path and os.path.exists(font_path):
+            # Apply to tick labels
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            # Apply to axis labels
+            ax.xaxis.label.set_fontproperties(font_prop)
+            ax.yaxis.label.set_fontproperties(font_prop)
+            # Apply to title
+            ax.title.set_fontproperties(font_prop)
+            # Apply to legend
+            for text in ax.get_legend().get_texts():
+                text.set_fontproperties(font_prop)
         
         # Force y-axis to show only integers
         if metric == 'effect_size':
@@ -499,10 +521,14 @@ def run_nre_optimization(
         else:
             label_text = f'Optimal k = {optimal_num_core_components}\n{int(mean_metric_per_k[optimal_num_core_components])} components above threshold'
         
-        ax.text(0.02, 0.98, label_text, 
+        text_obj = ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
                verticalalignment='top')
+        
+        # Apply font to text box if provided
+        if font_path and os.path.exists(font_path):
+            text_obj.set_fontproperties(font_prop)
         
         # Adjust layout
         plt.tight_layout()

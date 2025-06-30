@@ -80,55 +80,87 @@ combined_gene_db = multiModulon.align_genes(
     bbh_threshold=90  # optional, minimum PID threshold
 )
 
+# Create gene tables from GFF files
+multiModulon.create_gene_table()
+
 # Generate aligned expression matrices for multi-view ICA
-multiModulon.generate_X()
+multiModulon.generate_X('Output_Gene_Info')
 
 # Print matrix dimensions and get recommendation for max components
 # Shows aligned X matrices for all species with non-zero gene groups
 # Provides maximum dimension recommendation for ICA
 
-# STEP 1: Optimize the number of core components using Cohen's d effect size
-# This automatically finds the optimal number of core components
-optimal_num_core_components, effect_scores = multiModulon.optimize_number_of_core_components(
+# STEP 1: Optimize the number of core components
+optimal_num_core_components = multiModulon.optimize_number_of_core_components(
     metric='effect_size',          # Use Cohen's d effect size metric
-    effect_size_threshold=5,    # Components must have Cohen's d > 5
+    effect_size_threshold=5,       # Components must have Cohen's d > 5
     step=5,                        # Test k = 5, 10, 15, 20, ...
-    save_plot='optimization.png'   # Save optimization plot
+    save_path='optimization_plots', # Save plots to directory
+    fig_size=(5, 3),              # Figure size
+    font_path='/usr/share/fonts/truetype/msttcorefonts/Arial.ttf'  # Optional custom font
 )
 
 print(f"Optimal number of core components: {optimal_num_core_components}")
 
-# STEP 2: Run multi-view ICA with optimized parameters
-# Multiple ways to specify component numbers:
-
-# Option 1: Traditional way (for exactly 6 species)
-if len(multiModulon._species_data) == 6:
-    multiModulon.run_multiview_ica(
-        a1=50, a2=50, a3=50, a4=50, a5=50, a6=50, 
-        c=optimal_num_core_components  # Use optimized number of core components
-    )
-
-# Option 2: List format (for any number of species)
-multiModulon.run_multiview_ica(
-    a=[50, 50, 50],  # Components per species (adjust list length to match your species count)
-    c=optimal_num_core_components  # Use optimized number of core components
+# STEP 2: Optimize the number of unique components for each species
+optimal_unique, optimal_total = multiModulon.optimize_number_of_unique_components(
+    optimal_num_core_components=optimal_num_core_components,
+    step=5,
+    save_path='optimization_plots',  # Save all species plots
+    fig_size=(5, 3),
+    font_path='/usr/share/fonts/truetype/msttcorefonts/Arial.ttf'
 )
 
-# Option 3: Same number of components for all species
-multiModulon.run_multiview_ica(
-    a=50,                         # Same number of components for all species
-    c=optimal_num_core_components  # Use optimized number of core components
+print("Optimal unique components per species:", optimal_unique)
+print("Optimal total components per species:", optimal_total)
+
+# STEP 3: Run robust multi-view ICA with optimized parameters
+M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
+    a=optimal_total,           # Dictionary of total components per species
+    c=optimal_num_core_components,  # Optimized core components
+    num_runs=100,                   # Number of runs for robustness
+    effect_size_threshold=5,        # Cohen's d threshold
+    save_plots='ica_plots'          # Save clustering plots
 )
 
-# Access the ICA results (M matrices) for each species
+# Alternative: Run standard multi-view ICA (single run)
+multiModulon.run_multiview_ica(
+    a=optimal_total,               # Can also use list or single value
+    c=optimal_num_core_components  # Optimized core components
+)
+
+# Access the ICA results
 for species_name in multiModulon._species_data.keys():
     M_matrix = multiModulon[species_name].M  # ICA mixing matrix
-    print(f"{species_name} M matrix: {M_matrix.shape}")
+    A_matrix = multiModulon[species_name].A  # Activity matrix
+    print(f"{species_name} - M: {M_matrix.shape}, A: {A_matrix.shape}")
 
-# Access aligned expression matrices (same row indexes across all strains)
-for species_name in multiModulon._species_data.keys():
-    aligned_X = multiModulon[species_name].X  # Aligned expression matrix
-    print(f"{species_name} X matrix: {aligned_X.shape}")
+# Calculate explained variance
+explained_var = multiModulon.calculate_explained_variance()
+for species, variance in explained_var.items():
+    print(f"{species} explained variance: {variance:.4f}")
+
+# Visualize iModulon weights
+multiModulon.view_iModulon_weights(
+    species='MG1655',
+    component='Core_1',
+    save_path='imodulon_plots',  # Save directory
+    fig_size=(6, 4),
+    font_path='/usr/share/fonts/truetype/msttcorefonts/Arial.ttf'
+)
+
+# Visualize core component weights across all species
+multiModulon.view_core_iModulon_weights(
+    component='Core_1',
+    save_path='imodulon_plots',
+    fig_size=(6, 4)
+)
+
+# Save the entire MultiModulon object
+multiModulon.save_to_json_multimodulon('multimodulon_analysis.json')
+
+# Load it back later
+loaded_multiModulon = MultiModulon.load_json_multimodulon('multimodulon_analysis.json')
 ```
 
 ## Data Structure
@@ -186,18 +218,48 @@ The BBH output files will contain the following columns:
 
 Main class for multi-species/strain analysis.
 
-**Methods:**
+**Core Methods:**
 - `__init__(input_folder_path)`: Initialize with Input_Data folder path
 - `__getitem__(species_name)`: Get data for a specific strain
-- `generate_BBH(output_path, threads=1)`: Generate BBH files for all strain pairs (threads: number of CPU threads for BLAST)
-- `align_genes(input_bbh_dir, output_dir, reference_order, bbh_threshold)`: Align genes across strains and create unified matrices
-- **`generate_X()`**: Generate aligned expression matrices for multi-view ICA
-- **`optimize_number_of_core_components(step=5, num_runs=3, train_frac=0.75, save_plot=None)`**: Optimize number of core components using NRE
-- **`run_multiview_ica(**kwargs)`**: Run multi-view ICA on aligned expression matrices using PyTorch
+- `summary()`: Print data summary
+
+**Data Preparation:**
+- `generate_BBH(output_path, threads=1)`: Generate BBH files for all strain pairs
+- `align_genes(input_bbh_dir, output_dir, reference_order, bbh_threshold)`: Align genes across strains
+- `create_gene_table()`: Create gene tables from GFF files for all species
+- `generate_X(gene_info_folder)`: Generate aligned expression matrices for multi-view ICA
+
+**Optimization:**
+- `optimize_number_of_core_components(metric='effect_size', save_path=None, fig_size=(5,3), font_path=None)`: 
+  - Optimize number of core components using NRE or Cohen's d
+  - Returns optimal number and saves plot as 'num_core_optimization.svg'
+- `optimize_number_of_unique_components(optimal_num_core_components, save_path=None, fig_size=(5,3), font_path=None)`:
+  - Optimize unique components per species
+  - Saves plots as 'num_unique_{species}_optimization.svg'
+  - Returns dictionaries of optimal unique and total components
+
+**ICA Analysis:**
+- `run_multiview_ica(a, c, mode='gpu')`: Run standard multi-view ICA (single run)
+- `run_robust_multiview_ica(a, c, num_runs=100, save_plots=None)`: 
+  - Run robust multi-view ICA with clustering
+  - Returns M and A matrices
+- `generate_A()`: Generate activity matrices from M matrices
+- `calculate_explained_variance()`: Calculate explained variance for each species
+
+**Visualization:**
+- `view_iModulon_weights(species, component, save_path=None, fig_size=(6,4), font_path=None)`:
+  - Visualize gene weights across genome for a component
+  - Saves as '{species}_{component}_iModulon.svg'
+- `view_core_iModulon_weights(component, save_path=None, fig_size=(6,4), font_path=None)`:
+  - Visualize core component weights across all species
+  - Saves individual plots for each species
+
+**Data Management:**
 - `get_orthologs(species1, species2)`: Get ortholog pairs (after BBH)
 - `save_bbh(output_path)`: Save BBH results
 - `load_bbh(input_path)`: Load BBH results
-- `summary()`: Print data summary
+- `save_to_json_multimodulon(save_path)`: Save entire MultiModulon object to JSON
+- `load_json_multimodulon(load_path)`: Load MultiModulon object from JSON (static method)
 
 ### SpeciesData
 
@@ -207,7 +269,8 @@ Container for single strain data.
 - `log_tpm`: Log TPM expression matrix (from log_tpm.csv)
 - `log_tpm_norm`: Normalized log TPM expression matrix (from log_tpm_norm.csv)
 - `X`: Aligned expression matrix (used for multi-view ICA)
-- **`M`: ICA mixing matrix (available after running multi-view ICA)**
+- `M`: ICA mixing matrix (available after running multi-view ICA)
+- `A`: Activity matrix (components × samples, available after ICA)
 - `sample_sheet`: Sample metadata
 - `gene_table`: Gene annotations (parsed from GFF)
 
@@ -222,33 +285,70 @@ MultiModulon now supports GPU-accelerated multi-view Independent Component Analy
 - **Flexible Input**: Works with any number of species/strains (≥2)
 - **Orthogonal Constraints**: Uses geotorch for maintaining orthogonality in ICA unmixing matrices
 
-### Workflow
+### Complete Workflow
 
-1. **Prepare Data**: Run `generate_X()` to create aligned expression matrices
-2. **Optimize Parameters**: Use `optimize_number_of_core_components()` to find optimal core components
-3. **Run ICA**: Execute `run_multiview_ica()` with optimized parameters
-4. **Access Results**: Get ICA mixing matrices from each species' `.M` property
+1. **Data Preparation**:
+   - Generate BBH: `generate_BBH()` with multi-threading support
+   - Align genes: `align_genes()` to create unified gene database
+   - Create gene tables: `create_gene_table()` from GFF files
+   - Generate aligned matrices: `generate_X()` for multi-view ICA
+
+2. **Optimization**:
+   - Find optimal core components: `optimize_number_of_core_components()`
+   - Find optimal unique components: `optimize_number_of_unique_components()`
+
+3. **ICA Analysis**:
+   - Run robust ICA: `run_robust_multiview_ica()` with multiple runs
+   - Or standard ICA: `run_multiview_ica()` for single run
+   - A matrices are automatically generated from M matrices
+
+4. **Analysis & Visualization**:
+   - Calculate explained variance: `calculate_explained_variance()`
+   - Visualize component weights: `view_iModulon_weights()` and `view_core_iModulon_weights()`
+   - Save/load results: `save_to_json_multimodulon()` and `load_json_multimodulon()`
 
 ### Advanced Parameters
 
 **Component Optimization:**
+- `metric`: 'nre' or 'effect_size' (default: 'effect_size')
+- `effect_size_threshold`: Cohen's d threshold (default: 5)
 - `step`: Step size for testing k values (default: 5)
-- `num_runs`: Number of cross-validation runs for robustness (default: 3)
+- `num_runs`: Number of cross-validation runs (default: 1)
 - `train_frac`: Fraction of data for training (default: 0.75)
-- `mode`: 'gpu' or 'cpu' computation mode (default: 'gpu')
+- `save_path`: Directory to save optimization plots
+- `fig_size`: Figure size tuple (default: (5, 3))
+- `font_path`: Path to custom font file
 
 **Multi-view ICA:**
-- `a`: Number of components per species (int, list, or individual a1, a2, ...)
+- `a`: Components per species (int, list, dict, or individual a1, a2, ...)
 - `c`: Number of core components (use optimized value)
 - `mode`: 'gpu' or 'cpu' computation mode (default: 'gpu')
+- `effect_size_threshold`: For filtering components (default: 5)
+
+**Robust Multi-view ICA:**
+- `num_runs`: Number of ICA runs (default: 100)
+- `effect_size_threshold_core`: Threshold for core components
+- `effect_size_threshold_unique`: Threshold for unique components
+- `num_top_gene`: Top genes for effect size calculation (default: 20)
+- `save_plots`: Directory to save clustering plots
+
+**Visualization:**
+- `save_path`: Directory or file path for saving plots
+- `fig_size`: Figure size as (width, height) in inches
+- `font_path`: Path to TrueType font file for custom fonts
 
 ### Example Output
 
 After running the complete workflow, you'll have:
 - Aligned expression matrices (`species.X`) with consistent gene indexing
 - ICA mixing matrices (`species.M`) revealing modular patterns
-- Optimization plot showing NRE vs number of core components
-- Recommendations for maximum dimensions based on data structure
+- Activity matrices (`species.A`) showing component activities
+- Optimization plots:
+  - Core components: `num_core_optimization.svg`
+  - Unique components: `num_unique_{species}_optimization.svg`
+- iModulon visualizations showing gene weights across genomes
+- Explained variance values for each species
+- Complete analysis saved in JSON format for reproducibility
 
 ## License
 

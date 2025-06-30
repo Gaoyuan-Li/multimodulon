@@ -1073,7 +1073,7 @@ class MultiModulon:
         
         return explained_variance_results
     
-    def view_iModulons(self, species: str, component: str, save_path: Optional[str] = None, 
+    def view_iModulon_weights(self, species: str, component: str, save_path: Optional[str] = None, 
                       fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None):
         """
         Visualize gene weights for a specific iModulon component in a species.
@@ -1193,7 +1193,7 @@ class MultiModulon:
         else:
             plt.show()
     
-    def view_core_iModulons(self, component: str, save_path: Optional[str] = None,
+    def view_core_iModulon_weights(self, component: str, save_path: Optional[str] = None,
                            fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None):
         """
         Visualize a core iModulon component across all species.
@@ -1248,8 +1248,8 @@ class MultiModulon:
         
         for species in species_with_component:
             try:
-                # Call view_iModulons for this species
-                self.view_iModulons(
+                # Call view_iModulon_weights for this species
+                self.view_iModulon_weights(
                     species=species,
                     component=component,
                     save_path=save_path,

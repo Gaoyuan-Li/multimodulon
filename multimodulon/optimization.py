@@ -9,6 +9,8 @@ from typing import Dict, Optional, Tuple, TYPE_CHECKING
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
+import matplotlib.font_manager as fm
+import os
 
 from .multiview_ica import run_multiview_ica
 from .multiview_ica_optimization import run_nre_optimization, calculate_cohens_d_effect_size
@@ -33,7 +35,10 @@ def optimize_number_of_core_components(
     metric: str = 'nre',
     threshold: Optional[float] = None,
     effect_size_threshold: float = 5,
-    num_top_gene: int = 20
+    num_top_gene: int = 20,
+    save_path: Optional[str] = None,
+    fig_size: Tuple[float, float] = (5, 3),
+    font_path: Optional[str] = None
 ) -> Tuple[int, Dict[int, float]]:
     """
     Optimize the number of core components using specified metric.
@@ -76,6 +81,14 @@ def optimize_number_of_core_components(
         Only components with effect size above this threshold are counted as "effective".
     num_top_gene : int, default=20
         Number of top genes to use when calculating Cohen's d effect size
+    save_path : str, optional
+        Directory path to save the optimization plot. If None, displays plot.
+        Plot is saved as 'num_core_optimization.svg'
+    fig_size : tuple, default=(5, 3)
+        Figure size as (width, height) in inches
+    font_path : str, optional
+        Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
+        If provided, uses this font for all text elements
     
     Returns
     -------
@@ -155,13 +168,25 @@ def optimize_number_of_core_components(
         metric=metric,
         threshold=threshold,
         effect_size_threshold=effect_size_threshold,
-        num_top_gene=num_top_gene
+        num_top_gene=num_top_gene,
+        fig_size=fig_size,
+        font_path=font_path
     )
     
-    # Save or display plot
-    if save_plot:
-        fig.savefig(save_plot, dpi=300, bbox_inches='tight')
-        print(f"\nPlot saved to: {save_plot}")
+    # Handle save_plot (deprecated) and save_path
+    if save_path or save_plot:
+        # Determine save file path
+        if save_path:
+            save_path = Path(save_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+            save_file = save_path / "num_core_optimization.svg"
+        else:
+            # Use deprecated save_plot parameter
+            save_file = Path(save_plot)
+        
+        fig.savefig(save_file, dpi=300, bbox_inches='tight')
+        print(f"\nPlot saved to: {save_file}")
+        plt.close(fig)
     else:
         plt.show()
     
@@ -183,7 +208,10 @@ def optimize_number_of_unique_components(
     seed: int = 42,
     save_plots: Optional[str] = None,
     effect_size_threshold: float = 5,
-    num_top_gene: int = 20
+    num_top_gene: int = 20,
+    save_path: Optional[str] = None,
+    fig_size: Tuple[float, float] = (5, 3),
+    font_path: Optional[str] = None
 ) -> Tuple[Dict[str, int], Dict[str, int]]:
     """
     Optimize the number of unique components for each species.
@@ -210,6 +238,14 @@ def optimize_number_of_unique_components(
         Minimum Cohen's d effect size threshold for counting components
     num_top_gene : int, default=20
         Number of top genes to use when calculating Cohen's d effect size
+    save_path : str, optional
+        Directory path to save the optimization plots. If None, displays plots.
+        Plots are saved as 'num_unique_{species}_optimization.svg'
+    fig_size : tuple, default=(5, 3)
+        Figure size as (width, height) in inches
+    font_path : str, optional
+        Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
+        If provided, uses this font for all text elements
         
     Returns
     -------
@@ -344,7 +380,12 @@ def optimize_number_of_unique_components(
         optimal_num_unique_components[target_species] = optimal_a - optimal_num_core_components
         
         # Create plot
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=fig_size)
+        
+        # Set font properties if provided
+        if font_path and os.path.exists(font_path):
+            font_prop = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.family'] = font_prop.get_name()
         
         ax.plot(a_sorted, counts, 'bo-', linewidth=2, markersize=8, 
                label='Consistent unique components')
@@ -358,27 +399,49 @@ def optimize_number_of_unique_components(
         ax.set_xlabel('Number of Total Components (a)', fontsize=12)
         ax.set_ylabel('Number of Consistent Unique Components', fontsize=12)
         ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3)
         ax.legend()
+        
+        # Set font for tick labels if font_path provided
+        if font_path and os.path.exists(font_path):
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            ax.xaxis.label.set_fontproperties(font_prop)
+            ax.yaxis.label.set_fontproperties(font_prop)
+            ax.title.set_fontproperties(font_prop)
+            # Update legend font
+            for text in ax.get_legend().get_texts():
+                text.set_fontproperties(font_prop)
         
         # Force integer y-axis
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
         # Add text box with result
         label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} consistent unique components'
-        ax.text(0.02, 0.98, label_text, 
+        text_obj = ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
                verticalalignment='top')
         
+        # Apply font to text box if font_path provided
+        if font_path and os.path.exists(font_path):
+            text_obj.set_fontproperties(font_prop)
+        
         plt.tight_layout()
         
-        # Save or display plot
-        if save_plots:
-            Path(save_plots).mkdir(exist_ok=True)
-            plot_path = Path(save_plots) / f"unique_optimization_{target_species}.png"
-            fig.savefig(plot_path, dpi=300, bbox_inches='tight')
-            print(f"Plot saved to: {plot_path}")
+        # Handle save_plots (deprecated) and save_path
+        if save_path or save_plots:
+            # Determine save directory
+            if save_path:
+                save_dir = Path(save_path)
+            else:
+                # Use deprecated save_plots parameter
+                save_dir = Path(save_plots)
+            
+            save_dir.mkdir(parents=True, exist_ok=True)
+            plot_file = save_dir / f"num_unique_{target_species}_optimization.svg"
+            fig.savefig(plot_file, dpi=300, bbox_inches='tight')
+            print(f"Plot saved to: {plot_file}")
+            plt.close(fig)
         else:
             plt.show()
         
