@@ -8,6 +8,7 @@ from pathlib import Path
 import logging
 import json
 import pickle
+import warnings
 from typing import Dict, Optional, Tuple, List
 
 from .species_data import SpeciesData
@@ -20,6 +21,9 @@ from .multiview_ica import run_multiview_ica
 from .multiview_ica_optimization import calculate_cohens_d_effect_size
 from sklearn.cluster import HDBSCAN
 from tqdm.auto import tqdm
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -522,6 +526,24 @@ class MultiModulon:
             self._species_data[species].M = M_matrix
             print(f"✓ Saved M matrix for {species}: {M_matrix.shape}")
         
+        # Generate A matrices from M matrices
+        print("\nGenerating A matrices from M matrices...")
+        for species in species_list:
+            M = self._species_data[species].M
+            X = self._species_data[species].X
+            
+            # Calculate A = M.T @ X
+            A = M.T @ X
+            
+            # A should have component names as rows and sample names as columns
+            A.index = M.columns  # Component names
+            A.columns = X.columns  # Sample names
+            
+            # Store A matrix in species data
+            self._species_data[species]._A = A
+            
+            print(f"✓ Generated A matrix for {species}: {A.shape}")
+        
         print("\nMulti-view ICA completed successfully!")
     
     def run_robust_multiview_ica(
@@ -944,3 +966,502 @@ class MultiModulon:
     def create_gene_table(self) -> None:
         """Create gene tables for all species."""
         return create_gene_table(self)
+    
+    def calculate_explained_variance(self) -> Dict[str, float]:
+        """
+        Calculate the explained variance for each species using X, M, and A matrices.
+        
+        This method computes the explained variance based on the reconstruction
+        of the expression matrix X from the product of M and A matrices.
+        The algorithm follows the approach of calculating individual component
+        contributions and summing their explained variances.
+        
+        Returns
+        -------
+        dict
+            Dictionary mapping species names to their total explained variance values.
+            Keys are species names, values are the sum of explained variances.
+            
+        Raises
+        ------
+        ValueError
+            If X, M, or A matrices are not available for any species.
+            
+        Examples
+        --------
+        >>> # After running multi-view ICA and generating A matrices
+        >>> explained_var = multiModulon.calculate_explained_variance()
+        >>> print(explained_var)
+        {'strain1': 0.85, 'strain2': 0.82, 'strain3': 0.87}
+        """
+        explained_variance_results = {}
+        
+        # Check if ICA has been run
+        ica_run = False
+        for species_data in self._species_data.values():
+            if species_data.M is not None:
+                ica_run = True
+                break
+        
+        if not ica_run:
+            warnings.warn(
+                "M and A matrices have not been generated from run_multiview_ica() or "
+                "run_robust_multiview_ica(). Please run one of these methods first to "
+                "ensure valid M and A matrices are available for explained variance calculation.",
+                UserWarning
+            )
+        
+        for species_name, species_data in self._species_data.items():
+            # Check if all required matrices are available
+            if species_data.X is None:
+                raise ValueError(f"X matrix not found for {species_name}. Please run generate_X() first.")
+            if species_data.M is None:
+                raise ValueError(f"M matrix not found for {species_name}. Please run multi-view ICA first.")
+            if species_data.A is None:
+                raise ValueError(f"A matrix not found for {species_name}. Please run generate_A() first.")
+            
+            # Get matrices
+            X = species_data.X
+            M = species_data.M
+            A = species_data.A
+            
+            # Center the data (following the algorithm)
+            centered = X
+            baseline = centered.subtract(centered.mean(axis=0), axis=1)
+            
+            # Initialize variables
+            base_err = np.linalg.norm(baseline) ** 2
+            MA = np.zeros(baseline.shape)
+            rec_var = [0]
+            ma_arrs = {}
+            ma_weights = {}
+            explained_variance_dict = {}
+            
+            # Get genes, samples, and components
+            genes = X.index
+            samples = X.columns
+            imodulons = M.columns
+            
+            # Calculate individual component contributions
+            for k in imodulons:
+                # Compute outer product for this component
+                ma_arr = np.dot(
+                    M.loc[genes, k].values.reshape(len(genes), 1),
+                    A.loc[k, samples].values.reshape(1, len(samples)),
+                )
+                ma_arrs[k] = ma_arr
+                ma_weights[k] = np.sum(ma_arr**2)
+            
+            # Sort components by importance (highest weight first)
+            sorted_mods = sorted(ma_weights, key=ma_weights.get, reverse=True)
+            
+            # Compute reconstructed variance
+            i = 0
+            for k in sorted_mods:
+                MA = MA + ma_arrs[k]
+                sa_err = np.linalg.norm(MA - baseline) ** 2
+                rec_var.append((1 - sa_err / base_err))
+                explained_variance_dict[k] = rec_var[i+1] - rec_var[i]
+                i += 1
+            
+            # Sum all explained variances for this species
+            total_explained_variance = sum(explained_variance_dict.values())
+            explained_variance_results[species_name] = total_explained_variance
+            
+            # Log the result
+            logger.info(f"Explained variance for {species_name}: {total_explained_variance:.4f}")
+        
+        return explained_variance_results
+    
+    def view_iModulons(self, species: str, component: str, save_path: Optional[str] = None, 
+                      fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None):
+        """
+        Visualize gene weights for a specific iModulon component in a species.
+        
+        Creates a scatter plot showing gene weights across the genome, with genes
+        positioned by their genomic coordinates.
+        
+        Parameters
+        ----------
+        species : str
+            Species/strain name
+        component : str
+            Component name (e.g., 'Core_1', 'Unique_1')
+        save_path : str, optional
+            Path to save the plot. Can be a directory or file path.
+            If directory, saves as '{species}_{component}_iModulon.svg'
+            If None, displays plot without saving
+        fig_size : tuple, optional
+            Figure size as (width, height). Default: (6, 4)
+        font_path : str, optional
+            Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
+            If provided, uses this font for all text elements
+            
+        Raises
+        ------
+        ValueError
+            If species not found, M matrix not available, or component not found
+        """
+        # Validate species
+        if species not in self._species_data:
+            raise ValueError(f"Species '{species}' not found in loaded data")
+        
+        species_data = self._species_data[species]
+        
+        # Check if M matrix exists
+        if species_data.M is None:
+            raise ValueError(f"M matrix not found for {species}. Please run ICA first.")
+        
+        # Check if component exists
+        if component not in species_data.M.columns:
+            raise ValueError(f"Component '{component}' not found in M matrix. "
+                           f"Available components: {list(species_data.M.columns)}")
+        
+        # Check if gene_table exists
+        if species_data.gene_table is None:
+            raise ValueError(f"Gene table not found for {species}. Please run create_gene_table() first.")
+        
+        # Get gene weights for the component
+        gene_weights = species_data.M[component]
+        
+        # Get gene positions from gene_table
+        gene_table = species_data.gene_table
+        
+        # Create a mapping from gene names to positions
+        gene_positions = {}
+        for gene_name in gene_weights.index:
+            # Try to find the gene in gene_table
+            if gene_name in gene_table.index:
+                gene_info = gene_table.loc[gene_name]
+                # Calculate center position
+                start = gene_info['start']
+                end = gene_info['end']
+                center = (start + end) / 2
+                gene_positions[gene_name] = center
+        
+        # Filter to only genes with position information
+        genes_with_pos = [g for g in gene_weights.index if g in gene_positions]
+        if not genes_with_pos:
+            raise ValueError(f"No gene position information found for genes in {species}")
+        
+        # Prepare data for plotting
+        x_positions = [gene_positions[g] / 1e6 for g in genes_with_pos]  # Convert to Mb
+        y_weights = [gene_weights[g] for g in genes_with_pos]
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=fig_size)
+        
+        # Set font properties if provided
+        if font_path and os.path.exists(font_path):
+            font_prop = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.family'] = font_prop.get_name()
+        
+        # Create scatter plot
+        ax.scatter(x_positions, y_weights, alpha=0.6, s=20)
+        
+        # Set labels and title
+        ax.set_xlabel('Gene Start (1e6)', fontsize=12)
+        ax.set_ylabel('Gene Weight', fontsize=12)
+        ax.set_title(f'iModulon {component} on {species}', fontsize=14)
+        
+        # Set font for tick labels if font_path provided
+        if font_path and os.path.exists(font_path):
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            ax.xaxis.label.set_fontproperties(font_prop)
+            ax.yaxis.label.set_fontproperties(font_prop)
+            ax.title.set_fontproperties(font_prop)
+        
+        # Tight layout
+        plt.tight_layout()
+        
+        # Save or show
+        if save_path:
+            # Determine save file path
+            save_path = Path(save_path)
+            if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg']:
+                # Full file path provided
+                save_file = save_path
+            else:
+                # Directory provided, use default name
+                save_path.mkdir(parents=True, exist_ok=True)
+                save_file = save_path / f"{species}_{component}_iModulon.svg"
+            
+            plt.savefig(save_file, dpi=300, bbox_inches='tight')
+            logger.info(f"Plot saved to {save_file}")
+            plt.close()
+        else:
+            plt.show()
+    
+    def view_core_iModulons(self, component: str, save_path: Optional[str] = None,
+                           fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None):
+        """
+        Visualize a core iModulon component across all species.
+        
+        Creates individual plots for each species showing the same core component,
+        and saves them to the specified directory. This method calls view_iModulons
+        for each species with the given core component.
+        
+        Parameters
+        ----------
+        component : str
+            Core component name (e.g., 'Core_1', 'Core_2')
+        save_path : str, optional
+            Directory path to save all plots. If None, displays plots without saving.
+            Each plot is saved as '{species}_{component}_iModulon.svg'
+        fig_size : tuple, optional
+            Figure size for individual plots as (width, height). Default: (6, 4)
+        font_path : str, optional
+            Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
+            If provided, uses this font for all text elements in all plots
+            
+        Raises
+        ------
+        ValueError
+            If component is not a core component or not found in any species
+        """
+        # Get all species
+        species_list = list(self._species_data.keys())
+        
+        # Verify this is a core component by checking it exists in multiple species
+        species_with_component = []
+        for species in species_list:
+            species_data = self._species_data[species]
+            if species_data.M is not None and component in species_data.M.columns:
+                species_with_component.append(species)
+        
+        if not species_with_component:
+            raise ValueError(f"Component '{component}' not found in any species")
+        
+        if not component.startswith('Core_'):
+            warnings.warn(f"Component '{component}' does not appear to be a core component "
+                         f"(core components typically start with 'Core_')")
+        
+        # Create save directory if needed
+        if save_path:
+            save_path = Path(save_path)
+            if not save_path.suffix:  # It's a directory
+                save_path.mkdir(parents=True, exist_ok=True)
+        
+        # Generate plots for each species
+        logger.info(f"Generating plots for core component '{component}' across {len(species_with_component)} species")
+        
+        for species in species_with_component:
+            try:
+                # Call view_iModulons for this species
+                self.view_iModulons(
+                    species=species,
+                    component=component,
+                    save_path=save_path,
+                    fig_size=fig_size,
+                    font_path=font_path
+                )
+                logger.info(f"✓ Generated plot for {species}")
+            except Exception as e:
+                logger.warning(f"Failed to generate plot for {species}: {str(e)}")
+        
+        logger.info(f"Completed generating plots for core component '{component}'")
+    
+    def save_to_json_multimodulon(self, save_path: str):
+        """
+        Save the entire MultiModulon object to a JSON file.
+        
+        This method serializes all data including:
+        - All species data (X, M, A, log_tpm, log_tpm_norm, gene_table, sample_sheet)
+        - Combined gene database
+        - BBH results
+        - Input folder path
+        
+        Parameters
+        ----------
+        save_path : str
+            Path to save the JSON file
+            
+        Examples
+        --------
+        >>> multiModulon.save_to_json_multimodulon("multimodulon_data.json")
+        """
+        save_path = Path(save_path)
+        
+        # Create the data structure to save
+        data = {
+            'input_folder_path': str(self.input_folder_path),
+            'species_data': {},
+            'combined_gene_db': None,
+            'bbh': None
+        }
+        
+        # Save combined gene database if available
+        if hasattr(self, '_combined_gene_db') and self._combined_gene_db is not None:
+            data['combined_gene_db'] = {
+                'data': self._combined_gene_db.to_dict('records'),
+                'columns': list(self._combined_gene_db.columns)
+            }
+        
+        # Save BBH results if available
+        if hasattr(self, '_bbh') and self._bbh is not None:
+            bbh_data = {}
+            for (sp1, sp2), df in self._bbh.items():
+                key = f"{sp1}___{sp2}"
+                bbh_data[key] = df.to_dict('records')
+            data['bbh'] = bbh_data
+        
+        # Save each species data
+        for species_name, species_data_obj in self._species_data.items():
+            species_dict = {
+                'species_name': species_data_obj.species_name,
+                'data_path': str(species_data_obj.data_path),
+                'log_tpm': None,
+                'log_tpm_norm': None,
+                'X': None,
+                'M': None,
+                'A': None,
+                'sample_sheet': None,
+                'gene_table': None
+            }
+            
+            # Save DataFrames if they exist
+            if species_data_obj._log_tpm is not None:
+                species_dict['log_tpm'] = {
+                    'data': species_data_obj._log_tpm.to_dict('records'),
+                    'index': list(species_data_obj._log_tpm.index),
+                    'columns': list(species_data_obj._log_tpm.columns)
+                }
+            
+            if species_data_obj._log_tpm_norm is not None:
+                species_dict['log_tpm_norm'] = {
+                    'data': species_data_obj._log_tpm_norm.to_dict('records'),
+                    'index': list(species_data_obj._log_tpm_norm.index),
+                    'columns': list(species_data_obj._log_tpm_norm.columns)
+                }
+            
+            if species_data_obj._X is not None:
+                species_dict['X'] = {
+                    'data': species_data_obj._X.to_dict('records'),
+                    'index': list(species_data_obj._X.index),
+                    'columns': list(species_data_obj._X.columns)
+                }
+            
+            if species_data_obj._M is not None:
+                species_dict['M'] = {
+                    'data': species_data_obj._M.to_dict('records'),
+                    'index': list(species_data_obj._M.index),
+                    'columns': list(species_data_obj._M.columns)
+                }
+            
+            if species_data_obj._A is not None:
+                species_dict['A'] = {
+                    'data': species_data_obj._A.to_dict('records'),
+                    'index': list(species_data_obj._A.index),
+                    'columns': list(species_data_obj._A.columns)
+                }
+            
+            if species_data_obj._sample_sheet is not None:
+                species_dict['sample_sheet'] = {
+                    'data': species_data_obj._sample_sheet.to_dict('records'),
+                    'index': list(species_data_obj._sample_sheet.index),
+                    'columns': list(species_data_obj._sample_sheet.columns)
+                }
+            
+            if species_data_obj._gene_table is not None:
+                species_dict['gene_table'] = {
+                    'data': species_data_obj._gene_table.to_dict('records'),
+                    'index': list(species_data_obj._gene_table.index),
+                    'columns': list(species_data_obj._gene_table.columns)
+                }
+            
+            data['species_data'][species_name] = species_dict
+        
+        # Save to JSON file
+        with open(save_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        logger.info(f"MultiModulon object saved to {save_path}")
+    
+    @staticmethod
+    def load_json_multimodulon(load_path: str) -> 'MultiModulon':
+        """
+        Load a MultiModulon object from a JSON file.
+        
+        This static method creates a new MultiModulon object and populates it
+        with all the data saved in the JSON file.
+        
+        Parameters
+        ----------
+        load_path : str
+            Path to the JSON file to load
+            
+        Returns
+        -------
+        MultiModulon
+            A new MultiModulon object with all loaded data
+            
+        Examples
+        --------
+        >>> multiModulon = MultiModulon.load_json_multimodulon("multimodulon_data.json")
+        """
+        load_path = Path(load_path)
+        
+        # Load JSON data
+        with open(load_path, 'r') as f:
+            data = json.load(f)
+        
+        # Create a new MultiModulon object
+        # We need to handle the case where the input folder might not exist
+        input_folder = data['input_folder_path']
+        
+        # Create a minimal MultiModulon object
+        multi_modulon = MultiModulon.__new__(MultiModulon)
+        multi_modulon.input_folder_path = Path(input_folder)
+        multi_modulon._species_data = {}
+        
+        # Load combined gene database
+        if data.get('combined_gene_db') is not None:
+            df_data = data['combined_gene_db']
+            multi_modulon._combined_gene_db = pd.DataFrame(df_data['data'])
+            if df_data['data']:  # Only set columns if there's data
+                multi_modulon._combined_gene_db = multi_modulon._combined_gene_db[df_data['columns']]
+        else:
+            multi_modulon._combined_gene_db = None
+        
+        # Load BBH results
+        if data.get('bbh') is not None:
+            multi_modulon._bbh = {}
+            for key, records in data['bbh'].items():
+                sp1, sp2 = key.split('___')
+                multi_modulon._bbh[(sp1, sp2)] = pd.DataFrame(records)
+        else:
+            multi_modulon._bbh = None
+        
+        # Load species data
+        for species_name, species_dict in data['species_data'].items():
+            # Create SpeciesData object
+            species_data = SpeciesData.__new__(SpeciesData)
+            species_data.species_name = species_dict['species_name']
+            species_data.data_path = Path(species_dict['data_path'])
+            
+            # Load DataFrames
+            def load_dataframe(df_data):
+                if df_data is None:
+                    return None
+                df = pd.DataFrame(df_data['data'])
+                if df_data['data']:  # Only set index/columns if there's data
+                    df.index = df_data['index']
+                    df.columns = df_data['columns']
+                return df
+            
+            species_data._log_tpm = load_dataframe(species_dict.get('log_tpm'))
+            species_data._log_tpm_norm = load_dataframe(species_dict.get('log_tpm_norm'))
+            species_data._X = load_dataframe(species_dict.get('X'))
+            species_data._M = load_dataframe(species_dict.get('M'))
+            species_data._A = load_dataframe(species_dict.get('A'))
+            species_data._sample_sheet = load_dataframe(species_dict.get('sample_sheet'))
+            species_data._gene_table = load_dataframe(species_dict.get('gene_table'))
+            
+            # Add to MultiModulon
+            multi_modulon._species_data[species_name] = species_data
+        
+        logger.info(f"MultiModulon object loaded from {load_path}")
+        logger.info(f"Loaded {len(multi_modulon._species_data)} species")
+        
+        return multi_modulon
