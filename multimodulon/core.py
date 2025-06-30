@@ -969,7 +969,7 @@ class MultiModulon:
         """Create gene tables for all species."""
         return create_gene_table(self)
     
-    def create_eggnog_annotation(self, tax_scope: str = '', tax_scope_mode: str = '', cpu: int = 0):
+    def create_eggnog_annotation(self, tax_scope: str = '', tax_scope_mode: str = '', cpu: int = 0, output_dir: Optional[str] = None):
         """
         Create eggNOG annotations for all genes in the gene tables of all species.
         
@@ -986,6 +986,9 @@ class MultiModulon:
             Options: 'narrow', 'broad', 'relaxed'
         cpu : int, optional
             Number of CPUs to use. Default is 0 (use all available CPUs).
+        output_dir : str, optional
+            Directory to save raw eggNOG output files. If provided, creates
+            subdirectories for each species and keeps all eggNOG output files.
             
         Notes
         -----
@@ -1006,6 +1009,14 @@ class MultiModulon:
             if species_data.gene_table is None:
                 raise ValueError(f"Gene table not found for {species_name}. Please run create_gene_table() first.")
         
+        # Set up output directory if provided
+        save_raw_output = False
+        if output_dir:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            save_raw_output = True
+            logger.info(f"Raw eggNOG output will be saved to: {output_path}")
+        
         # Process each species
         for species_name, species_data in self._species_data.items():
             print(f"\nProcessing eggNOG annotations for {species_name}...")
@@ -1020,13 +1031,21 @@ class MultiModulon:
                     continue
                 faa_path = faa_files[0]
             
-            # Get current working directory (where jupyter notebook is)
-            current_dir = Path(os.getcwd())
-            
-            # Create temporary directory for eggNOG output in current directory
-            temp_dir_name = f"eggnog_temp_{species_name}"
-            temp_path = current_dir / temp_dir_name
-            temp_path.mkdir(exist_ok=True)
+            # Determine working directory
+            if save_raw_output:
+                # Create species-specific subdirectory in output_dir
+                species_output_dir = output_path / species_name
+                species_output_dir.mkdir(exist_ok=True)
+                temp_path = species_output_dir
+                cleanup_temp = False  # Don't cleanup if saving output
+            else:
+                # Get current working directory (where jupyter notebook is)
+                current_dir = Path(os.getcwd())
+                # Create temporary directory for eggNOG output in current directory
+                temp_dir_name = f"eggnog_temp_{species_name}"
+                temp_path = current_dir / temp_dir_name
+                temp_path.mkdir(exist_ok=True)
+                cleanup_temp = True  # Cleanup temp files later
             
             try:
                 # Copy faa file to temp directory
@@ -1034,6 +1053,7 @@ class MultiModulon:
                 shutil.copy(faa_path, temp_faa)
                 
                 # Prepare eggNOG-mapper command
+                output_prefix = f"{species_name}_eggnog" if save_raw_output else "eggnog_output"
                 cmd = [
                     'docker', 'run', '--rm',
                     '-v', f'{temp_path}:/data',
@@ -1041,7 +1061,7 @@ class MultiModulon:
                     'quay.io/biocontainers/eggnog-mapper:2.1.13--pyhdfd78af_0',
                     'emapper.py',
                     '-i', '/data/proteins.faa',
-                    '-o', '/data/eggnog_output',
+                    '-o', f'/data/{output_prefix}',
                     '--cpu', str(cpu),  # Use specified number of CPUs
                     '-m', 'mmseqs',  # Use MMseqs2 for faster search
                     '--no_file_comments'
@@ -1064,7 +1084,7 @@ class MultiModulon:
                     continue
                 
                 # Parse eggNOG output
-                output_file = temp_path / "eggnog_output.emapper.annotations"
+                output_file = temp_path / f"{output_prefix}.emapper.annotations"
                 if not output_file.exists():
                     logger.error(f"eggNOG output file not found for {species_name}")
                     continue
@@ -1124,13 +1144,15 @@ class MultiModulon:
                     print(f"Error parsing eggNOG output for {species_name}: {str(e)}")
                     
             finally:
-                # Clean up temporary directory
-                if temp_path.exists():
+                # Clean up temporary directory only if not saving output
+                if cleanup_temp and temp_path.exists():
                     try:
                         shutil.rmtree(temp_path)
                         logger.info(f"Cleaned up temporary directory for {species_name}")
                     except Exception as e:
                         logger.warning(f"Failed to clean up temporary directory {temp_path}: {str(e)}")
+                elif save_raw_output:
+                    print(f"✓ Raw eggNOG output saved to: {temp_path}")
         
         print("\neggNOG annotation completed!")
     
