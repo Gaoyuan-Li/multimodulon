@@ -972,7 +972,8 @@ class MultiModulon:
     def create_eggnog_annotation(self, tax_scope: str = '', tax_scope_mode: str = '', cpu: int = 0, 
                                 output_dir: Optional[str] = None, search_mode: str = 'mmseqs',
                                 pfam_realign: str = 'none', sensmode: str = 'default',
-                                override: bool = False, resume: bool = False):
+                                override: bool = False, resume: bool = False, 
+                                data_dir: Optional[str] = None, download_db: bool = True):
         """
         Create eggNOG annotations for all genes in the gene tables of all species.
         
@@ -1003,12 +1004,18 @@ class MultiModulon:
             Override existing output files
         resume : bool, optional
             Resume a previous run
+        data_dir : str, optional
+            Directory for eggNOG database files. If None and output_dir is provided,
+            uses output_dir/eggnog_data. Otherwise uses current directory/eggnog_data.
+        download_db : bool, optional
+            Whether to download eggNOG databases if not found. Default is True.
             
         Notes
         -----
         This function requires Docker to be installed and the eggnog-mapper
         container (quay.io/biocontainers/eggnog-mapper:2.1.13--pyhdfd78af_0)
-        to be available.
+        to be available. The eggNOG databases will be downloaded automatically
+        if not present (requires ~50GB of disk space).
         """
         import subprocess
         import tempfile
@@ -1026,10 +1033,53 @@ class MultiModulon:
         # Set up output directory if provided
         save_raw_output = False
         if output_dir:
-            output_path = Path(output_dir)
+            output_path = Path(output_dir).resolve()
             output_path.mkdir(parents=True, exist_ok=True)
             save_raw_output = True
             logger.info(f"Raw eggNOG output will be saved to: {output_path}")
+        
+        # Set up data directory for eggNOG databases
+        if data_dir:
+            eggnog_data_path = Path(data_dir).resolve()
+        elif output_dir:
+            eggnog_data_path = output_path / "eggnog_data"
+        else:
+            eggnog_data_path = Path.cwd() / "eggnog_data"
+        
+        eggnog_data_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"eggNOG data directory: {eggnog_data_path}")
+        
+        # Check if eggNOG databases exist
+        db_files = ['eggnog.db', 'eggnog_proteins.dmnd']
+        dbs_exist = all((eggnog_data_path / db).exists() for db in db_files)
+        
+        if not dbs_exist and download_db:
+            print("\neggNOG databases not found. Downloading databases (this may take a while)...")
+            print("Required disk space: ~50GB")
+            
+            # Download databases using eggnog-mapper container
+            download_cmd = [
+                'docker', 'run', '--rm',
+                '-v', f'{eggnog_data_path}:/data',
+                '-w', '/data',
+                'quay.io/biocontainers/eggnog-mapper:2.1.13--pyhdfd78af_0',
+                'download_eggnog_data.py',
+                '-y',  # Assume yes to all questions
+                '--data_dir', '/data'
+            ]
+            
+            try:
+                logger.info("Downloading eggNOG databases...")
+                result = subprocess.run(download_cmd, capture_output=True, text=True, check=True)
+                print("✓ eggNOG databases downloaded successfully")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to download eggNOG databases: {e.stderr}")
+                raise RuntimeError(f"Failed to download eggNOG databases: {e.stderr}")
+        elif not dbs_exist:
+            raise FileNotFoundError(
+                f"eggNOG databases not found in {eggnog_data_path}. "
+                "Set download_db=True to download them automatically."
+            )
         
         # Process each species
         for species_name, species_data in self._species_data.items():
@@ -1072,11 +1122,13 @@ class MultiModulon:
                 cmd = [
                     'docker', 'run', '--rm',
                     '-v', f'{temp_path}:/data',
+                    '-v', f'{eggnog_data_path}:/eggnog_data',  # Mount eggNOG database directory
                     '-w', '/data',  # Set working directory inside container
                     'quay.io/biocontainers/eggnog-mapper:2.1.13--pyhdfd78af_0',
                     'emapper.py',
                     '-i', '/data/proteins.faa',
                     '-o', f'/data/{output_prefix}',
+                    '--data_dir', '/eggnog_data',  # Point to mounted database directory
                     '--cpu', str(cpu),  # Use specified number of CPUs
                     '-m', search_mode,  # Search mode
                     '--no_file_comments'
