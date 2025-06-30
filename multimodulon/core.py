@@ -169,6 +169,11 @@ class MultiModulon:
         """Get list of loaded species."""
         return list(self._species_data.keys())
     
+    @property
+    def combined_gene_db(self) -> pd.DataFrame | None:
+        """Get the combined gene database if available."""
+        return getattr(self, '_combined_gene_db', None)
+    
     def generate_A(self):
         """
         Generate A matrices for all species from M matrices and X matrices.
@@ -1127,9 +1132,38 @@ class MultiModulon:
         # Get gene positions from gene_table
         gene_table = species_data.gene_table
         
+        # If combined_gene_db is available, include mapped genes
+        if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+            # Create mapping from species genes to leftmost gene names
+            leftmost_to_species = {}
+            for idx, row in self.combined_gene_db.iterrows():
+                # Find leftmost gene name
+                leftmost_gene = None
+                for col in self.combined_gene_db.columns:
+                    val = row[col]
+                    if pd.notna(val) and val != "None" and val is not None:
+                        leftmost_gene = val
+                        break
+                
+                # Map species gene to leftmost gene
+                species_gene = row[species]
+                if leftmost_gene and pd.notna(species_gene) and species_gene != "None":
+                    leftmost_to_species[leftmost_gene] = species_gene
+            
+            # Extend gene_weights to include leftmost gene names
+            extended_weights = gene_weights.copy()
+            for leftmost_gene, species_gene in leftmost_to_species.items():
+                if leftmost_gene in gene_weights.index and leftmost_gene != species_gene:
+                    # Add weight for the leftmost gene name if it's different from species gene
+                    extended_weights[leftmost_gene] = gene_weights[leftmost_gene]
+        else:
+            extended_weights = gene_weights
+        
         # Create a mapping from gene names to positions
         gene_positions = {}
-        for gene_name in gene_weights.index:
+        
+        # First, add positions for genes that exist in gene_table
+        for gene_name in extended_weights.index:
             # Try to find the gene in gene_table
             if gene_name in gene_table.index:
                 gene_info = gene_table.loc[gene_name]
@@ -1139,14 +1173,25 @@ class MultiModulon:
                 center = (start + end) / 2
                 gene_positions[gene_name] = center
         
+        # If combined_gene_db is available, try to find positions for leftmost genes
+        if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+            for leftmost_gene, species_gene in leftmost_to_species.items():
+                if leftmost_gene not in gene_positions and species_gene in gene_table.index:
+                    # Use position from the species gene
+                    gene_info = gene_table.loc[species_gene]
+                    start = gene_info['start']
+                    end = gene_info['end']
+                    center = (start + end) / 2
+                    gene_positions[leftmost_gene] = center
+        
         # Filter to only genes with position information
-        genes_with_pos = [g for g in gene_weights.index if g in gene_positions]
+        genes_with_pos = [g for g in extended_weights.index if g in gene_positions]
         if not genes_with_pos:
             raise ValueError(f"No gene position information found for genes in {species}")
         
         # Prepare data for plotting
         x_positions = [gene_positions[g] / 1e6 for g in genes_with_pos]  # Convert to Mb
-        y_weights = [gene_weights[g] for g in genes_with_pos]
+        y_weights = [extended_weights[g] for g in genes_with_pos]
         
         # Create figure
         fig, ax = plt.subplots(figsize=fig_size)
@@ -1186,6 +1231,236 @@ class MultiModulon:
                 # Directory provided, use default name
                 save_path.mkdir(parents=True, exist_ok=True)
                 save_file = save_path / f"{species}_{component}_iModulon.svg"
+            
+            plt.savefig(save_file, dpi=300, bbox_inches='tight')
+            logger.info(f"Plot saved to {save_file}")
+            plt.close()
+        else:
+            plt.show()
+    
+    def view_iModulon_activities(self, species: str, component: str, save_path: Optional[str] = None,
+                                fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
+                                highlight_project: Optional[str] = None, highlight_study: Optional[str] = None):
+        """
+        Visualize iModulon activities for a specific component in a species.
+        
+        Creates a bar plot showing component activities across samples, with samples
+        grouped by project/study_accession from the sample sheet.
+        
+        Parameters
+        ----------
+        species : str
+            Species/strain name
+        component : str
+            Component name (e.g., 'Core_1', 'Unique_1')
+        save_path : str, optional
+            Path to save the plot. Can be a directory or file path.
+            If directory, saves as '{species}_{component}_activities.svg'
+            If None, displays plot without saving
+        fig_size : tuple, optional
+            Figure size as (width, height). Default: (6, 4)
+        font_path : str, optional
+            Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
+            If provided, uses this font for all text elements
+        highlight_project : str, optional
+            Project name to highlight with different colors. Uses 'condition' column for legend
+        highlight_study : str, optional
+            Study accession to highlight with different colors. Uses 'sample_description' column for legend
+            
+        Raises
+        ------
+        ValueError
+            If species not found, A matrix not available, or component not found
+        """
+        # Validate species
+        if species not in self._species_data:
+            raise ValueError(f"Species '{species}' not found in loaded data")
+        
+        species_data = self._species_data[species]
+        
+        # Check if A matrix exists
+        if species_data.A is None:
+            raise ValueError(f"A matrix not found for {species}. Please run ICA first.")
+        
+        # Check if component exists
+        if component not in species_data.A.index:
+            raise ValueError(f"Component '{component}' not found in A matrix. "
+                           f"Available components: {list(species_data.A.index)}")
+        
+        # Get component activities
+        activities = species_data.A.loc[component]
+        
+        # Get sample sheet
+        sample_sheet = species_data.sample_sheet
+        if sample_sheet is None:
+            # If no sample sheet, use simple bar plot without grouping
+            x_positions = range(len(activities))
+            x_labels = activities.index.tolist()
+            group_labels = []
+        else:
+            # Determine grouping column
+            group_col = None
+            if 'project' in sample_sheet.columns:
+                group_col = 'project'
+            elif 'study_accession' in sample_sheet.columns:
+                group_col = 'study_accession'
+            
+            if group_col:
+                # Ensure activities and sample_sheet are aligned
+                common_samples = [s for s in activities.index if s in sample_sheet.index]
+                activities = activities[common_samples]
+                sample_sheet = sample_sheet.loc[common_samples]
+                
+                # Get group labels
+                group_labels = sample_sheet[group_col].fillna('Unknown').astype(str).tolist()
+                unique_groups = []
+                for g in group_labels:
+                    if g not in unique_groups:
+                        unique_groups.append(g)
+                
+                x_positions = range(len(activities))
+                x_labels = [unique_groups.index(g) if g in unique_groups else -1 for g in group_labels]
+            else:
+                # No grouping column available
+                x_positions = range(len(activities))
+                x_labels = activities.index.tolist()
+                group_labels = []
+        
+        # Prepare colors for bars
+        colors = []
+        legend_elements = []
+        
+        if highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
+            # Color by project with condition as legend
+            for i, sample in enumerate(activities.index):
+                if sample in sample_sheet.index:
+                    project = sample_sheet.loc[sample, 'project']
+                    if str(project) == str(highlight_project):
+                        condition = sample_sheet.loc[sample, 'condition'] if 'condition' in sample_sheet.columns else 'Unknown'
+                        # Assign unique color per condition
+                        if condition not in [elem[0] for elem in legend_elements]:
+                            color = plt.cm.tab10(len(legend_elements))
+                            legend_elements.append((condition, color))
+                            colors.append(color)
+                        else:
+                            # Find existing color for this condition
+                            for cond, col in legend_elements:
+                                if cond == condition:
+                                    colors.append(col)
+                                    break
+                    else:
+                        colors.append('blue')
+                else:
+                    colors.append('blue')
+        elif highlight_study and sample_sheet is not None and 'study_accession' in sample_sheet.columns:
+            # Color by study with sample_description as legend
+            for i, sample in enumerate(activities.index):
+                if sample in sample_sheet.index:
+                    study = sample_sheet.loc[sample, 'study_accession']
+                    if str(study) == str(highlight_study):
+                        desc = sample_sheet.loc[sample, 'sample_description'] if 'sample_description' in sample_sheet.columns else 'Unknown'
+                        # Assign unique color per description
+                        if desc not in [elem[0] for elem in legend_elements]:
+                            color = plt.cm.tab10(len(legend_elements))
+                            legend_elements.append((desc, color))
+                            colors.append(color)
+                        else:
+                            # Find existing color for this description
+                            for d, col in legend_elements:
+                                if d == desc:
+                                    colors.append(col)
+                                    break
+                    else:
+                        colors.append('blue')
+                else:
+                    colors.append('blue')
+        else:
+            # Default blue color for all bars
+            colors = ['blue'] * len(activities)
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=fig_size)
+        
+        # Set font properties if provided
+        if font_path and os.path.exists(font_path):
+            font_prop = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.family'] = font_prop.get_name()
+        
+        # Create bar plot
+        bars = ax.bar(x_positions, activities.values, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+        
+        # Add horizontal line at y=0
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
+        
+        # Remove grid
+        ax.grid(False)
+        
+        # Set labels and title
+        ax.set_xlabel('Samples', fontsize=12)
+        ax.set_ylabel('iModulon Activity', fontsize=12)
+        ax.set_title(f'iModulon {component} on {species}', fontsize=14)
+        
+        # Set x-axis ticks
+        if group_col and group_labels:
+            # Show group labels on x-axis
+            tick_positions = []
+            tick_labels = []
+            current_group = None
+            group_start = 0
+            
+            for i, group in enumerate(group_labels):
+                if group != current_group:
+                    if current_group is not None:
+                        # Add tick for previous group
+                        tick_positions.append((group_start + i - 1) / 2)
+                        tick_labels.append(current_group)
+                    current_group = group
+                    group_start = i
+            
+            # Add last group
+            if current_group is not None:
+                tick_positions.append((group_start + len(group_labels) - 1) / 2)
+                tick_labels.append(current_group)
+            
+            ax.set_xticks(tick_positions)
+            ax.set_xticklabels(tick_labels, rotation=45, ha='right')
+        else:
+            # No grouping - don't show individual sample names
+            ax.set_xticks([])
+        
+        # Add legend if highlighting
+        if legend_elements:
+            from matplotlib.patches import Patch
+            patches = [Patch(color=color, label=label) for label, color in legend_elements]
+            ax.legend(handles=patches, loc='best')
+            
+            # Apply font to legend if provided
+            if font_path and os.path.exists(font_path):
+                for text in ax.get_legend().get_texts():
+                    text.set_fontproperties(font_prop)
+        
+        # Set font for tick labels if font_path provided
+        if font_path and os.path.exists(font_path):
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            ax.xaxis.label.set_fontproperties(font_prop)
+            ax.yaxis.label.set_fontproperties(font_prop)
+            ax.title.set_fontproperties(font_prop)
+        
+        # Tight layout
+        plt.tight_layout()
+        
+        # Save or show
+        if save_path:
+            # Determine save file path
+            save_path = Path(save_path)
+            if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg']:
+                # Full file path provided
+                save_file = save_path
+            else:
+                # Directory provided, use default name
+                save_path.mkdir(parents=True, exist_ok=True)
+                save_file = save_path / f"{species}_{component}_activities.svg"
             
             plt.savefig(save_file, dpi=300, bbox_inches='tight')
             logger.info(f"Plot saved to {save_file}")

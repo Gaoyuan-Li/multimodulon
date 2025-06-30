@@ -481,7 +481,7 @@ def run_nre_optimization(
             mean_values = [mean_metric_per_k[k] for k in k_values]
             
             ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=8, 
-                   label='Number of components above threshold')
+                   label='QC-passed components')
             
             # Highlight optimal k
             ax.axvline(x=optimal_num_core_components, color='red', linestyle='--', alpha=0.7, linewidth=2,
@@ -489,8 +489,8 @@ def run_nre_optimization(
             ax.scatter([optimal_num_core_components], [mean_metric_per_k[optimal_num_core_components]], color='red', s=120, zorder=5,
                       edgecolors='darkred', linewidth=2)
             
-            ax.set_ylabel('Number of Components Above Threshold', fontsize=12)
-            ax.set_title(f'Number of Components with Cohen\'s d > {effect_size_threshold} vs Number of Core Components', 
+            ax.set_ylabel('Number of QC-passed components', fontsize=12)
+            ax.set_title('Optimization of Core components', 
                         fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)

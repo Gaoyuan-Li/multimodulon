@@ -37,7 +37,7 @@ def optimize_number_of_core_components(
     effect_size_threshold: float = 5,
     num_top_gene: int = 20,
     save_path: Optional[str] = None,
-    fig_size: Tuple[float, float] = (5, 3),
+    fig_size: Tuple[float, float] = (7, 5),
     font_path: Optional[str] = None
 ) -> Tuple[int, Dict[int, float]]:
     """
@@ -210,7 +210,7 @@ def optimize_number_of_unique_components(
     effect_size_threshold: float = 5,
     num_top_gene: int = 20,
     save_path: Optional[str] = None,
-    fig_size: Tuple[float, float] = (5, 3),
+    fig_size: Tuple[float, float] = (7, 5),
     font_path: Optional[str] = None
 ) -> Tuple[Dict[str, int], Dict[str, int]]:
     """
@@ -388,7 +388,7 @@ def optimize_number_of_unique_components(
             plt.rcParams['font.family'] = font_prop.get_name()
         
         ax.plot(a_sorted, counts, 'bo-', linewidth=2, markersize=8, 
-               label='Consistent unique components')
+               label='QC-passed components')
         
         # Highlight optimal a
         ax.axvline(x=optimal_a, color='red', linestyle='--', alpha=0.7, linewidth=2,
@@ -397,7 +397,7 @@ def optimize_number_of_unique_components(
                   edgecolors='darkred', linewidth=2)
         
         ax.set_xlabel('Number of Total Components (a)', fontsize=12)
-        ax.set_ylabel('Number of Consistent Unique Components', fontsize=12)
+        ax.set_ylabel('Number of QC-passed components', fontsize=12)
         ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
         ax.legend()
         
