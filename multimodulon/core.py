@@ -561,8 +561,7 @@ class MultiModulon:
         effect_size_threshold: Optional[float] = 5,
         effect_size_threshold_core: Optional[float] = None,
         effect_size_threshold_unique: Optional[float] = None,
-        num_top_gene: int = 20,
-        save_plots: Optional[str] = None
+        num_top_gene: int = 20
     ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
         """
         Run robust multi-view ICA with clustering to identify consistent components.
@@ -595,8 +594,6 @@ class MultiModulon:
             If provided, overrides effect_size_threshold for unique components.
         num_top_gene : int, default=20
             Number of top genes to use when calculating Cohen's d effect size
-        save_plots : str, optional
-            Directory to save clustering plots. If None, no plots are saved.
             
         Returns
         -------
