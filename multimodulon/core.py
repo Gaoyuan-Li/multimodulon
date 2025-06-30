@@ -969,7 +969,10 @@ class MultiModulon:
         """Create gene tables for all species."""
         return create_gene_table(self)
     
-    def create_eggnog_annotation(self, tax_scope: str = '', tax_scope_mode: str = '', cpu: int = 0, output_dir: Optional[str] = None):
+    def create_eggnog_annotation(self, tax_scope: str = '', tax_scope_mode: str = '', cpu: int = 0, 
+                                output_dir: Optional[str] = None, search_mode: str = 'mmseqs',
+                                pfam_realign: str = 'none', sensmode: str = 'default',
+                                override: bool = False, resume: bool = False):
         """
         Create eggNOG annotations for all genes in the gene tables of all species.
         
@@ -980,15 +983,26 @@ class MultiModulon:
         ----------
         tax_scope : str, optional
             Taxonomic scope for annotation (passed to --tax_scope).
-            Examples: 'bacteria', '2', '1224' (proteobacteria), etc.
+            Examples: 'Gammaproteobacteria', 'bacteria', '2', '1224' (proteobacteria), etc.
         tax_scope_mode : str, optional
-            How to use the taxonomic scope (passed to --tax_scope_mode).
-            Options: 'narrow', 'broad', 'relaxed'
+            From which level to retrieve annotations when using --tax_scope.
+            Can be: 'narrow', 'broad', 'relaxed', or a taxonomic level like 'Bacteria'
         cpu : int, optional
             Number of CPUs to use. Default is 0 (use all available CPUs).
         output_dir : str, optional
             Directory to save raw eggNOG output files. If provided, creates
             subdirectories for each species and keeps all eggNOG output files.
+        search_mode : str, optional
+            Search mode: 'mmseqs' (default), 'diamond', 'hmmer', 'cache'
+        pfam_realign : str, optional
+            Realign PFAM domains: 'none' (default), 'realign', 'denovo'
+        sensmode : str, optional
+            Diamond sensitivity: 'default', 'fast', 'mid-sensitive', 'sensitive', 
+            'more-sensitive', 'very-sensitive', 'ultra-sensitive'
+        override : bool, optional
+            Override existing output files
+        resume : bool, optional
+            Resume a previous run
             
         Notes
         -----
@@ -1036,7 +1050,7 @@ class MultiModulon:
                 # Create species-specific subdirectory in output_dir
                 species_output_dir = output_path / species_name
                 species_output_dir.mkdir(exist_ok=True)
-                temp_path = species_output_dir
+                temp_path = species_output_dir.resolve()  # Convert to absolute path
                 cleanup_temp = False  # Don't cleanup if saving output
             else:
                 # Get current working directory (where jupyter notebook is)
@@ -1045,6 +1059,7 @@ class MultiModulon:
                 temp_dir_name = f"eggnog_temp_{species_name}"
                 temp_path = current_dir / temp_dir_name
                 temp_path.mkdir(exist_ok=True)
+                temp_path = temp_path.resolve()  # Convert to absolute path
                 cleanup_temp = True  # Cleanup temp files later
             
             try:
@@ -1063,7 +1078,7 @@ class MultiModulon:
                     '-i', '/data/proteins.faa',
                     '-o', f'/data/{output_prefix}',
                     '--cpu', str(cpu),  # Use specified number of CPUs
-                    '-m', 'mmseqs',  # Use MMseqs2 for faster search
+                    '-m', search_mode,  # Search mode
                     '--no_file_comments'
                 ]
                 
@@ -1072,6 +1087,19 @@ class MultiModulon:
                     cmd.extend(['--tax_scope', tax_scope])
                 if tax_scope_mode:
                     cmd.extend(['--tax_scope_mode', tax_scope_mode])
+                
+                # Add additional options
+                if pfam_realign != 'none':
+                    cmd.extend(['--pfam_realign', pfam_realign])
+                
+                if sensmode != 'default' and search_mode == 'diamond':
+                    cmd.extend(['--sensmode', sensmode])
+                
+                if override:
+                    cmd.append('--override')
+                
+                if resume:
+                    cmd.append('--resume')
                 
                 # Run eggNOG-mapper
                 logger.info(f"Running eggNOG-mapper for {species_name}")
