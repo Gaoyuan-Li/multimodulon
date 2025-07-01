@@ -2376,12 +2376,12 @@ class MultiModulon:
                 # Add legend at bottom
                 if font_path and os.path.exists(font_path):
                     legend = fig.legend(handles=legend_elements, loc='lower center', 
-                                      bbox_to_anchor=(0.5, -0.02), ncol=3, frameon=True, fontsize=10)
+                                      bbox_to_anchor=(0.5, -0.03), ncol=3, frameon=True, fontsize=10)
                     for text in legend.get_texts():
                         text.set_fontproperties(font_prop)
                 else:
                     fig.legend(handles=legend_elements, loc='lower center', 
-                             bbox_to_anchor=(0.5, -0.02), ncol=3, frameon=True, fontsize=10)
+                             bbox_to_anchor=(0.5, -0.03), ncol=3, frameon=True, fontsize=10)
             
             # Adjust layout
             plt.tight_layout(rect=[0, 0.08, 1, 0.96])
@@ -2721,24 +2721,21 @@ class MultiModulon:
         
         # Add separate boxes for left and right heatmaps
         if gap_position > 0:
-            # Left heatmap box - add small offset to prevent edge overlap
-            left_box = patches.Rectangle((-0.5, -0.5), gap_position + 0.5, n_species + 1, 
-                                       linewidth=1.5, edgecolor='black', facecolor='none', 
-                                       clip_on=False)
+            # Left heatmap box
+            left_box = patches.Rectangle((0, 0), gap_position, n_species, 
+                                       linewidth=1, edgecolor='black', facecolor='none')
             ax.add_patch(left_box)
             
-            # Right heatmap box - add small offset to prevent edge overlap
+            # Right heatmap box
             right_start = gap_position + gap_width
             right_width = total_width - right_start
-            right_box = patches.Rectangle((right_start - 0.5, -0.5), right_width + 1, n_species + 1,
-                                        linewidth=1.5, edgecolor='black', facecolor='none',
-                                        clip_on=False)
+            right_box = patches.Rectangle((right_start, 0), right_width, n_species,
+                                        linewidth=1, edgecolor='black', facecolor='none')
             ax.add_patch(right_box)
         else:
             # Single box if no separation
-            full_box = patches.Rectangle((-0.5, -0.5), total_width + 1, n_species + 1,
-                                       linewidth=1.5, edgecolor='black', facecolor='none',
-                                       clip_on=False)
+            full_box = patches.Rectangle((0, 0), total_width, n_species,
+                                       linewidth=1, edgecolor='black', facecolor='none')
             ax.add_patch(full_box)
         
         # Add legend
