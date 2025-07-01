@@ -2273,12 +2273,16 @@ class MultiModulon:
         Parameters
         ----------
         save_path : str
-            Path to save the JSON file
+            Path to save the JSON file. If the path ends with '.json.gz', 
+            the file will be gzip compressed.
             
         Examples
         --------
         >>> multiModulon.save_to_json_multimodulon("multimodulon_data.json")
+        >>> multiModulon.save_to_json_multimodulon("multimodulon_data.json.gz")  # Compressed
         """
+        import gzip
+        
         save_path = Path(save_path)
         
         # Create the data structure to save
@@ -2378,11 +2382,17 @@ class MultiModulon:
             
             data['species_data'][species_name] = species_dict
         
-        # Save to JSON file
-        with open(save_path, 'w') as f:
-            json.dump(data, f, indent=2)
-        
-        logger.info(f"MultiModulon object saved to {save_path}")
+        # Save to JSON file with optional compression
+        if str(save_path).endswith('.json.gz'):
+            # Save as compressed gzip file
+            with gzip.open(save_path, 'wt', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            logger.info(f"MultiModulon object saved to {save_path} (compressed)")
+        else:
+            # Save as regular JSON file
+            with open(save_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            logger.info(f"MultiModulon object saved to {save_path}")
     
     @staticmethod
     def load_json_multimodulon(load_path: str) -> 'MultiModulon':
@@ -2395,7 +2405,8 @@ class MultiModulon:
         Parameters
         ----------
         load_path : str
-            Path to the JSON file to load
+            Path to the JSON file to load. If the path ends with '.json.gz',
+            the file will be treated as gzip compressed.
             
         Returns
         -------
@@ -2405,12 +2416,21 @@ class MultiModulon:
         Examples
         --------
         >>> multiModulon = MultiModulon.load_json_multimodulon("multimodulon_data.json")
+        >>> multiModulon = MultiModulon.load_json_multimodulon("multimodulon_data.json.gz")  # Compressed
         """
+        import gzip
+        
         load_path = Path(load_path)
         
-        # Load JSON data
-        with open(load_path, 'r') as f:
-            data = json.load(f)
+        # Load JSON data with optional decompression
+        if str(load_path).endswith('.json.gz'):
+            # Load from compressed gzip file
+            with gzip.open(load_path, 'rt', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            # Load from regular JSON file
+            with open(load_path, 'r') as f:
+                data = json.load(f)
         
         # Create a new MultiModulon object
         # We need to handle the case where the input folder might not exist
