@@ -2070,6 +2070,11 @@ class MultiModulon:
         # Get subset of gene_table
         if genes_in_table:
             gene_subset = species_data.gene_table.loc[genes_in_table].copy()
+            
+            # Sort by start position if the column exists
+            if 'start' in gene_subset.columns:
+                gene_subset = gene_subset.sort_values('start')
+                
             logger.info(f"Found {len(gene_subset)} genes in component '{component}' for species '{species}'")
             return gene_subset
         else:
@@ -2732,6 +2737,36 @@ class MultiModulon:
             full_box = patches.Rectangle((0, 0), total_width, n_species,
                                        linewidth=1.5, edgecolor='black', facecolor='none')
             ax.add_patch(full_box)
+        
+        # Add legend
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='#CCE5FF', edgecolor='black', linewidth=1, label='Present in iModulon'),
+            Patch(facecolor='#F0F0F0', edgecolor='black', linewidth=1, label='Absent from iModulon'),
+            Patch(facecolor='white', edgecolor='black', linewidth=1, label=f'Absent from {y_label.lower()}')
+        ]
+        
+        # Position legend to the right with same gap as between heatmaps
+        if gap_position > 0:
+            legend_x = total_width + gap_width
+        else:
+            legend_x = total_width + 1
+            
+        # Create custom legend
+        legend = ax.legend(handles=legend_elements, 
+                          loc='center left',
+                          bbox_to_anchor=(legend_x / total_width, 0.5),
+                          frameon=True,
+                          framealpha=1,
+                          edgecolor='black')
+        
+        # Apply font to legend if provided
+        if font_path and os.path.exists(font_path):
+            for text in legend.get_texts():
+                text.set_fontproperties(font_prop)
+        
+        # Adjust figure size to accommodate legend
+        fig.subplots_adjust(right=0.75)
         
         # Tight layout
         plt.tight_layout()
