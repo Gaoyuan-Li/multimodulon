@@ -1955,7 +1955,7 @@ class MultiModulon:
     
     def view_core_iModulon_weights(self, component: str, save_path: Optional[str] = None,
                            fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
-                           show_COG: bool = False):
+                           show_COG: bool = False, reference_order: Optional[List[str]] = None):
         """
         Visualize a core iModulon component across all species.
         
@@ -1977,6 +1977,11 @@ class MultiModulon:
             If provided, uses this font for all text elements in all plots
         show_COG : bool, optional
             If True, color genes above threshold by their COG category. Default: False
+        reference_order : list of str, optional
+            Custom order for arranging species in subplots when show_COG is True.
+            First 3 species will be placed in the first row, remaining in the second row.
+            Example: ['MG1655', 'BL21', 'C', 'Crooks', 'W', 'W3110']
+            If not provided, species are plotted in their default order.
             
         Raises
         ------
@@ -2011,10 +2016,23 @@ class MultiModulon:
         
         if show_COG:
             # When showing COG, create a combined plot with subplots and single legend
+            
+            # Apply reference_order if provided
+            if reference_order:
+                # Filter reference_order to only include species that have the component
+                ordered_species = [sp for sp in reference_order if sp in species_with_component]
+                # Add any remaining species not in reference_order
+                remaining_species = [sp for sp in species_with_component if sp not in ordered_species]
+                species_with_component = ordered_species + remaining_species
+            
             n_species = len(species_with_component)
             
             # Determine subplot layout
-            if n_species <= 3:
+            if reference_order and n_species > 3:
+                # Custom layout: first 3 in first row, rest in second row
+                n_rows = 2
+                n_cols = max(3, n_species - 3)
+            elif n_species <= 3:
                 n_rows = 1
                 n_cols = n_species
             elif n_species <= 6:
@@ -2047,8 +2065,20 @@ class MultiModulon:
             
             # Plot each species
             for idx, species in enumerate(species_with_component):
-                row = idx // n_cols
-                col = idx % n_cols
+                if reference_order and n_species > 3:
+                    # Custom layout for reference_order
+                    if idx < 3:
+                        # First 3 species in first row
+                        row = 0
+                        col = idx
+                    else:
+                        # Remaining species in second row
+                        row = 1
+                        col = idx - 3
+                else:
+                    # Default layout
+                    row = idx // n_cols
+                    col = idx % n_cols
                 ax = axes[row, col]
                 
                 species_data = self._species_data[species]
@@ -2260,6 +2290,219 @@ class MultiModulon:
                     logger.warning(f"Failed to generate plot for {species}: {str(e)}")
         
         logger.info(f"Completed generating plots for core component '{component}'")
+    
+    def compare_core_iModulon(self, component: str, y_label: str = 'Species', 
+                              save_path: Optional[str] = None, fig_size: Tuple[float, float] = (12, 8),
+                              font_path: Optional[str] = None) -> Dict[str, List[str]]:
+        """
+        Compare a core iModulon component across species with a dual-layer heatmap.
+        
+        Creates a heatmap showing:
+        - Component membership (filled blocks from presence_matrix)
+        - Gene presence across species (edge visibility from combined_gene_db)
+        
+        Parameters
+        ----------
+        component : str
+            Core component name (e.g., 'Core_1', 'Core_2')
+        y_label : str, optional
+            Y-axis label. Default: 'Species'
+        save_path : str, optional
+            Path to save the plot. If None, displays the plot
+        fig_size : tuple, optional
+            Figure size as (width, height). Default: (12, 8)
+        font_path : str, optional
+            Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
+            If provided, uses this font for all text elements
+            
+        Returns
+        -------
+        Dict[str, List[str]]
+            Dictionary with species names as keys and lists of gene names (M matrix indices) as values
+            
+        Raises
+        ------
+        ValueError
+            If component is not found in any species
+        """
+        import matplotlib.patches as patches
+        from matplotlib.collections import PatchCollection
+        
+        # Get all species with this component
+        species_with_component = []
+        result_dict = {}
+        
+        for species in self._species_data.keys():
+            species_data = self._species_data[species]
+            if species_data.M is not None and component in species_data.M.columns:
+                species_with_component.append(species)
+                
+                # Get genes in this component for this species (using presence_matrix)
+                if species_data._presence_matrix is not None:
+                    component_genes = species_data._presence_matrix[
+                        species_data._presence_matrix[component] == 1
+                    ].index.tolist()
+                    result_dict[species] = component_genes
+        
+        if not species_with_component:
+            raise ValueError(f"Component '{component}' not found in any species")
+        
+        if not component.startswith('Core_'):
+            warnings.warn(f"Component '{component}' does not appear to be a core component")
+        
+        # Set font properties if provided
+        if font_path and os.path.exists(font_path):
+            font_prop = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.family'] = font_prop.get_name()
+        
+        # Collect all unique genes across species for this component
+        all_genes = set()
+        for species in species_with_component:
+            if species in result_dict:
+                all_genes.update(result_dict[species])
+        all_genes = sorted(list(all_genes))
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=fig_size)
+        
+        # Prepare data for visualization
+        n_species = len(species_with_component)
+        n_genes = len(all_genes)
+        
+        # Create custom patches for the heatmap
+        rectangles = []
+        
+        for i, species in enumerate(species_with_component):
+            species_data = self._species_data[species]
+            
+            for j, gene in enumerate(all_genes):
+                # Check if gene is in component (from presence_matrix)
+                in_component = gene in result_dict.get(species, [])
+                
+                # Check if gene exists in species (from combined_gene_db)
+                gene_exists_in_species = False
+                if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+                    # Check if this gene exists in the species
+                    for idx, row in self.combined_gene_db.iterrows():
+                        # Find leftmost gene
+                        leftmost_gene = None
+                        for col in self.combined_gene_db.columns:
+                            val = row[col]
+                            if pd.notna(val) and val != "None" and val is not None:
+                                leftmost_gene = val
+                                break
+                        
+                        # Check if this row contains our gene
+                        if leftmost_gene == gene:
+                            species_gene = row[species]
+                            if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                                gene_exists_in_species = True
+                                break
+                
+                # Create rectangle based on conditions
+                if gene_exists_in_species:
+                    if in_component:
+                        # Gene exists and is in component - filled rectangle with edge
+                        rect = patches.Rectangle((j, i), 1, 1, linewidth=1, 
+                                               edgecolor='black', facecolor='darkblue')
+                    else:
+                        # Gene exists but not in component - edge only
+                        rect = patches.Rectangle((j, i), 1, 1, linewidth=1, 
+                                               edgecolor='lightgray', facecolor='none')
+                    rectangles.append(rect)
+        
+        # Add all rectangles to the plot
+        for rect in rectangles:
+            ax.add_patch(rect)
+        
+        # Set axis properties
+        ax.set_xlim(0, n_genes)
+        ax.set_ylim(0, n_species)
+        ax.set_aspect('equal')
+        
+        # Set ticks and labels
+        ax.set_xticks(np.arange(n_genes) + 0.5)
+        ax.set_yticks(np.arange(n_species) + 0.5)
+        
+        # Get gene names for x-axis labels
+        x_labels = []
+        for gene in all_genes:
+            # Try to get gene_name from gene_table
+            gene_name = gene  # Default to using the index
+            for species in species_with_component:
+                species_data = self._species_data[species]
+                if species_data.gene_table is not None:
+                    # Map from M matrix index to species gene
+                    if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+                        # Find the species-specific gene name
+                        for idx, row in self.combined_gene_db.iterrows():
+                            leftmost_gene = None
+                            for col in self.combined_gene_db.columns:
+                                val = row[col]
+                                if pd.notna(val) and val != "None" and val is not None:
+                                    leftmost_gene = val
+                                    break
+                            
+                            if leftmost_gene == gene:
+                                species_gene = row[species]
+                                if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                                    if species_gene in species_data.gene_table.index:
+                                        if 'gene_name' in species_data.gene_table.columns:
+                                            name = species_data.gene_table.loc[species_gene, 'gene_name']
+                                            if pd.notna(name) and name != '':
+                                                gene_name = name
+                                                break
+                    
+                    # Also check if gene exists directly in gene_table
+                    elif gene in species_data.gene_table.index:
+                        if 'gene_name' in species_data.gene_table.columns:
+                            name = species_data.gene_table.loc[gene, 'gene_name']
+                            if pd.notna(name) and name != '':
+                                gene_name = name
+                                break
+            
+            x_labels.append(gene_name)
+        
+        ax.set_xticklabels(x_labels, rotation=90, ha='right')
+        ax.set_yticklabels(species_with_component)
+        
+        # Set labels and title
+        ax.set_xlabel('Genes', fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.set_title(f'Core iModulon {component} Comparison', fontsize=14)
+        
+        # Apply font to all text elements if font_path provided
+        if font_path and os.path.exists(font_path):
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            ax.xaxis.label.set_fontproperties(font_prop)
+            ax.yaxis.label.set_fontproperties(font_prop)
+            ax.title.set_fontproperties(font_prop)
+        
+        # Add grid
+        ax.set_xticks(np.arange(n_genes + 1), minor=True)
+        ax.set_yticks(np.arange(n_species + 1), minor=True)
+        ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5, alpha=0.3)
+        
+        # Tight layout
+        plt.tight_layout()
+        
+        # Save or show
+        if save_path:
+            save_path = Path(save_path)
+            if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg']:
+                save_file = save_path
+            else:
+                save_path.mkdir(parents=True, exist_ok=True)
+                save_file = save_path / f"{component}_comparison_heatmap.svg"
+            
+            plt.savefig(save_file, dpi=300, bbox_inches='tight')
+            logger.info(f"Comparison heatmap saved to {save_file}")
+            plt.close()
+        else:
+            plt.show()
+        
+        return result_dict
     
     def save_to_json_multimodulon(self, save_path: str):
         """
