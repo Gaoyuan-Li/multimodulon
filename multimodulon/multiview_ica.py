@@ -253,18 +253,17 @@ def run_multi_view_ICA_on_datasets(
     if batch_size is None:
         batch_size = X_model[0].shape[0]  # number of samples
 
-    # loader with optimizations for GPU
+    # loader with optimizations
     generator = torch.Generator()
     generator.manual_seed(seed)
     
-    # Enable pin_memory for faster CPU-GPU transfers when using GPU
-    pin_memory = (str(device) == "cuda:0")
-    
+    # Note: X_model tensors are already on the device (GPU or CPU)
+    # so we should NOT use pin_memory=True as it's only for CPU tensors
     train_loader = DataLoader(TensorDataset(*X_model),
                               batch_size=batch_size, 
                               shuffle=True, 
                               generator=generator,
-                              pin_memory=pin_memory,
+                              pin_memory=False,  # Data is already on device
                               num_workers=0)  # Explicit for clarity
 
     # optimiser
@@ -298,10 +297,7 @@ def run_multi_view_ICA_on_datasets(
     # training with GPU optimization
     for epoch in range(10):
         for batch in train_loader:
-            # Move batch to GPU if not already there (should be minimal with pin_memory)
-            if str(device) == "cuda:0":
-                batch = [b.to(device, non_blocking=True) for b in batch]
-            
+            # Data is already on the correct device from X_model
             optimizer.step(train_closure(*batch))
             
         # Periodic cache clearing to prevent memory fragmentation
