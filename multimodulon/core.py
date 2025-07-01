@@ -23,9 +23,78 @@ from sklearn.cluster import HDBSCAN
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+from matplotlib.patches import Patch
 import os
 
 logger = logging.getLogger(__name__)
+
+# COG category color mapping
+COG_COLORS = {
+    # INFORMATION STORAGE AND PROCESSING
+    'Translation, ribosomal structure and biogenesis': 'black',
+    'RNA processing and modification': 'lightblue',
+    'Transcription': 'sandybrown',
+    'Replication, recombination and repair': 'fuchsia',
+    'Chromatin structure and dynamics': 'mediumpurple',
+    
+    # CELLULAR PROCESSES AND SIGNALING
+    'Cell cycle control, cell division, chromosome partitioning': 'y',
+    'Nuclear structure': 'goldenrod',
+    'Defense mechanisms': 'lightgray',
+    'Signal transduction mechanisms': 'lime',
+    'Cell wall/membrane/envelope biogenesis': 'mediumvioletred',
+    'Cell motility': 'orchid',
+    'Cytoskeleton': 'darkviolet',
+    'Extracellular structures': 'darkgoldenrod',
+    'Intracellular trafficking, secretion, and vesicular transport': 'saddlebrown',
+    'Posttranslational modification, protein turnover, chaperones': 'skyblue',
+    'Post-translational modification, protein turnover, and chaperones': 'skyblue',  # Alternative spelling
+    
+    # METABOLISM
+    'Energy production and conversion': 'lightgreen',
+    'Carbohydrate transport and metabolism': 'pink',
+    'Amino acid transport and metabolism': 'red',
+    'Nucleotide transport and metabolism': 'c',
+    'Coenzyme transport and metabolism': 'green',
+    'Lipid transport and metabolism': 'turquoise',
+    'Inorganic ion transport and metabolism': 'blue',
+    'Secondary metabolites biosynthesis, transport and catabolism': 'dodgerblue',
+    'Secondary metabolites biosynthesis, transport, and catabolism': 'dodgerblue',  # Alternative spelling
+    
+    # POORLY CHARACTERIZED
+    'Function unknown': 'slategray',
+    
+    # No annotation
+    'No COG annotation': 'lightskyblue'
+}
+
+# COG category letter codes
+COG_LETTER_CODES = {
+    'J': 'Translation, ribosomal structure and biogenesis',
+    'A': 'RNA processing and modification',
+    'K': 'Transcription',
+    'L': 'Replication, recombination and repair',
+    'B': 'Chromatin structure and dynamics',
+    'D': 'Cell cycle control, cell division, chromosome partitioning',
+    'Y': 'Nuclear structure',
+    'V': 'Defense mechanisms',
+    'T': 'Signal transduction mechanisms',
+    'M': 'Cell wall/membrane/envelope biogenesis',
+    'N': 'Cell motility',
+    'Z': 'Cytoskeleton',
+    'W': 'Extracellular structures',
+    'U': 'Intracellular trafficking, secretion, and vesicular transport',
+    'O': 'Posttranslational modification, protein turnover, chaperones',
+    'C': 'Energy production and conversion',
+    'G': 'Carbohydrate transport and metabolism',
+    'E': 'Amino acid transport and metabolism',
+    'F': 'Nucleotide transport and metabolism',
+    'H': 'Coenzyme transport and metabolism',
+    'I': 'Lipid transport and metabolism',
+    'P': 'Inorganic ion transport and metabolism',
+    'Q': 'Secondary metabolites biosynthesis, transport and catabolism',
+    'S': 'Function unknown'
+}
 
 
 class MultiModulon:
@@ -1353,7 +1422,8 @@ class MultiModulon:
         return explained_variance_results
     
     def view_iModulon_weights(self, species: str, component: str, save_path: Optional[str] = None, 
-                      fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None):
+                      fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
+                      show_COG: bool = False):
         """
         Visualize gene weights for a specific iModulon component in a species.
         
@@ -1375,6 +1445,8 @@ class MultiModulon:
         font_path : str, optional
             Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
             If provided, uses this font for all text elements
+        show_COG : bool, optional
+            If True, color genes above threshold by their COG category. Default: False
             
         Raises
         ------
@@ -1481,9 +1553,102 @@ class MultiModulon:
             font_prop = fm.FontProperties(fname=font_path)
             plt.rcParams['font.family'] = font_prop.get_name()
         
-        # Create scatter plot with color coding based on threshold
-        if threshold is not None:
-            # Color points based on threshold
+        # Create scatter plot with color coding
+        if show_COG and 'COG_category' in gene_table.columns and 'Description' in gene_table.columns:
+            # Helper function to get COG color
+            def get_cog_color(gene_name, weight):
+                if threshold is not None and abs(weight) <= threshold:
+                    return 'grey'  # Below threshold
+                
+                # Try to get COG category for this gene
+                cog_cat = None
+                if gene_name in gene_table.index:
+                    cog_info = gene_table.loc[gene_name, 'COG_category']
+                    desc_info = gene_table.loc[gene_name, 'Description']
+                    
+                    # Check COG_category first
+                    if pd.notna(cog_info) and cog_info != '-':
+                        # Extract first letter if it's a letter code
+                        if isinstance(cog_info, str) and len(cog_info) > 0:
+                            first_letter = cog_info[0]
+                            if first_letter in COG_LETTER_CODES:
+                                cog_cat = COG_LETTER_CODES[first_letter]
+                    
+                    # If not found in COG_category, check Description
+                    if cog_cat is None and pd.notna(desc_info) and desc_info != '-':
+                        # Check if description matches any COG category
+                        for cat_name in COG_COLORS.keys():
+                            if cat_name != 'No COG annotation' and cat_name.lower() in str(desc_info).lower():
+                                cog_cat = cat_name
+                                break
+                
+                if cog_cat and cog_cat in COG_COLORS:
+                    return COG_COLORS[cog_cat]
+                else:
+                    return COG_COLORS['No COG annotation']
+            
+            # Get colors for all genes
+            colors = [get_cog_color(gene, weight) for gene, weight in zip(genes_with_pos, y_weights)]
+            
+            # Create scatter plot
+            scatter = ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
+            
+            # Add horizontal threshold lines if available
+            if threshold is not None:
+                ax.axhline(y=threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
+                ax.axhline(y=-threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
+            
+            # Create legend
+            unique_colors = {}
+            for gene, color, weight in zip(genes_with_pos, colors, y_weights):
+                if threshold is None or abs(weight) > threshold:
+                    # Get COG category name for this color
+                    for cat_name, cat_color in COG_COLORS.items():
+                        if cat_color == color:
+                            unique_colors[cat_name] = color
+                            break
+            
+            # Sort categories by type
+            info_storage = ['Translation, ribosomal structure and biogenesis', 'RNA processing and modification', 
+                           'Transcription', 'Replication, recombination and repair', 'Chromatin structure and dynamics']
+            cellular = ['Cell cycle control, cell division, chromosome partitioning', 'Nuclear structure', 
+                       'Defense mechanisms', 'Signal transduction mechanisms', 'Cell wall/membrane/envelope biogenesis',
+                       'Cell motility', 'Cytoskeleton', 'Extracellular structures', 
+                       'Intracellular trafficking, secretion, and vesicular transport',
+                       'Posttranslational modification, protein turnover, chaperones',
+                       'Post-translational modification, protein turnover, and chaperones']
+            metabolism = ['Energy production and conversion', 'Carbohydrate transport and metabolism',
+                         'Amino acid transport and metabolism', 'Nucleotide transport and metabolism',
+                         'Coenzyme transport and metabolism', 'Lipid transport and metabolism',
+                         'Inorganic ion transport and metabolism', 
+                         'Secondary metabolites biosynthesis, transport and catabolism',
+                         'Secondary metabolites biosynthesis, transport, and catabolism']
+            poorly_char = ['Function unknown', 'No COG annotation']
+            
+            sorted_categories = []
+            for cat_list in [info_storage, cellular, metabolism, poorly_char]:
+                for cat in cat_list:
+                    if cat in unique_colors:
+                        sorted_categories.append(cat)
+            
+            if sorted_categories:
+                # Create legend elements
+                from matplotlib.patches import Patch
+                legend_elements = [Patch(facecolor=unique_colors[cat], label=cat) 
+                                 for cat in sorted_categories]
+                
+                # Add legend with appropriate font
+                if font_path and os.path.exists(font_path):
+                    legend = ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5),
+                                     frameon=True, fontsize=10)
+                    for text in legend.get_texts():
+                        text.set_fontproperties(font_prop)
+                else:
+                    ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5),
+                            frameon=True, fontsize=10)
+        
+        elif threshold is not None:
+            # Original threshold-based coloring
             colors = []
             for weight in y_weights:
                 if abs(weight) > threshold:
@@ -1764,7 +1929,8 @@ class MultiModulon:
             plt.show()
     
     def view_core_iModulon_weights(self, component: str, save_path: Optional[str] = None,
-                           fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None):
+                           fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
+                           show_COG: bool = False):
         """
         Visualize a core iModulon component across all species.
         
@@ -1784,6 +1950,8 @@ class MultiModulon:
         font_path : str, optional
             Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
             If provided, uses this font for all text elements in all plots
+        show_COG : bool, optional
+            If True, color genes above threshold by their COG category. Default: False
             
         Raises
         ------
@@ -1816,19 +1984,217 @@ class MultiModulon:
         # Generate plots for each species
         logger.info(f"Generating plots for core component '{component}' across {len(species_with_component)} species")
         
-        for species in species_with_component:
-            try:
-                # Call view_iModulon_weights for this species
-                self.view_iModulon_weights(
-                    species=species,
-                    component=component,
-                    save_path=save_path,
-                    fig_size=fig_size,
-                    font_path=font_path
-                )
-                logger.info(f"✓ Generated plot for {species}")
-            except Exception as e:
-                logger.warning(f"Failed to generate plot for {species}: {str(e)}")
+        if show_COG:
+            # When showing COG, create a combined plot with subplots and single legend
+            n_species = len(species_with_component)
+            
+            # Determine subplot layout
+            if n_species <= 3:
+                n_rows = 1
+                n_cols = n_species
+            elif n_species <= 6:
+                n_rows = 2
+                n_cols = 3
+            else:
+                n_cols = 3
+                n_rows = (n_species + 2) // 3
+            
+            # Create figure with subplots
+            fig_width = fig_size[0] * n_cols
+            fig_height = fig_size[1] * n_rows + 2  # Extra space for legend
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
+            
+            # Ensure axes is always a 2D array
+            if n_species == 1:
+                axes = np.array([[axes]])
+            elif n_rows == 1:
+                axes = axes.reshape(1, -1)
+            elif n_cols == 1:
+                axes = axes.reshape(-1, 1)
+            
+            # Set font properties if provided
+            if font_path and os.path.exists(font_path):
+                font_prop = fm.FontProperties(fname=font_path)
+                plt.rcParams['font.family'] = font_prop.get_name()
+            
+            # Track all unique COG categories across all species
+            all_unique_colors = {}
+            
+            # Plot each species
+            for idx, species in enumerate(species_with_component):
+                row = idx // n_cols
+                col = idx % n_cols
+                ax = axes[row, col]
+                
+                species_data = self._species_data[species]
+                
+                # Get gene weights and gene table
+                gene_weights = species_data.M[component]
+                gene_table = species_data.gene_table
+                
+                # Get gene positions and create plot data
+                gene_positions = {}
+                for gene_name in gene_weights.index:
+                    if gene_name in gene_table.index:
+                        gene_info = gene_table.loc[gene_name]
+                        start = gene_info['start']
+                        end = gene_info['end']
+                        center = (start + end) / 2
+                        gene_positions[gene_name] = center
+                
+                genes_with_pos = [g for g in gene_weights.index if g in gene_positions]
+                x_positions = [gene_positions[g] / 1e6 for g in genes_with_pos]
+                y_weights = [gene_weights[g] for g in genes_with_pos]
+                
+                # Get threshold
+                threshold = None
+                if hasattr(species_data, '_M_thresholds') and species_data._M_thresholds is not None:
+                    if component in species_data._M_thresholds.index:
+                        threshold = species_data._M_thresholds.loc[component, 'M_threshold']
+                
+                # Helper function to get COG color
+                def get_cog_color(gene_name, weight):
+                    if threshold is not None and abs(weight) <= threshold:
+                        return 'grey'
+                    
+                    cog_cat = None
+                    if gene_name in gene_table.index and 'COG_category' in gene_table.columns:
+                        cog_info = gene_table.loc[gene_name, 'COG_category']
+                        desc_info = gene_table.loc[gene_name, 'Description'] if 'Description' in gene_table.columns else None
+                        
+                        if pd.notna(cog_info) and cog_info != '-':
+                            if isinstance(cog_info, str) and len(cog_info) > 0:
+                                first_letter = cog_info[0]
+                                if first_letter in COG_LETTER_CODES:
+                                    cog_cat = COG_LETTER_CODES[first_letter]
+                        
+                        if cog_cat is None and desc_info and pd.notna(desc_info) and desc_info != '-':
+                            for cat_name in COG_COLORS.keys():
+                                if cat_name != 'No COG annotation' and cat_name.lower() in str(desc_info).lower():
+                                    cog_cat = cat_name
+                                    break
+                    
+                    if cog_cat and cog_cat in COG_COLORS:
+                        return COG_COLORS[cog_cat]
+                    else:
+                        return COG_COLORS['No COG annotation']
+                
+                # Get colors
+                colors = [get_cog_color(gene, weight) for gene, weight in zip(genes_with_pos, y_weights)]
+                
+                # Track unique colors for legend
+                for gene, color, weight in zip(genes_with_pos, colors, y_weights):
+                    if threshold is None or abs(weight) > threshold:
+                        for cat_name, cat_color in COG_COLORS.items():
+                            if cat_color == color:
+                                all_unique_colors[cat_name] = color
+                                break
+                
+                # Create scatter plot
+                ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
+                
+                # Add threshold lines
+                if threshold is not None:
+                    ax.axhline(y=threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
+                    ax.axhline(y=-threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
+                
+                # Set labels and title
+                ax.set_xlabel('Gene Start (1e6)', fontsize=10)
+                ax.set_ylabel('Gene Weight', fontsize=10)
+                ax.set_title(f'{species}', fontsize=12)
+                
+                # Set font for labels if provided
+                if font_path and os.path.exists(font_path):
+                    for label in ax.get_xticklabels() + ax.get_yticklabels():
+                        label.set_fontproperties(font_prop)
+                    ax.xaxis.label.set_fontproperties(font_prop)
+                    ax.yaxis.label.set_fontproperties(font_prop)
+                    ax.title.set_fontproperties(font_prop)
+            
+            # Hide empty subplots
+            for idx in range(n_species, n_rows * n_cols):
+                row = idx // n_cols
+                col = idx % n_cols
+                axes[row, col].axis('off')
+            
+            # Add main title
+            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98)
+            if font_path and os.path.exists(font_path):
+                fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98, fontproperties=font_prop)
+            
+            # Create legend at bottom
+            if all_unique_colors:
+                # Sort categories
+                info_storage = ['Translation, ribosomal structure and biogenesis', 'RNA processing and modification', 
+                               'Transcription', 'Replication, recombination and repair', 'Chromatin structure and dynamics']
+                cellular = ['Cell cycle control, cell division, chromosome partitioning', 'Nuclear structure', 
+                           'Defense mechanisms', 'Signal transduction mechanisms', 'Cell wall/membrane/envelope biogenesis',
+                           'Cell motility', 'Cytoskeleton', 'Extracellular structures', 
+                           'Intracellular trafficking, secretion, and vesicular transport',
+                           'Posttranslational modification, protein turnover, chaperones',
+                           'Post-translational modification, protein turnover, and chaperones']
+                metabolism = ['Energy production and conversion', 'Carbohydrate transport and metabolism',
+                             'Amino acid transport and metabolism', 'Nucleotide transport and metabolism',
+                             'Coenzyme transport and metabolism', 'Lipid transport and metabolism',
+                             'Inorganic ion transport and metabolism', 
+                             'Secondary metabolites biosynthesis, transport and catabolism',
+                             'Secondary metabolites biosynthesis, transport, and catabolism']
+                poorly_char = ['Function unknown', 'No COG annotation']
+                
+                sorted_categories = []
+                for cat_list in [info_storage, cellular, metabolism, poorly_char]:
+                    for cat in cat_list:
+                        if cat in all_unique_colors:
+                            sorted_categories.append(cat)
+                
+                # Create legend elements
+                from matplotlib.patches import Patch
+                legend_elements = [Patch(facecolor=all_unique_colors[cat], label=cat) 
+                                 for cat in sorted_categories]
+                
+                # Add legend at bottom
+                if font_path and os.path.exists(font_path):
+                    legend = fig.legend(handles=legend_elements, loc='lower center', 
+                                      bbox_to_anchor=(0.5, -0.05), ncol=3, frameon=True, fontsize=10)
+                    for text in legend.get_texts():
+                        text.set_fontproperties(font_prop)
+                else:
+                    fig.legend(handles=legend_elements, loc='lower center', 
+                             bbox_to_anchor=(0.5, -0.05), ncol=3, frameon=True, fontsize=10)
+            
+            # Adjust layout
+            plt.tight_layout(rect=[0, 0.1, 1, 0.96])
+            
+            # Save or show
+            if save_path:
+                save_path = Path(save_path)
+                if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg']:
+                    save_file = save_path
+                else:
+                    save_path.mkdir(parents=True, exist_ok=True)
+                    save_file = save_path / f"Core_{component}_all_species_COG.svg"
+                
+                plt.savefig(save_file, dpi=300, bbox_inches='tight')
+                logger.info(f"Combined plot saved to {save_file}")
+                plt.close()
+            else:
+                plt.show()
+        
+        else:
+            # Original behavior: individual plots
+            for species in species_with_component:
+                try:
+                    self.view_iModulon_weights(
+                        species=species,
+                        component=component,
+                        save_path=save_path,
+                        fig_size=fig_size,
+                        font_path=font_path,
+                        show_COG=show_COG
+                    )
+                    logger.info(f"✓ Generated plot for {species}")
+                except Exception as e:
+                    logger.warning(f"Failed to generate plot for {species}: {str(e)}")
         
         logger.info(f"Completed generating plots for core component '{component}'")
     
@@ -1837,7 +2203,7 @@ class MultiModulon:
         Save the entire MultiModulon object to a JSON file.
         
         This method serializes all data including:
-        - All species data (X, M, A, log_tpm, log_tpm_norm, gene_table, sample_sheet)
+        - All species data (log_tpm, log_tpm_norm, X, M, A, gene_table, sample_sheet, M_thresholds, presence_matrix)
         - Combined gene database
         - BBH results
         - Input folder path
@@ -1887,7 +2253,9 @@ class MultiModulon:
                 'M': None,
                 'A': None,
                 'sample_sheet': None,
-                'gene_table': None
+                'gene_table': None,
+                'M_thresholds': None,
+                'presence_matrix': None
             }
             
             # Save DataFrames if they exist
@@ -1938,6 +2306,20 @@ class MultiModulon:
                     'data': species_data_obj._gene_table.to_dict('records'),
                     'index': list(species_data_obj._gene_table.index),
                     'columns': list(species_data_obj._gene_table.columns)
+                }
+            
+            if species_data_obj._M_thresholds is not None:
+                species_dict['M_thresholds'] = {
+                    'data': species_data_obj._M_thresholds.to_dict('records'),
+                    'index': list(species_data_obj._M_thresholds.index),
+                    'columns': list(species_data_obj._M_thresholds.columns)
+                }
+            
+            if species_data_obj._presence_matrix is not None:
+                species_dict['presence_matrix'] = {
+                    'data': species_data_obj._presence_matrix.to_dict('records'),
+                    'index': list(species_data_obj._presence_matrix.index),
+                    'columns': list(species_data_obj._presence_matrix.columns)
                 }
             
             data['species_data'][species_name] = species_dict
@@ -2027,6 +2409,8 @@ class MultiModulon:
             species_data._A = load_dataframe(species_dict.get('A'))
             species_data._sample_sheet = load_dataframe(species_dict.get('sample_sheet'))
             species_data._gene_table = load_dataframe(species_dict.get('gene_table'))
+            species_data._M_thresholds = load_dataframe(species_dict.get('M_thresholds'))
+            species_data._presence_matrix = load_dataframe(species_dict.get('presence_matrix'))
             
             # Add to MultiModulon
             multi_modulon._species_data[species_name] = species_data
