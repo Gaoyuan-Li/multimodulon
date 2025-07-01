@@ -2721,21 +2721,24 @@ class MultiModulon:
         
         # Add separate boxes for left and right heatmaps
         if gap_position > 0:
-            # Left heatmap box
-            left_box = patches.Rectangle((0, 0), gap_position, n_species, 
-                                       linewidth=1.5, edgecolor='black', facecolor='none')
+            # Left heatmap box - add small offset to prevent edge overlap
+            left_box = patches.Rectangle((-0.5, -0.5), gap_position + 0.5, n_species + 1, 
+                                       linewidth=1.5, edgecolor='black', facecolor='none', 
+                                       clip_on=False)
             ax.add_patch(left_box)
             
-            # Right heatmap box
+            # Right heatmap box - add small offset to prevent edge overlap
             right_start = gap_position + gap_width
             right_width = total_width - right_start
-            right_box = patches.Rectangle((right_start, 0), right_width, n_species,
-                                        linewidth=1.5, edgecolor='black', facecolor='none')
+            right_box = patches.Rectangle((right_start - 0.5, -0.5), right_width + 1, n_species + 1,
+                                        linewidth=1.5, edgecolor='black', facecolor='none',
+                                        clip_on=False)
             ax.add_patch(right_box)
         else:
             # Single box if no separation
-            full_box = patches.Rectangle((0, 0), total_width, n_species,
-                                       linewidth=1.5, edgecolor='black', facecolor='none')
+            full_box = patches.Rectangle((-0.5, -0.5), total_width + 1, n_species + 1,
+                                       linewidth=1.5, edgecolor='black', facecolor='none',
+                                       clip_on=False)
             ax.add_patch(full_box)
         
         # Add legend
