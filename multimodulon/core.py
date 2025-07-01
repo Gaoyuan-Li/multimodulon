@@ -2057,19 +2057,57 @@ class MultiModulon:
                 gene_weights = species_data.M[component]
                 gene_table = species_data.gene_table
                 
-                # Get gene positions and create plot data
-                gene_positions = {}
-                for gene_name in gene_weights.index:
-                    if gene_name in gene_table.index:
-                        gene_info = gene_table.loc[gene_name]
-                        start = gene_info['start']
-                        end = gene_info['end']
-                        center = (start + end) / 2
-                        gene_positions[gene_name] = center
+                # Create mapping from leftmost genes (in M matrix) to species genes (in gene_table)
+                leftmost_to_species = {}
                 
-                genes_with_pos = [g for g in gene_weights.index if g in gene_positions]
-                x_positions = [gene_positions[g] / 1e6 for g in genes_with_pos]
-                y_weights = [gene_weights[g] for g in genes_with_pos]
+                if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+                    # First, find the leftmost gene for each row (same logic as in alignment)
+                    for idx, row in self.combined_gene_db.iterrows():
+                        # Find the leftmost (first non-None) gene in this row
+                        leftmost_gene = None
+                        for col in self.combined_gene_db.columns:
+                            val = row[col]
+                            if pd.notna(val) and val != "None" and val is not None:
+                                leftmost_gene = val
+                                break
+                        
+                        # Get the species-specific gene
+                        species_gene = row[species]
+                        
+                        if leftmost_gene and pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                            leftmost_to_species[leftmost_gene] = species_gene
+                
+                # Create lists for plotting
+                genes_for_plotting = []
+                weights_for_plotting = []
+                positions_for_plotting = []
+                
+                # Process each gene in M matrix (which uses leftmost names)
+                for gene_in_M in gene_weights.index:
+                    weight = gene_weights[gene_in_M]
+                    
+                    # Find the corresponding species gene name
+                    if gene_in_M in leftmost_to_species:
+                        # This is a leftmost gene, map to species gene
+                        species_gene = leftmost_to_species[gene_in_M]
+                        if species_gene in gene_table.index:
+                            gene_info = gene_table.loc[species_gene]
+                            center = (gene_info['start'] + gene_info['end']) / 2
+                            genes_for_plotting.append(species_gene)
+                            weights_for_plotting.append(weight)
+                            positions_for_plotting.append(center / 1e6)  # Convert to Mb
+                    elif gene_in_M in gene_table.index:
+                        # This gene name exists directly in gene_table (not renamed)
+                        gene_info = gene_table.loc[gene_in_M]
+                        center = (gene_info['start'] + gene_info['end']) / 2
+                        genes_for_plotting.append(gene_in_M)
+                        weights_for_plotting.append(weight)
+                        positions_for_plotting.append(center / 1e6)  # Convert to Mb
+                
+                # Now we have the correct mapping
+                x_positions = positions_for_plotting
+                y_weights = weights_for_plotting
+                genes_with_pos = genes_for_plotting
                 
                 # Get threshold
                 threshold = None
