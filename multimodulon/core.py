@@ -2334,9 +2334,9 @@ class MultiModulon:
                 axes[row, col].axis('off')
             
             # Add main title
-            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.95)
+            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98)
             if font_path and os.path.exists(font_path):
-                fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.95, fontproperties=font_prop)
+                fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98, fontproperties=font_prop)
             
             # Create legend at bottom
             if all_unique_colors:
@@ -2371,15 +2371,15 @@ class MultiModulon:
                 # Add legend at bottom
                 if font_path and os.path.exists(font_path):
                     legend = fig.legend(handles=legend_elements, loc='lower center', 
-                                      bbox_to_anchor=(0.5, 0.02), ncol=3, frameon=True, fontsize=10)
+                                      bbox_to_anchor=(0.5, -0.02), ncol=3, frameon=True, fontsize=10)
                     for text in legend.get_texts():
                         text.set_fontproperties(font_prop)
                 else:
                     fig.legend(handles=legend_elements, loc='lower center', 
-                             bbox_to_anchor=(0.5, 0.02), ncol=3, frameon=True, fontsize=10)
+                             bbox_to_anchor=(0.5, -0.02), ncol=3, frameon=True, fontsize=10)
             
             # Adjust layout
-            plt.tight_layout(rect=[0, 0.05, 1, 0.93])
+            plt.tight_layout(rect=[0, 0.08, 1, 0.96])
             
             # Save or show
             if save_path:
@@ -2589,9 +2589,9 @@ class MultiModulon:
                     y_pos = len(species_list) - i  # Flip to have first species at top
                     
                     if start_in_component:
-                        # In component - filled very light blue, no edge
+                        # In component - filled light blue, no edge
                         rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
-                                               edgecolor='none', facecolor='#E6F3FF')  # Very light blue
+                                               edgecolor='none', facecolor='#CCE5FF')  # Light blue (slightly deeper)
                     else:
                         # Not in component but exists - very light grey fill, no edge
                         rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
