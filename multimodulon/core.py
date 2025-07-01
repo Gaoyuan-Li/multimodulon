@@ -9,7 +9,7 @@ import logging
 import json
 import pickle
 import warnings
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Union
 
 from .species_data import SpeciesData
 from .gene_alignment import generate_BBH, align_genes
@@ -1725,7 +1725,7 @@ class MultiModulon:
     
     def view_iModulon_activities(self, species: str, component: str, save_path: Optional[str] = None,
                                 fig_size: Tuple[float, float] = (12, 3), font_path: Optional[str] = None,
-                                highlight_project: Optional[str] = None, highlight_study: Optional[str] = None):
+                                highlight_project: Optional[Union[str, List[str]]] = None, highlight_study: Optional[str] = None):
         """
         Visualize iModulon activities for a specific component in a species.
         
@@ -1747,8 +1747,9 @@ class MultiModulon:
         font_path : str, optional
             Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
             If provided, uses this font for all text elements
-        highlight_project : str, optional
-            Project name to highlight with different colors. Uses 'condition' column for legend
+        highlight_project : str or list of str, optional
+            Project name(s) to highlight with different colors. Uses 'condition' column for legend.
+            Can be a single project name (string) or multiple project names (list)
         highlight_study : str, optional
             Study accession to highlight with different colors. Uses 'sample_description' column for legend
             
@@ -1816,11 +1817,20 @@ class MultiModulon:
         legend_elements = []
         
         if highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
+            # Convert single string to list for uniform handling
+            if isinstance(highlight_project, str):
+                highlight_projects = [highlight_project]
+            else:
+                highlight_projects = highlight_project
+            
             # Color by project with condition as legend
             for i, sample in enumerate(activities.index):
                 if sample in sample_sheet.index:
-                    project = sample_sheet.loc[sample, 'project']
-                    if str(project) == str(highlight_project):
+                    project = str(sample_sheet.loc[sample, 'project'])
+                    # Check if project is in the highlight list
+                    project_highlighted = any(str(hp) == project for hp in highlight_projects)
+                    
+                    if project_highlighted:
                         condition = sample_sheet.loc[sample, 'condition'] if 'condition' in sample_sheet.columns else 'Unknown'
                         # Assign unique color per condition
                         if condition not in [elem[0] for elem in legend_elements]:
@@ -1926,7 +1936,7 @@ class MultiModulon:
         if legend_elements:
             from matplotlib.patches import Patch
             patches = [Patch(color=color, label=label) for label, color in legend_elements]
-            ax.legend(handles=patches, loc='best')
+            ax.legend(handles=patches, loc='center left', bbox_to_anchor=(1, 0.5))
             
             # Apply font to legend if provided
             if font_path and os.path.exists(font_path):
@@ -1941,8 +1951,13 @@ class MultiModulon:
             ax.yaxis.label.set_fontproperties(font_prop)
             ax.title.set_fontproperties(font_prop)
         
-        # Tight layout
-        plt.tight_layout()
+        # Tight layout - adjust if legend is present
+        if legend_elements:
+            plt.tight_layout()
+            # Make room for legend on the right
+            plt.subplots_adjust(right=0.85)
+        else:
+            plt.tight_layout()
         
         # Save or show
         if save_path:
@@ -2441,37 +2456,48 @@ class MultiModulon:
             rectangles = []
             i = 0
             while i < len(species_list):
-                if not exists_flags[i]:
+                # For right section, we need to handle non-existent genes too
+                if not exists_flags[i] and is_right_section:
+                    # Gene doesn't exist in this species - add white rectangle for right section
+                    start_i = i
+                    # Find consecutive species where gene doesn't exist
+                    while i < len(species_list) and not exists_flags[i]:
+                        i += 1
+                    
+                    height = i - start_i
+                    y_pos = len(species_list) - i  # Flip to have first species at top
+                    
+                    # White rectangle for non-existent genes
+                    rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
+                                           edgecolor='none', facecolor='white')
+                    rectangles.append(rect)
+                elif not exists_flags[i]:
+                    # Left section - skip non-existent genes
                     i += 1
                     continue
-                    
-                # Start of a group
-                start_i = i
-                start_in_component = in_component_flags[i]
-                
-                # Find consecutive species with same status
-                while i < len(species_list) and exists_flags[i] and in_component_flags[i] == start_in_component:
-                    i += 1
-                
-                # Create merged rectangle
-                height = i - start_i
-                y_pos = len(species_list) - i  # Flip to have first species at top
-                
-                if start_in_component:
-                    # In component - filled light blue
-                    rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=1,
-                                           edgecolor='black', facecolor='lightblue')
                 else:
-                    # Not in component but exists
-                    if is_right_section:
-                        # Right section - green edges for species presence
-                        rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=1.5,
-                                               edgecolor='green', facecolor='none')
+                    # Gene exists - process as before
+                    # Start of a group
+                    start_i = i
+                    start_in_component = in_component_flags[i]
+                    
+                    # Find consecutive species with same status
+                    while i < len(species_list) and exists_flags[i] and in_component_flags[i] == start_in_component:
+                        i += 1
+                    
+                    # Create merged rectangle
+                    height = i - start_i
+                    y_pos = len(species_list) - i  # Flip to have first species at top
+                    
+                    if start_in_component:
+                        # In component - filled light blue, no edge
+                        rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
+                                               edgecolor='none', facecolor='lightblue')
                     else:
-                        # Left section - gray edges
-                        rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=1,
-                                               edgecolor='lightgray', facecolor='none')
-                rectangles.append(rect)
+                        # Not in component but exists - light grey fill, no edge
+                        rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
+                                               edgecolor='none', facecolor='lightgrey')
+                    rectangles.append(rect)
             
             return rectangles
         
@@ -2514,9 +2540,7 @@ class MultiModulon:
         ax.set_ylim(0, n_species)
         ax.set_aspect('equal')
         
-        # Add vertical line to separate the two sections if needed
-        if gap_position > 0:
-            ax.axvline(x=gap_position, color='black', linestyle='--', linewidth=1.5, alpha=0.7)
+        # No vertical line needed - gap will separate the sections
         
         # Set ticks and labels
         x_positions = []
@@ -2585,17 +2609,30 @@ class MultiModulon:
             ax.yaxis.label.set_fontproperties(font_prop)
             ax.title.set_fontproperties(font_prop)
         
-        # Add grid
-        minor_x_ticks = []
-        for j in range(len(ordered_genes) + 1):
-            if gap_position > 0 and j > gap_position:
-                minor_x_ticks.append(j + gap_width)
-            else:
-                minor_x_ticks.append(j)
+        # Remove all spines first
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
         
-        ax.set_xticks(minor_x_ticks, minor=True)
-        ax.set_yticks(np.arange(n_species + 1), minor=True)
-        ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5, alpha=0.3)
+        # Add separate boxes for left and right heatmaps
+        if gap_position > 0:
+            # Left heatmap box
+            left_box = patches.Rectangle((0, 0), gap_position, n_species, 
+                                       linewidth=1.5, edgecolor='black', facecolor='none')
+            ax.add_patch(left_box)
+            
+            # Right heatmap box
+            right_start = gap_position + gap_width
+            right_width = total_width - right_start
+            right_box = patches.Rectangle((right_start, 0), right_width, n_species,
+                                        linewidth=1.5, edgecolor='black', facecolor='none')
+            ax.add_patch(right_box)
+        else:
+            # Single box if no separation
+            full_box = patches.Rectangle((0, 0), total_width, n_species,
+                                       linewidth=1.5, edgecolor='black', facecolor='none')
+            ax.add_patch(full_box)
         
         # Tight layout
         plt.tight_layout()
