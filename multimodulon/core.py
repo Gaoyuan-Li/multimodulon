@@ -2235,9 +2235,9 @@ class MultiModulon:
                 axes[row, col].axis('off')
             
             # Add main title
-            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98)
+            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.95)
             if font_path and os.path.exists(font_path):
-                fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98, fontproperties=font_prop)
+                fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.95, fontproperties=font_prop)
             
             # Create legend at bottom
             if all_unique_colors:
@@ -2272,15 +2272,15 @@ class MultiModulon:
                 # Add legend at bottom
                 if font_path and os.path.exists(font_path):
                     legend = fig.legend(handles=legend_elements, loc='lower center', 
-                                      bbox_to_anchor=(0.5, -0.05), ncol=3, frameon=True, fontsize=10)
+                                      bbox_to_anchor=(0.5, 0.02), ncol=3, frameon=True, fontsize=10)
                     for text in legend.get_texts():
                         text.set_fontproperties(font_prop)
                 else:
                     fig.legend(handles=legend_elements, loc='lower center', 
-                             bbox_to_anchor=(0.5, -0.05), ncol=3, frameon=True, fontsize=10)
+                             bbox_to_anchor=(0.5, 0.02), ncol=3, frameon=True, fontsize=10)
             
             # Adjust layout
-            plt.tight_layout(rect=[0, 0.1, 1, 0.96])
+            plt.tight_layout(rect=[0, 0.05, 1, 0.93])
             
             # Save or show
             if save_path:
