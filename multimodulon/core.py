@@ -2639,9 +2639,10 @@ class MultiModulon:
         for rect in all_rectangles:
             ax.add_patch(rect)
         
-        # Set axis properties
-        ax.set_xlim(0, total_width)
-        ax.set_ylim(0, n_species)
+        # Set axis properties with small margin to show box edges
+        margin = 0.1
+        ax.set_xlim(-margin, total_width + margin)
+        ax.set_ylim(-margin, n_species + margin)
         ax.set_aspect('equal')
         
         # No vertical line needed - gap will separate the sections
