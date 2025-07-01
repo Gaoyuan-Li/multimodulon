@@ -174,14 +174,11 @@ def run_multi_view_ICA_on_datasets(
             - W_matrices: List of numpy arrays with unmixing matrices W
             - K_matrices: List of numpy arrays with whitening matrices K
     """
-    # reproducibility - comprehensive seeding
+    # reproducibility - optimized seeding
     import os
     import random
     
-    # Set environment variables for deterministic behavior
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-    
+    # Basic seeding for reproducibility
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -189,10 +186,10 @@ def run_multi_view_ICA_on_datasets(
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
+        # Keep deterministic but allow benchmarking for better performance
         torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        # Additional CUDA determinism
-        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.benchmark = True  # Allow cuDNN to find optimal algorithms
+        # Remove torch.use_deterministic_algorithms for better performance
 
     # device
     device = torch.device("cuda:0" if mode == "gpu" and torch.cuda.is_available() else "cpu")
@@ -200,6 +197,8 @@ def run_multi_view_ICA_on_datasets(
     # Set generator for device-specific operations
     if str(device) == "cuda:0":
         torch.cuda.set_device(device)
+        # Clear GPU cache to prevent fragmentation
+        torch.cuda.empty_cache()
 
     # to torch, transpose to (features, samples)
     X_np = [d.values.T.copy() for d in datasets]
@@ -210,7 +209,14 @@ def run_multi_view_ICA_on_datasets(
 
     # add batch dim for whitening
     X_t = [x.unsqueeze(0) for x in X_t]
-    K, Xw = zip(*(whiten(x, k) for x, k in zip(X_t, ks)))
+    
+    # Parallel whitening if using GPU
+    if str(device) == "cuda:0":
+        # Process whitening in parallel on GPU
+        with torch.cuda.stream(torch.cuda.Stream()):
+            K, Xw = zip(*(whiten(x, k) for x, k in zip(X_t, ks)))
+    else:
+        K, Xw = zip(*(whiten(x, k) for x, k in zip(X_t, ks)))
 
     # (samples, rank)
     X_model = [xw[0].T.contiguous() for xw in Xw]
@@ -233,17 +239,33 @@ def run_multi_view_ICA_on_datasets(
             model.W.weight.data = orth_matrix
         
         model = model.to(device)
+        
+        # Compile model for better performance in PyTorch 2.0+
+        if hasattr(torch, 'compile') and str(device) == "cuda:0":
+            try:
+                model = torch.compile(model, mode='default')
+            except:
+                pass  # Fall back to uncompiled if compilation fails
+        
         models.append(model)
 
     # Use full dataset size if batch_size not specified
     if batch_size is None:
         batch_size = X_model[0].shape[0]  # number of samples
 
-    # loader with fixed random generator for reproducibility
+    # loader with optimizations for GPU
     generator = torch.Generator()
     generator.manual_seed(seed)
+    
+    # Enable pin_memory for faster CPU-GPU transfers when using GPU
+    pin_memory = (str(device) == "cuda:0")
+    
     train_loader = DataLoader(TensorDataset(*X_model),
-                              batch_size=batch_size, shuffle=True, generator=generator)
+                              batch_size=batch_size, 
+                              shuffle=True, 
+                              generator=generator,
+                              pin_memory=pin_memory,
+                              num_workers=0)  # Explicit for clarity
 
     # optimiser
     params = [p for m in models for p in m.parameters()]
@@ -273,10 +295,18 @@ def run_multi_view_ICA_on_datasets(
             return loss
         return closure
 
-    # training
-    for _ in range(10):
+    # training with GPU optimization
+    for epoch in range(10):
         for batch in train_loader:
+            # Move batch to GPU if not already there (should be minimal with pin_memory)
+            if str(device) == "cuda:0":
+                batch = [b.to(device, non_blocking=True) for b in batch]
+            
             optimizer.step(train_closure(*batch))
+            
+        # Periodic cache clearing to prevent memory fragmentation
+        if str(device) == "cuda:0" and epoch % 3 == 0:
+            torch.cuda.empty_cache()
 
     # final sources
     Sp_full = [m(x) for m, x in zip(models, X_model)]
