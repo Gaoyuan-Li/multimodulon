@@ -2205,7 +2205,6 @@ class MultiModulon:
         This method serializes all data including:
         - All species data (log_tpm, log_tpm_norm, X, M, A, gene_table, sample_sheet, M_thresholds, presence_matrix)
         - Combined gene database
-        - BBH results
         - Input folder path
         
         Parameters
@@ -2223,8 +2222,7 @@ class MultiModulon:
         data = {
             'input_folder_path': str(self.input_folder_path),
             'species_data': {},
-            'combined_gene_db': None,
-            'bbh': None
+            'combined_gene_db': None
         }
         
         # Save combined gene database if available
@@ -2234,13 +2232,6 @@ class MultiModulon:
                 'columns': list(self._combined_gene_db.columns)
             }
         
-        # Save BBH results if available
-        if hasattr(self, '_bbh') and self._bbh is not None:
-            bbh_data = {}
-            for (sp1, sp2), df in self._bbh.items():
-                key = f"{sp1}___{sp2}"
-                bbh_data[key] = df.to_dict('records')
-            data['bbh'] = bbh_data
         
         # Save each species data
         for species_name, species_data_obj in self._species_data.items():
@@ -2366,6 +2357,7 @@ class MultiModulon:
         multi_modulon = MultiModulon.__new__(MultiModulon)
         multi_modulon.input_folder_path = Path(input_folder)
         multi_modulon._species_data = {}
+        multi_modulon._bbh = None
         
         # Load combined gene database
         if data.get('combined_gene_db') is not None:
@@ -2376,14 +2368,6 @@ class MultiModulon:
         else:
             multi_modulon._combined_gene_db = None
         
-        # Load BBH results
-        if data.get('bbh') is not None:
-            multi_modulon._bbh = {}
-            for key, records in data['bbh'].items():
-                sp1, sp2 = key.split('___')
-                multi_modulon._bbh[(sp1, sp2)] = pd.DataFrame(records)
-        else:
-            multi_modulon._bbh = None
         
         # Load species data
         for species_name, species_dict in data['species_data'].items():
