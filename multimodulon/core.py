@@ -1675,7 +1675,7 @@ class MultiModulon:
             colors = []
             for weight in y_weights:
                 if abs(weight) > threshold:
-                    colors.append('blue')  # Above threshold
+                    colors.append('lightblue')  # Above threshold
                 else:
                     colors.append('grey')  # Below threshold
             ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
@@ -1724,7 +1724,7 @@ class MultiModulon:
             plt.show()
     
     def view_iModulon_activities(self, species: str, component: str, save_path: Optional[str] = None,
-                                fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
+                                fig_size: Tuple[float, float] = (12, 3), font_path: Optional[str] = None,
                                 highlight_project: Optional[str] = None, highlight_study: Optional[str] = None):
         """
         Visualize iModulon activities for a specific component in a species.
@@ -1743,7 +1743,7 @@ class MultiModulon:
             If directory, saves as '{species}_{component}_activities.svg'
             If None, displays plot without saving
         fig_size : tuple, optional
-            Figure size as (width, height). Default: (6, 4)
+            Figure size as (width, height). Default: (12, 3)
         font_path : str, optional
             Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
             If provided, uses this font for all text elements
@@ -1834,9 +1834,9 @@ class MultiModulon:
                                     colors.append(col)
                                     break
                     else:
-                        colors.append('blue')
+                        colors.append('lightblue')
                 else:
-                    colors.append('blue')
+                    colors.append('lightblue')
         elif highlight_study and sample_sheet is not None and 'study_accession' in sample_sheet.columns:
             # Color by study with sample_description as legend
             for i, sample in enumerate(activities.index):
@@ -1856,12 +1856,12 @@ class MultiModulon:
                                     colors.append(col)
                                     break
                     else:
-                        colors.append('blue')
+                        colors.append('lightblue')
                 else:
-                    colors.append('blue')
+                    colors.append('lightblue')
         else:
-            # Default blue color for all bars
-            colors = ['blue'] * len(activities)
+            # Default light blue color for all bars
+            colors = ['lightblue'] * len(activities)
         
         # Create figure
         fig, ax = plt.subplots(figsize=fig_size)
@@ -1879,6 +1879,15 @@ class MultiModulon:
         
         # Remove grid
         ax.grid(False)
+        
+        # Add vertical dotted lines to separate projects
+        if group_col and group_labels:
+            current_group = group_labels[0]
+            for i in range(1, len(group_labels)):
+                if group_labels[i] != current_group:
+                    # Add vertical line at boundary
+                    ax.axvline(x=i-0.5, color='gray', linestyle=':', linewidth=1, alpha=0.7)
+                    current_group = group_labels[i]
         
         # Set labels and title
         ax.set_xlabel('Samples', fontsize=12)
@@ -2293,13 +2302,17 @@ class MultiModulon:
     
     def compare_core_iModulon(self, component: str, y_label: str = 'Species', 
                               save_path: Optional[str] = None, fig_size: Tuple[float, float] = (12, 8),
-                              font_path: Optional[str] = None) -> Dict[str, List[str]]:
+                              font_path: Optional[str] = None, reference_order: Optional[List[str]] = None) -> Dict[str, List[str]]:
         """
         Compare a core iModulon component across species with a dual-layer heatmap.
         
         Creates a heatmap showing:
         - Component membership (filled blocks from presence_matrix)
         - Gene presence across species (edge visibility from combined_gene_db)
+        
+        The heatmap is divided into two sections:
+        - Left: genes shared by all species
+        - Right: genes not shared by all species (with green edges showing presence)
         
         Parameters
         ----------
@@ -2314,6 +2327,10 @@ class MultiModulon:
         font_path : str, optional
             Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
             If provided, uses this font for all text elements
+        reference_order : list of str, optional
+            Custom order for species on y-axis (top to bottom).
+            Example: ['MG1655', 'W', 'W3110', 'BL21', 'C', 'Crooks']
+            If not provided, species are displayed in their default order.
             
         Returns
         -------
@@ -2350,6 +2367,14 @@ class MultiModulon:
         if not component.startswith('Core_'):
             warnings.warn(f"Component '{component}' does not appear to be a core component")
         
+        # Apply reference_order if provided
+        if reference_order:
+            # Filter to only include species that have the component
+            ordered_species = [sp for sp in reference_order if sp in species_with_component]
+            # Add any remaining species not in reference_order
+            remaining_species = [sp for sp in species_with_component if sp not in ordered_species]
+            species_with_component = ordered_species + remaining_species
+        
         # Set font properties if provided
         if font_path and os.path.exists(font_path):
             font_prop = fm.FontProperties(fname=font_path)
@@ -2362,71 +2387,151 @@ class MultiModulon:
                 all_genes.update(result_dict[species])
         all_genes = sorted(list(all_genes))
         
+        # Build gene presence information across species
+        gene_species_presence = {}  # gene -> set of species that have this gene
+        for gene in all_genes:
+            gene_species_presence[gene] = set()
+            
+            if self.combined_gene_db is not None:
+                # Check each row in combined_gene_db
+                for idx, row in self.combined_gene_db.iterrows():
+                    # Find leftmost gene
+                    leftmost_gene = None
+                    for col in self.combined_gene_db.columns:
+                        val = row[col]
+                        if pd.notna(val) and val != "None" and val is not None:
+                            leftmost_gene = val
+                            break
+                    
+                    # If this row contains our gene
+                    if leftmost_gene == gene:
+                        # Check which species have this gene
+                        for species in species_with_component:
+                            if species in self.combined_gene_db.columns:
+                                species_gene = row[species]
+                                if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                                    gene_species_presence[gene].add(species)
+                        break
+        
+        # Separate genes into two groups
+        genes_in_all = []
+        genes_not_in_all = []
+        
+        for gene in all_genes:
+            if len(gene_species_presence.get(gene, set())) == len(species_with_component):
+                genes_in_all.append(gene)
+            else:
+                genes_not_in_all.append(gene)
+        
+        # Combine with gap
+        gap_width = 1
+        ordered_genes = genes_in_all + genes_not_in_all
+        gap_position = len(genes_in_all) if genes_in_all else -1
+        
         # Create figure
         fig, ax = plt.subplots(figsize=fig_size)
         
         # Prepare data for visualization
         n_species = len(species_with_component)
-        n_genes = len(all_genes)
+        n_genes = len(ordered_genes)
+        total_width = n_genes + (gap_width if gap_position > 0 else 0)
         
-        # Create custom patches for the heatmap
-        rectangles = []
-        
-        for i, species in enumerate(species_with_component):
-            species_data = self._species_data[species]
-            
-            for j, gene in enumerate(all_genes):
-                # Check if gene is in component (from presence_matrix)
-                in_component = gene in result_dict.get(species, [])
+        # Function to create merged rectangles for adjacent species
+        def create_merged_rectangles(gene_idx, x_pos, species_list, in_component_flags, exists_flags, is_right_section=False):
+            rectangles = []
+            i = 0
+            while i < len(species_list):
+                if not exists_flags[i]:
+                    i += 1
+                    continue
+                    
+                # Start of a group
+                start_i = i
+                start_in_component = in_component_flags[i]
                 
-                # Check if gene exists in species (from combined_gene_db)
-                gene_exists_in_species = False
-                if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
-                    # Check if this gene exists in the species
-                    for idx, row in self.combined_gene_db.iterrows():
-                        # Find leftmost gene
-                        leftmost_gene = None
-                        for col in self.combined_gene_db.columns:
-                            val = row[col]
-                            if pd.notna(val) and val != "None" and val is not None:
-                                leftmost_gene = val
-                                break
-                        
-                        # Check if this row contains our gene
-                        if leftmost_gene == gene:
-                            species_gene = row[species]
-                            if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
-                                gene_exists_in_species = True
-                                break
+                # Find consecutive species with same status
+                while i < len(species_list) and exists_flags[i] and in_component_flags[i] == start_in_component:
+                    i += 1
                 
-                # Create rectangle based on conditions
-                if gene_exists_in_species:
-                    if in_component:
-                        # Gene exists and is in component - filled rectangle with edge
-                        rect = patches.Rectangle((j, i), 1, 1, linewidth=1, 
-                                               edgecolor='black', facecolor='darkblue')
+                # Create merged rectangle
+                height = i - start_i
+                y_pos = len(species_list) - i  # Flip to have first species at top
+                
+                if start_in_component:
+                    # In component - filled light blue
+                    rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=1,
+                                           edgecolor='black', facecolor='lightblue')
+                else:
+                    # Not in component but exists
+                    if is_right_section:
+                        # Right section - green edges for species presence
+                        rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=1.5,
+                                               edgecolor='green', facecolor='none')
                     else:
-                        # Gene exists but not in component - edge only
-                        rect = patches.Rectangle((j, i), 1, 1, linewidth=1, 
+                        # Left section - gray edges
+                        rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=1,
                                                edgecolor='lightgray', facecolor='none')
-                    rectangles.append(rect)
+                rectangles.append(rect)
+            
+            return rectangles
+        
+        # Create patches for the heatmap
+        all_rectangles = []
+        
+        # Process each gene
+        for j, gene in enumerate(ordered_genes):
+            # Calculate x position accounting for gap
+            if gap_position > 0 and j >= gap_position:
+                x_pos = j + gap_width
+            else:
+                x_pos = j
+            
+            # Determine if this is in the right section
+            is_right_section = gene in genes_not_in_all
+            
+            # Collect status for all species
+            in_component_flags = []
+            exists_flags = []
+            
+            for species in species_with_component:
+                in_component = gene in result_dict.get(species, [])
+                exists_in_species = species in gene_species_presence.get(gene, set())
+                
+                in_component_flags.append(in_component)
+                exists_flags.append(exists_in_species)
+            
+            # Create merged rectangles
+            rectangles = create_merged_rectangles(j, x_pos, species_with_component, 
+                                                 in_component_flags, exists_flags, is_right_section)
+            all_rectangles.extend(rectangles)
         
         # Add all rectangles to the plot
-        for rect in rectangles:
+        for rect in all_rectangles:
             ax.add_patch(rect)
         
         # Set axis properties
-        ax.set_xlim(0, n_genes)
+        ax.set_xlim(0, total_width)
         ax.set_ylim(0, n_species)
         ax.set_aspect('equal')
         
+        # Add vertical line to separate the two sections if needed
+        if gap_position > 0:
+            ax.axvline(x=gap_position, color='black', linestyle='--', linewidth=1.5, alpha=0.7)
+        
         # Set ticks and labels
-        ax.set_xticks(np.arange(n_genes) + 0.5)
+        x_positions = []
+        for j in range(len(ordered_genes)):
+            if gap_position > 0 and j >= gap_position:
+                x_positions.append(j + gap_width + 0.5)
+            else:
+                x_positions.append(j + 0.5)
+        
+        ax.set_xticks(x_positions)
         ax.set_yticks(np.arange(n_species) + 0.5)
         
         # Get gene names for x-axis labels
         x_labels = []
-        for gene in all_genes:
+        for gene in ordered_genes:
             # Try to get gene_name from gene_table
             gene_name = gene  # Default to using the index
             for species in species_with_component:
@@ -2463,8 +2568,9 @@ class MultiModulon:
             
             x_labels.append(gene_name)
         
-        ax.set_xticklabels(x_labels, rotation=90, ha='right')
-        ax.set_yticklabels(species_with_component)
+        ax.set_xticklabels(x_labels, rotation=45, ha='right')
+        # Reverse y-axis labels to match top-to-bottom order
+        ax.set_yticklabels(species_with_component[::-1])
         
         # Set labels and title
         ax.set_xlabel('Genes', fontsize=12)
@@ -2480,7 +2586,14 @@ class MultiModulon:
             ax.title.set_fontproperties(font_prop)
         
         # Add grid
-        ax.set_xticks(np.arange(n_genes + 1), minor=True)
+        minor_x_ticks = []
+        for j in range(len(ordered_genes) + 1):
+            if gap_position > 0 and j > gap_position:
+                minor_x_ticks.append(j + gap_width)
+            else:
+                minor_x_ticks.append(j)
+        
+        ax.set_xticks(minor_x_ticks, minor=True)
         ax.set_yticks(np.arange(n_species + 1), minor=True)
         ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.5, alpha=0.3)
         
