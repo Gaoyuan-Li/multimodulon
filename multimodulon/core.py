@@ -1484,66 +1484,54 @@ class MultiModulon:
         # Get gene positions from gene_table
         gene_table = species_data.gene_table
         
-        # If combined_gene_db is available, include mapped genes
+        # Create mapping from leftmost genes (in M matrix) to species genes (in gene_table)
+        leftmost_to_species = {}
+        species_to_leftmost = {}
+        
         if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
-            # Create mapping from species genes to leftmost gene names
-            leftmost_to_species = {}
             for idx, row in self.combined_gene_db.iterrows():
-                # Find leftmost gene name
-                leftmost_gene = None
-                for col in self.combined_gene_db.columns:
-                    val = row[col]
-                    if pd.notna(val) and val != "None" and val is not None:
-                        leftmost_gene = val
-                        break
-                
-                # Map species gene to leftmost gene
+                # idx is the leftmost gene name
+                leftmost_gene = idx
                 species_gene = row[species]
-                if leftmost_gene and pd.notna(species_gene) and species_gene != "None":
+                
+                if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
                     leftmost_to_species[leftmost_gene] = species_gene
+                    species_to_leftmost[species_gene] = leftmost_gene
+        
+        # Create lists for plotting
+        genes_for_plotting = []
+        weights_for_plotting = []
+        positions_for_plotting = []
+        
+        # Process each gene in M matrix (which uses leftmost names)
+        for gene_in_M in gene_weights.index:
+            weight = gene_weights[gene_in_M]
             
-            # Extend gene_weights to include leftmost gene names
-            extended_weights = gene_weights.copy()
-            for leftmost_gene, species_gene in leftmost_to_species.items():
-                if leftmost_gene in gene_weights.index and leftmost_gene != species_gene:
-                    # Add weight for the leftmost gene name if it's different from species gene
-                    extended_weights[leftmost_gene] = gene_weights[leftmost_gene]
-        else:
-            extended_weights = gene_weights
-        
-        # Create a mapping from gene names to positions
-        gene_positions = {}
-        
-        # First, add positions for genes that exist in gene_table
-        for gene_name in extended_weights.index:
-            # Try to find the gene in gene_table
-            if gene_name in gene_table.index:
-                gene_info = gene_table.loc[gene_name]
-                # Calculate center position
-                start = gene_info['start']
-                end = gene_info['end']
-                center = (start + end) / 2
-                gene_positions[gene_name] = center
-        
-        # If combined_gene_db is available, try to find positions for leftmost genes
-        if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
-            for leftmost_gene, species_gene in leftmost_to_species.items():
-                if leftmost_gene not in gene_positions and species_gene in gene_table.index:
-                    # Use position from the species gene
+            # Find the corresponding species gene name
+            if gene_in_M in leftmost_to_species:
+                # This is a leftmost gene, map to species gene
+                species_gene = leftmost_to_species[gene_in_M]
+                if species_gene in gene_table.index:
                     gene_info = gene_table.loc[species_gene]
-                    start = gene_info['start']
-                    end = gene_info['end']
-                    center = (start + end) / 2
-                    gene_positions[leftmost_gene] = center
+                    center = (gene_info['start'] + gene_info['end']) / 2
+                    genes_for_plotting.append(species_gene)
+                    weights_for_plotting.append(weight)
+                    positions_for_plotting.append(center / 1e6)  # Convert to Mb
+            elif gene_in_M in gene_table.index:
+                # This gene name exists directly in gene_table (not renamed)
+                gene_info = gene_table.loc[gene_in_M]
+                center = (gene_info['start'] + gene_info['end']) / 2
+                genes_for_plotting.append(gene_in_M)
+                weights_for_plotting.append(weight)
+                positions_for_plotting.append(center / 1e6)  # Convert to Mb
         
-        # Filter to only genes with position information
-        genes_with_pos = [g for g in extended_weights.index if g in gene_positions]
-        if not genes_with_pos:
+        if not genes_for_plotting:
             raise ValueError(f"No gene position information found for genes in {species}")
         
-        # Prepare data for plotting
-        x_positions = [gene_positions[g] / 1e6 for g in genes_with_pos]  # Convert to Mb
-        y_weights = [extended_weights[g] for g in genes_with_pos]
+        # Now we have the correct mapping
+        x_positions = positions_for_plotting
+        y_weights = weights_for_plotting
+        genes_with_pos = genes_for_plotting
         
         # Get threshold if available
         threshold = None
@@ -1683,7 +1671,7 @@ class MultiModulon:
             ax.yaxis.label.set_fontproperties(font_prop)
             ax.title.set_fontproperties(font_prop)
         
-        # Tight layout
+        # Tight layout - do not adjust for legend to preserve fig_size
         plt.tight_layout()
         
         # Save or show
@@ -1698,6 +1686,7 @@ class MultiModulon:
                 save_path.mkdir(parents=True, exist_ok=True)
                 save_file = save_path / f"{species}_{component}_iModulon.svg"
             
+            # Save with tight bbox to include legend if present
             plt.savefig(save_file, dpi=300, bbox_inches='tight')
             logger.info(f"Plot saved to {save_file}")
             plt.close()
