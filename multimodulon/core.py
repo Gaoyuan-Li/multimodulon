@@ -1977,6 +1977,105 @@ class MultiModulon:
         else:
             plt.show()
     
+    def view_iModulon_genes(self, species: str, component: str) -> pd.DataFrame:
+        """
+        Return a subset of the gene table for genes in a specific iModulon component.
+        
+        Uses the presence_matrix to identify which genes belong to the specified component,
+        then returns the corresponding rows from the gene_table.
+        
+        Parameters
+        ----------
+        species : str
+            Species/strain name
+        component : str
+            Component name (e.g., 'Core_1', 'Unique_1')
+            
+        Returns
+        -------
+        pd.DataFrame
+            Subset of gene_table containing only genes in the specified component.
+            Returns empty DataFrame if no genes found or if data not available.
+            
+        Raises
+        ------
+        ValueError
+            If species not found or if presence_matrix/gene_table not available
+            
+        Examples
+        --------
+        >>> gene_subset = mm.view_iModulon_genes('E_coli', 'Core_1')
+        >>> print(f"Found {len(gene_subset)} genes in Core_1")
+        """
+        # Validate species
+        if species not in self._species_data:
+            raise ValueError(f"Species '{species}' not found in loaded data")
+        
+        species_data = self._species_data[species]
+        
+        # Check if presence_matrix exists
+        if species_data._presence_matrix is None:
+            raise ValueError(f"presence_matrix not found for {species}. Please run optimize_M_thresholds() first.")
+        
+        # Check if gene_table exists
+        if species_data.gene_table is None:
+            raise ValueError(f"gene_table not found for {species}.")
+        
+        # Check if component exists
+        if component not in species_data._presence_matrix.columns:
+            raise ValueError(f"Component '{component}' not found in presence_matrix. "
+                           f"Available components: {list(species_data._presence_matrix.columns)}")
+        
+        # Get genes in this component from presence_matrix
+        component_genes = species_data._presence_matrix[
+            species_data._presence_matrix[component] == 1
+        ].index.tolist()
+        
+        if not component_genes:
+            logger.warning(f"No genes found in component '{component}' for species '{species}'")
+            return pd.DataFrame()
+        
+        # Map component genes to gene_table
+        # First check if we need to map through combined_gene_db
+        genes_in_table = []
+        
+        if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+            # Map from leftmost genes to species-specific genes
+            for gene in component_genes:
+                # Check if gene exists directly in gene_table first
+                if gene in species_data.gene_table.index:
+                    genes_in_table.append(gene)
+                else:
+                    # Try to map through combined_gene_db
+                    for idx, row in self.combined_gene_db.iterrows():
+                        # Find leftmost gene
+                        leftmost_gene = None
+                        for col in self.combined_gene_db.columns:
+                            val = row[col]
+                            if pd.notna(val) and val != "None" and val is not None:
+                                leftmost_gene = val
+                                break
+                        
+                        # If this is our gene, get the species-specific name
+                        if leftmost_gene == gene:
+                            species_gene = row[species]
+                            if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                                if species_gene in species_data.gene_table.index:
+                                    genes_in_table.append(species_gene)
+                                    break
+        else:
+            # No combined_gene_db, just check directly
+            genes_in_table = [g for g in component_genes if g in species_data.gene_table.index]
+        
+        # Get subset of gene_table
+        if genes_in_table:
+            gene_subset = species_data.gene_table.loc[genes_in_table].copy()
+            logger.info(f"Found {len(gene_subset)} genes in component '{component}' for species '{species}'")
+            return gene_subset
+        else:
+            logger.warning(f"No genes from component '{component}' found in gene_table for species '{species}'")
+            return pd.DataFrame()
+    
     def view_core_iModulon_weights(self, component: str, save_path: Optional[str] = None,
                            fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
                            show_COG: bool = False, reference_order: Optional[List[str]] = None):
