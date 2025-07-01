@@ -1167,7 +1167,7 @@ class MultiModulon:
         print("eggNOG annotation addition completed!")
     
     
-    def optimize_M_thresholds(self, method: str = "Otsu's method"):
+    def optimize_M_thresholds(self, method: str = "Otsu's method", quantile_threshold: float = 90):
         """
         Optimize thresholds for M matrices across all species.
         
@@ -1180,6 +1180,10 @@ class MultiModulon:
         method : str, optional
             Method to use for threshold optimization. Default is "Otsu's method".
             Currently only "Otsu's method" is supported.
+        quantile_threshold : float, optional
+            Percentile threshold for pre-filtering in Otsu's method. Default is 90.
+            This removes the bottom X% of absolute values before applying Otsu's method
+            to better identify true outliers in heavy-tailed distributions.
             
         Notes
         -----
@@ -1207,7 +1211,7 @@ class MultiModulon:
             
             # Calculate threshold for each component
             for component in M.columns:
-                threshold = self._quantile_otsu_threshold(M, component)
+                threshold = self._quantile_otsu_threshold(M, component, quantile_threshold)
                 thresholds[component] = threshold
             
             # Create M_thresholds dataframe with component names as index
@@ -1242,7 +1246,7 @@ class MultiModulon:
         
         print("\nThreshold optimization completed!")
     
-    def _quantile_otsu_threshold(self, multiModulon_M: pd.DataFrame, component_name: str) -> float:
+    def _quantile_otsu_threshold(self, multiModulon_M: pd.DataFrame, component_name: str, quantile_threshold: float = 90) -> float:
         """
         Calculate Otsu threshold using quantile-based pre-filtering.
         This method removes the central mass of data before applying Otsu,
@@ -1254,6 +1258,8 @@ class MultiModulon:
             DataFrame with gene weights (genes as rows, components as columns)
         component_name : str
             Name of the component column to analyze
+        quantile_threshold : float, optional
+            Percentile threshold for pre-filtering. Default is 90.
         
         Returns
         -------
@@ -1266,8 +1272,8 @@ class MultiModulon:
         weights = multiModulon_M[component_name].values
         abs_weights = np.abs(weights)
         
-        # Pre-filter: remove the bottom 90% of absolute values
-        pre_percentile = 90
+        # Pre-filter: remove the bottom X% of absolute values
+        pre_percentile = quantile_threshold
         pre_threshold = np.percentile(abs_weights, pre_percentile)
         filtered_weights = abs_weights[abs_weights > pre_threshold]
         
