@@ -189,7 +189,8 @@ def run_multi_view_ICA_on_datasets(
         # Keep deterministic but allow benchmarking for better performance
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = True  # Allow cuDNN to find optimal algorithms
-        # Remove torch.use_deterministic_algorithms for better performance
+        # Enable TensorFloat32 for better performance on Ampere GPUs
+        torch.set_float32_matmul_precision('high')
 
     # device
     device = torch.device("cuda:0" if mode == "gpu" and torch.cuda.is_available() else "cpu")
@@ -240,12 +241,8 @@ def run_multi_view_ICA_on_datasets(
         
         model = model.to(device)
         
-        # Compile model for better performance in PyTorch 2.0+
-        if hasattr(torch, 'compile') and str(device) == "cuda:0":
-            try:
-                model = torch.compile(model, mode='default')
-            except:
-                pass  # Fall back to uncompiled if compilation fails
+        # Note: torch.compile removed due to recompilation issues with varying tensor sizes
+        # The dynamic shapes cause cache misses and excessive recompilations
         
         models.append(model)
 
