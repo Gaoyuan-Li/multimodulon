@@ -2782,9 +2782,9 @@ class MultiModulon:
             
             plt.savefig(save_file, dpi=300, bbox_inches='tight')
             logger.info(f"Comparison heatmap saved to {save_file}")
-            plt.close()
-        else:
-            plt.show()
+            
+        # Always show the plot (useful for Jupyter notebooks)
+        plt.show()
         
         return result_dict
     
