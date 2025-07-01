@@ -2490,13 +2490,13 @@ class MultiModulon:
                     y_pos = len(species_list) - i  # Flip to have first species at top
                     
                     if start_in_component:
-                        # In component - filled light blue, no edge
+                        # In component - filled very light blue, no edge
                         rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
-                                               edgecolor='none', facecolor='lightblue')
+                                               edgecolor='none', facecolor='#E6F3FF')  # Very light blue
                     else:
-                        # Not in component but exists - light grey fill, no edge
+                        # Not in component but exists - very light grey fill, no edge
                         rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
-                                               edgecolor='none', facecolor='lightgrey')
+                                               edgecolor='none', facecolor='#F0F0F0')  # Very light grey
                     rectangles.append(rect)
             
             return rectangles
