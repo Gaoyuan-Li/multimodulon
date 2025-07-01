@@ -1489,12 +1489,20 @@ class MultiModulon:
         species_to_leftmost = {}
         
         if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+            # First, find the leftmost gene for each row (same logic as in alignment)
             for idx, row in self.combined_gene_db.iterrows():
-                # idx is the leftmost gene name
-                leftmost_gene = idx
+                # Find the leftmost (first non-None) gene in this row
+                leftmost_gene = None
+                for col in self.combined_gene_db.columns:
+                    val = row[col]
+                    if pd.notna(val) and val != "None" and val is not None:
+                        leftmost_gene = val
+                        break
+                
+                # Get the species-specific gene
                 species_gene = row[species]
                 
-                if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                if leftmost_gene and pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
                     leftmost_to_species[leftmost_gene] = species_gene
                     species_to_leftmost[species_gene] = leftmost_gene
         
@@ -1503,7 +1511,12 @@ class MultiModulon:
         weights_for_plotting = []
         positions_for_plotting = []
         
+        # Debug: log mapping statistics
+        logger.debug(f"Total genes in M matrix: {len(gene_weights)}")
+        logger.debug(f"Leftmost to species mappings found: {len(leftmost_to_species)}")
+        
         # Process each gene in M matrix (which uses leftmost names)
+        genes_not_found = []
         for gene_in_M in gene_weights.index:
             weight = gene_weights[gene_in_M]
             
@@ -1517,6 +1530,8 @@ class MultiModulon:
                     genes_for_plotting.append(species_gene)
                     weights_for_plotting.append(weight)
                     positions_for_plotting.append(center / 1e6)  # Convert to Mb
+                else:
+                    genes_not_found.append(f"{gene_in_M}->{species_gene} (not in gene_table)")
             elif gene_in_M in gene_table.index:
                 # This gene name exists directly in gene_table (not renamed)
                 gene_info = gene_table.loc[gene_in_M]
@@ -1524,6 +1539,12 @@ class MultiModulon:
                 genes_for_plotting.append(gene_in_M)
                 weights_for_plotting.append(weight)
                 positions_for_plotting.append(center / 1e6)  # Convert to Mb
+            else:
+                genes_not_found.append(f"{gene_in_M} (no mapping found)")
+        
+        if genes_not_found:
+            logger.debug(f"Genes not plotted ({len(genes_not_found)}): {genes_not_found[:10]}...")
+            logger.debug(f"Genes successfully plotted: {len(genes_for_plotting)}/{len(gene_weights)}")
         
         if not genes_for_plotting:
             raise ValueError(f"No gene position information found for genes in {species}")
@@ -1539,8 +1560,16 @@ class MultiModulon:
             if component in species_data._M_thresholds.index:
                 threshold = species_data._M_thresholds.loc[component, 'M_threshold']
         
-        # Create figure
-        fig, ax = plt.subplots(figsize=fig_size)
+        # Create figure - the given fig_size is for the plot area only
+        # If showing COG, we need extra space for the legend
+        if show_COG and 'COG_category' in gene_table.columns:
+            # Add extra width for legend (80% more for long COG category names)
+            fig_width = fig_size[0] * 1.8
+            fig = plt.figure(figsize=(fig_width, fig_size[1]))
+            # Create axis that uses only the original fig_size width
+            ax = fig.add_axes([0.1, 0.1, fig_size[0]/fig_width * 0.8, 0.8])
+        else:
+            fig, ax = plt.subplots(figsize=fig_size)
         
         # Set font properties if provided
         if font_path and os.path.exists(font_path):
@@ -1671,8 +1700,9 @@ class MultiModulon:
             ax.yaxis.label.set_fontproperties(font_prop)
             ax.title.set_fontproperties(font_prop)
         
-        # Tight layout - do not adjust for legend to preserve fig_size
-        plt.tight_layout()
+        # Tight layout - only apply if not showing COG (manual layout for COG)
+        if not (show_COG and 'COG_category' in gene_table.columns):
+            plt.tight_layout()
         
         # Save or show
         if save_path:
