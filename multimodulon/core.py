@@ -969,6 +969,134 @@ class MultiModulon:
         """Create gene tables for all species."""
         return create_gene_table(self)
     
+    def add_eggnog_annotation(self, eggnog_output_path: str) -> None:
+        """
+        Add eggNOG annotations to gene tables for all species.
+        
+        This method reads eggNOG-mapper output files and adds annotation columns
+        to the existing gene tables. The annotations are matched using the 
+        ncbi_protein column in gene_table.
+        
+        Parameters
+        ----------
+        eggnog_output_path : str
+            Path to the eggNOG-mapper output directory containing subfolders
+            for each species (e.g., ../imminer_2_industrial_strain/Output_eggnog_mapper)
+            
+        Notes
+        -----
+        The method expects the following structure:
+        - eggnog_output_path/
+            - species1/
+                - species1.emapper.annotations
+            - species2/
+                - species2.emapper.annotations
+            ...
+            
+        The following annotation columns will be added to gene_table:
+        'seed_ortholog', 'evalue', 'score', 'eggNOG_OGs', 'max_annot_lvl',
+        'COG_category', 'Description', 'Preferred_name', 'GOs', 'EC', 
+        'KEGG_ko', 'KEGG_Pathway', 'KEGG_Module', 'KEGG_Reaction',
+        'KEGG_rclass', 'BRITE', 'KEGG_TC', 'CAZy', 'BiGG_Reaction', 'PFAMs'
+        """
+        import os
+        
+        eggnog_path = Path(eggnog_output_path)
+        if not eggnog_path.exists():
+            raise ValueError(f"eggNOG output path not found: {eggnog_output_path}")
+        
+        print(f"\nAdding eggNOG annotations from {eggnog_output_path}")
+        print("=" * 60)
+        
+        # Columns to add from eggNOG annotation
+        eggnog_columns = [
+            'seed_ortholog', 'evalue', 'score', 'eggNOG_OGs', 'max_annot_lvl',
+            'COG_category', 'Description', 'Preferred_name', 'GOs', 'EC',
+            'KEGG_ko', 'KEGG_Pathway', 'KEGG_Module', 'KEGG_Reaction',
+            'KEGG_rclass', 'BRITE', 'KEGG_TC', 'CAZy', 'BiGG_Reaction', 'PFAMs'
+        ]
+        
+        for species_name, species_data in self._species_data.items():
+            print(f"\nProcessing {species_name}...")
+            
+            # Check if gene_table exists
+            if species_data._gene_table is None:
+                logger.warning(f"Gene table not found for {species_name}. Run create_gene_table() first.")
+                print(f"  ✗ Gene table not found. Skipping...")
+                continue
+            
+            # Find eggNOG annotation file
+            species_eggnog_dir = eggnog_path / species_name
+            if not species_eggnog_dir.exists():
+                logger.warning(f"No eggNOG output directory found for {species_name}")
+                print(f"  ✗ No eggNOG output directory found. Skipping...")
+                continue
+            
+            annotation_file = species_eggnog_dir / f"{species_name}.emapper.annotations"
+            if not annotation_file.exists():
+                logger.warning(f"No annotation file found for {species_name}: {annotation_file}")
+                print(f"  ✗ Annotation file not found. Skipping...")
+                continue
+            
+            try:
+                # Read eggNOG annotation file
+                print(f"  - Reading {annotation_file.name}")
+                df_eggnog = pd.read_csv(
+                    annotation_file,
+                    sep='\t',
+                    skiprows=4,
+                    dtype=str  # Read all columns as strings initially
+                )
+                
+                # Remove the last 3 rows (summary lines)
+                df_eggnog = df_eggnog[:-3]
+                
+                # Convert numeric columns
+                df_eggnog['evalue'] = pd.to_numeric(df_eggnog['evalue'], errors='coerce')
+                df_eggnog['score'] = pd.to_numeric(df_eggnog['score'], errors='coerce')
+                
+                # Rename query column to match ncbi_protein
+                df_eggnog = df_eggnog.rename(columns={'#query': 'ncbi_protein'})
+                
+                # Get current gene table
+                gene_table = species_data._gene_table.copy()
+                
+                # Check if ncbi_protein column exists in gene_table
+                if 'ncbi_protein' not in gene_table.columns:
+                    logger.warning(f"ncbi_protein column not found in gene_table for {species_name}")
+                    print(f"  ✗ ncbi_protein column not found in gene_table. Skipping...")
+                    continue
+                
+                # Reset index to have locus_tag as a column for merging
+                gene_table_reset = gene_table.reset_index()
+                
+                # Merge with eggNOG annotations
+                merged_table = gene_table_reset.merge(
+                    df_eggnog[['ncbi_protein'] + eggnog_columns],
+                    on='ncbi_protein',
+                    how='left'
+                )
+                
+                # Set locus_tag back as index
+                merged_table.set_index('locus_tag', inplace=True)
+                
+                # Update species gene_table
+                species_data._gene_table = merged_table
+                
+                # Count successful annotations
+                annotated_count = merged_table[eggnog_columns[0]].notna().sum()
+                total_genes = len(merged_table)
+                
+                print(f"  ✓ Added eggNOG annotations to {annotated_count}/{total_genes} genes")
+                logger.info(f"eggNOG annotations added for {species_name}: {annotated_count}/{total_genes} genes")
+                
+            except Exception as e:
+                logger.error(f"Error processing eggNOG annotations for {species_name}: {e}")
+                print(f"  ✗ Error: {e}")
+        
+        print("\n" + "=" * 60)
+        print("eggNOG annotation addition completed!")
+    
     
     def optimize_M_thresholds(self, method: str = "Otsu's method"):
         """
