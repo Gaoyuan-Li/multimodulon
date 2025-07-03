@@ -1,4 +1,4 @@
-Multi-view ICA
+Robust Multi-view ICA
 ==============
 
 This section covers running multi-view Independent Component Analysis (ICA) to identify core (conserved) and unique (species-specific) regulatory modules.

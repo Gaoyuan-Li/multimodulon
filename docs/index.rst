@@ -35,6 +35,7 @@ Contents
    gene_alignment
    optimization
    multiview_ica
+   threshold_optimization
    visualization
    
 .. toctree::
