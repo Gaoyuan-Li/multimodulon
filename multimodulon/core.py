@@ -1810,11 +1810,9 @@ class MultiModulon:
                 
                 # Calculate mean activities for each condition
                 conditions = list(condition_data.keys())
-                mean_activities = []
                 for condition in conditions:
                     mean_act = np.mean(condition_data[condition]['activities'])
                     condition_data[condition]['mean_activity'] = mean_act
-                    mean_activities.append(mean_act)
                 
                 # Still use project/study grouping for x-axis
                 group_col = None
@@ -1837,6 +1835,13 @@ class MultiModulon:
                         else:
                             condition_groups[condition] = 'Unknown'
                     
+                    # Sort conditions by their project/study group
+                    sorted_conditions = sorted(conditions, key=lambda c: (condition_groups.get(c, 'Unknown'), c))
+                    conditions = sorted_conditions
+                    
+                    # Get mean activities in the sorted order
+                    mean_activities = [condition_data[c]['mean_activity'] for c in conditions]
+                    
                     group_labels = [condition_groups.get(c, 'Unknown') for c in conditions]
                     unique_groups = []
                     for g in group_labels:
@@ -1846,6 +1851,8 @@ class MultiModulon:
                     x_positions = range(len(conditions))
                     x_labels = [unique_groups.index(g) if g in unique_groups else -1 for g in group_labels]
                 else:
+                    # No grouping column, just use conditions as is
+                    mean_activities = [condition_data[c]['mean_activity'] for c in conditions]
                     x_positions = range(len(conditions))
                     x_labels = conditions
                     group_labels = []
@@ -1983,15 +1990,15 @@ class MultiModulon:
         
         # Create bar plot
         if condition_mode:
-            # Plot averaged bars for conditions
-            bars = ax.bar(x_positions, mean_activities, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+            # Plot averaged bars for conditions with half width
+            bars = ax.bar(x_positions, mean_activities, width=0.5, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
             
             # Add individual sample points as black dots
             for i, condition in enumerate(conditions):
                 sample_activities = condition_data[condition]['activities']
                 # All dots at the horizontal center of the bar
                 x_points = [i] * len(sample_activities)
-                ax.scatter(x_points, sample_activities, color='black', s=15, zorder=10, alpha=0.7)
+                ax.scatter(x_points, sample_activities, color='black', s=10, zorder=10, alpha=0.7)
         else:
             # Original bar plot for individual samples
             bars = ax.bar(x_positions, activities.values, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
