@@ -1,6 +1,6 @@
 # MultiModulon
 
-[![python](https://img.shields.io/pypi/pyversions/multimodulon?style=for-the-badge&color=85A2C1)](https://www.python.org) [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org) [![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
 
 A Python package for analyzing multi-species/multi-strain/multi-modality profiles.
 
