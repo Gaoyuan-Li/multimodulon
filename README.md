@@ -2,6 +2,10 @@
 
 A Python package for analyzing multi-species/multi-strain/multi-modality profiles.
 
+## Documentation
+
+https://multimodulon.readthedocs.io/en/latest/
+
 ## Requirements
 
 - Python >= 3.10
