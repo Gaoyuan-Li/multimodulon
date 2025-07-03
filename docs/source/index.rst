@@ -76,7 +76,7 @@ Contents
    
    examples/basic_workflow
    examples/optimization_tutorial
-   examples/visualization_gallery
+   examples/visualization_tutorial
    
 .. toctree::
    :maxdepth: 1
