@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 import pandas as pd
 
-from multimodulon.utils.gff_parser import parse_gff, _parse_attributes
+from multimodulon.utils import parse_gff, _parse_attributes
 
 
 class TestGFFParser:

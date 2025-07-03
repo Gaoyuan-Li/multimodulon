@@ -13,7 +13,7 @@ from typing import Dict, Optional, Tuple, List
 import numpy as np
 import pandas as pd
 
-from .optimization import calculate_cohens_d_effect_size, calculate_average_effect_sizes
+from .multiview_ica_optimization import calculate_cohens_d_effect_size, calculate_average_effect_sizes
 
 try:
     import torch
