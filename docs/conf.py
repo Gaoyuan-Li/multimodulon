@@ -5,17 +5,16 @@
 
 import os
 import sys
+import sphinx_rtd_theme
+
 sys.path.insert(0, os.path.abspath('../..'))
 
 # Mock imports for autodoc
 autodoc_mock_imports = [
-    'pandas',
-    'numpy',
     'biopython',
     'tqdm',
     'ipywidgets',
     'scipy',
-    'matplotlib',
     'scikit-learn',
     'sklearn',
     'torch',
@@ -76,7 +75,7 @@ pygments_style = 'sphinx'
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
+html_theme = 'sphinx_rtd_theme'
 
 # -- Extension configuration -------------------------------------------------
 
