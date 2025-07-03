@@ -1816,9 +1816,39 @@ class MultiModulon:
                     condition_data[condition]['mean_activity'] = mean_act
                     mean_activities.append(mean_act)
                 
-                x_positions = range(len(conditions))
-                x_labels = conditions
-                group_labels = []
+                # Still use project/study grouping for x-axis
+                group_col = None
+                if 'project' in sample_sheet.columns:
+                    group_col = 'project'
+                elif 'study_accession' in sample_sheet.columns:
+                    group_col = 'study_accession'
+                
+                if group_col:
+                    # Create a mapping of conditions to their project/study groups
+                    condition_groups = {}
+                    for condition in conditions:
+                        # Get the most common group for this condition
+                        condition_samples = condition_data[condition]['samples']
+                        groups = [sample_sheet.loc[s, group_col] for s in condition_samples if s in sample_sheet.index]
+                        if groups:
+                            # Use the most common group
+                            most_common_group = max(set(groups), key=groups.count)
+                            condition_groups[condition] = most_common_group
+                        else:
+                            condition_groups[condition] = 'Unknown'
+                    
+                    group_labels = [condition_groups.get(c, 'Unknown') for c in conditions]
+                    unique_groups = []
+                    for g in group_labels:
+                        if g not in unique_groups:
+                            unique_groups.append(g)
+                    
+                    x_positions = range(len(conditions))
+                    x_labels = [unique_groups.index(g) if g in unique_groups else -1 for g in group_labels]
+                else:
+                    x_positions = range(len(conditions))
+                    x_labels = conditions
+                    group_labels = []
             else:
                 # Original logic for project/study grouping
                 # Determine grouping column
@@ -1853,8 +1883,38 @@ class MultiModulon:
         colors = []
         legend_elements = []
         
-        if condition_mode:
-            # In condition mode, use default colors unless highlighting is specified
+        if condition_mode and highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
+            # In condition mode with highlighting, color by condition
+            # Convert single string to list for uniform handling
+            if isinstance(highlight_project, str):
+                highlight_projects = [highlight_project]
+            else:
+                highlight_projects = highlight_project
+            
+            for i, condition in enumerate(conditions):
+                # Check if any sample in this condition belongs to highlighted project
+                condition_samples = condition_data[condition]['samples']
+                projects = [sample_sheet.loc[s, 'project'] for s in condition_samples if s in sample_sheet.index]
+                
+                # Check if any project in this condition is highlighted
+                condition_highlighted = any(str(hp) in [str(p) for p in projects] for hp in highlight_projects)
+                
+                if condition_highlighted:
+                    # Assign unique color per condition
+                    if condition not in [elem[0] for elem in legend_elements]:
+                        color = plt.cm.tab10(len(legend_elements))
+                        legend_elements.append((condition, color))
+                        colors.append(color)
+                    else:
+                        # Find existing color for this condition
+                        for cond, col in legend_elements:
+                            if cond == condition:
+                                colors.append(col)
+                                break
+                else:
+                    colors.append('lightblue')
+        elif condition_mode:
+            # In condition mode without highlighting, use default colors
             colors = ['lightblue'] * len(conditions)
         elif highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
             # Convert single string to list for uniform handling
@@ -1929,15 +1989,9 @@ class MultiModulon:
             # Add individual sample points as black dots
             for i, condition in enumerate(conditions):
                 sample_activities = condition_data[condition]['activities']
-                # Create evenly spaced positions for dots to avoid overlap
-                n_samples = len(sample_activities)
-                if n_samples == 1:
-                    x_points = [i]
-                else:
-                    # Spread dots evenly within -0.3 to 0.3 of the bar center
-                    x_offsets = np.linspace(-0.3, 0.3, n_samples)
-                    x_points = [i + offset for offset in x_offsets]
-                ax.scatter(x_points, sample_activities, color='black', s=30, zorder=10, alpha=0.7)
+                # All dots at the horizontal center of the bar
+                x_points = [i] * len(sample_activities)
+                ax.scatter(x_points, sample_activities, color='black', s=15, zorder=10, alpha=0.7)
         else:
             # Original bar plot for individual samples
             bars = ax.bar(x_positions, activities.values, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
@@ -1958,18 +2012,38 @@ class MultiModulon:
                     current_group = group_labels[i]
         
         # Set labels and title
-        if condition_mode:
-            ax.set_xlabel('Conditions', fontsize=12)
-        else:
-            ax.set_xlabel('Samples', fontsize=12)
+        ax.set_xlabel('Samples', fontsize=12)
         ax.set_ylabel('iModulon Activity', fontsize=12)
         ax.set_title(f'iModulon {component} on {species}', fontsize=14)
         
         # Set x-axis ticks
-        if condition_mode:
-            # Show condition labels on x-axis
-            ax.set_xticks(x_positions)
-            ax.set_xticklabels(x_labels, rotation=45, ha='right')
+        if condition_mode and group_col and group_labels:
+            # In condition mode with grouping, show group labels like normal
+            # Show group labels on x-axis
+            tick_positions = []
+            tick_labels = []
+            current_group = None
+            group_start = 0
+            
+            for i, group in enumerate(group_labels):
+                if group != current_group:
+                    if current_group is not None:
+                        # Add tick for previous group
+                        tick_positions.append((group_start + i - 1) / 2)
+                        tick_labels.append(current_group)
+                    current_group = group
+                    group_start = i
+            
+            # Add last group
+            if current_group is not None:
+                tick_positions.append((group_start + len(group_labels) - 1) / 2)
+                tick_labels.append(current_group)
+            
+            ax.set_xticks(tick_positions)
+            ax.set_xticklabels(tick_labels, rotation=45, ha='right')
+        elif condition_mode:
+            # In condition mode without grouping, don't show ticks
+            ax.set_xticks([])
         elif group_col and group_labels:
             # Show group labels on x-axis
             tick_positions = []
