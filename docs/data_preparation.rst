@@ -6,19 +6,23 @@ This guide explains how to prepare your data for MultiModulon analysis.
 Directory Structure
 -------------------
 
-MultiModulon expects data organized in a specific directory structure:
+MultiModulon expects data organized in a specific directory structure (Output from https://github.com/Gaoyuan-Li/MAPPED):
 
 .. code-block:: text
 
    Input_Data/
    ├── Species1/
-   │   ├── log_tpm.csv           # Expression matrix (required)
-   │   ├── log_tpm_norm.csv      # Normalized expression (optional)
-   │   ├── sample_sheet.csv      # Sample metadata (required)
-   │   ├── gene_table.csv        # Gene annotations (optional)
-   │   ├── genome.fna            # Genome sequence (for BBH)
-   │   ├── genome.gff            # Gene annotations (for BBH)
-   │   └── protein.faa           # Protein sequences (optional)
+   │   ├── samplesheet/
+   │   │   ├── sample_sheet.csv      # Sample metadata (required)
+   │   ├── expression_matrices/
+   │   │   ├── log_tpm.csv           # Expression matrix (required)
+   │   │   └── log_tpm_norm.csv      # Normalized expression (required)
+   │   │   └── counts.csv            # Counts matrix (optional)
+   │   │   └── tpm.csv               # TPM matrix (optional)
+   │   ├── ref_genome/
+   │   │   ├── genome.fna            # Genome sequence (required)
+   │   │   ├── genome.gff            # Gene annotations (required)
+   │   │   └── protein.faa           # Protein sequences (required)
    ├── Species2/
    │   └── ... (same structure)
    └── Species3/
@@ -50,11 +54,11 @@ Sample Sheet (sample_sheet.csv)
 * **Required columns**: None (index must match expression matrix columns)
 * **Recommended columns**:
   
-  - ``condition``: Experimental condition
-  - ``project``: Project or study name
-  - ``biological_replicate``: Replicate number (1, 2, 3, etc.)
-  - ``study_accession``: Study identifier (e.g., from GEO)
-  - ``sample_description``: Brief description
+  - ``condition``: Experimental condition # only when available
+  - ``project``: Project or study name # only when available
+  - ``biological_replicate``: Replicate number (1, 2, 3, etc.) # only when available
+  - ``study_accession``: Study identifier (e.g., from GEO) # only when available
+  - ``sample_description``: Brief description # only when available
 
 Example:
 
@@ -90,78 +94,18 @@ Normalized Expression (log_tpm_norm.csv)
 Files for BBH Analysis
 ----------------------
 
-To perform gene alignment across species, you need either:
-
-Option 1: Genome Files
-~~~~~~~~~~~~~~~~~~~~~~
+To perform gene alignment across species, you need:
 
 * ``genome.fna``: Genome sequence in FASTA format
 * ``genome.gff``: Gene annotations in GFF3 format
-
-Option 2: Protein Sequences
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 * ``protein.faa``: Protein sequences in FASTA format
-
-The protein sequences will be automatically extracted from genome files if not provided.
 
 Data Quality Checklist
 ----------------------
 
 Before running analysis, ensure:
 
-1. ✓ All expression values are log-transformed
-2. ✓ Sample names are consistent between expression matrix and sample sheet
-3. ✓ Gene identifiers are consistent across all files
-4. ✓ No missing values in expression matrix (or handle appropriately)
-5. ✓ Biological replicates are properly labeled (1, 2, 3, not 1, 1, 2)
-6. ✓ File encodings are UTF-8 (especially important for gene names)
-
-Handling Special Cases
-----------------------
-
-Multiple Conditions
-~~~~~~~~~~~~~~~~~~~
-
-If you have multiple conditions in your experiment:
-
-.. code-block:: python
-
-   # The condition column will be automatically detected
-   # for grouped visualization
-   mm.view_iModulon_activities(
-       species='Species1',
-       component='Core_1',
-       highlight_condition=['Treatment1', 'Treatment2']
-   )
-
-Missing Gene Annotations
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-If gene annotations are not available:
-
-.. code-block:: python
-
-   # Create gene table from GFF file
-   mm.create_gene_table()
-   
-   # Or use the gff2pandas utility
-   gene_df = mm.gff2pandas('genome.gff', feature='CDS')
-
-Large Datasets
-~~~~~~~~~~~~~~
-
-For datasets with many samples (>1000):
-
-* Consider downsampling or splitting into batches
-* Use GPU mode for faster computation
-* Increase memory allocation if needed
-
-Next Steps
-----------
-
-Once your data is properly formatted:
-
-1. Follow the :doc:`quickstart` guide
-2. See :doc:`initialization` for detailed initialization options
-3. Check :doc:`gene_alignment` for BBH and alignment procedures
+1. ✓ Sample names are consistent between expression matrix and sample sheet
+2. ✓ Gene identifiers are consistent across all files
+3. ✓ No missing values in expression matrix (or handle appropriately)
+4. ✓ Biological replicates are properly labeled (1, 2, 3, not 1, 1, 2) # only when available

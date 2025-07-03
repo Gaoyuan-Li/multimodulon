@@ -35,7 +35,7 @@ Basic BBH Generation
    .. code-block:: python
       
       # Generate BBH with multiple threads
-      mm.generate_BBH(
+      multiModulon.generate_BBH(
           output_path="Output_BBH",
           threads=8
       )
@@ -95,14 +95,14 @@ After BBH generation, align genes across species:
    .. code-block:: python
       
       # Basic alignment
-      combined_gene_db = mm.align_genes()
+      combined_gene_db = multiModulon.align_genes() 
       
       # With custom parameters
-      combined_gene_db = mm.align_genes(
+      combined_gene_db = multiModulon.align_genes(
           input_bbh_dir="Output_BBH",
           output_dir="Output_Gene_Info",
           reference_order=['Species1', 'Species2', 'Species3'],
-          bbh_threshold=40  # 40% identity threshold
+          bbh_threshold=90  # 90% identity threshold
       )
       
       # Examine the results
@@ -121,11 +121,11 @@ Example output:
 
 .. code-block:: text
 
-   gene_family  Species1    Species2    Species3
-   0            gene001     geneA_001   locus_001
-   1            gene002     geneA_002   NaN
-   2            gene003     geneA_003   locus_003
-   3            NaN         geneA_004   locus_004
+   Species1    Species2    Species3    row_label
+   gene001     geneA_001   locus_001   gene001
+   gene002     geneA_002   NaN         gene002
+   NaN         geneA_003   locus_003   geneA_003
+   NaN         NaN         locus_004   locus_004
 
 Union-Find Algorithm
 ~~~~~~~~~~~~~~~~~~~~
@@ -145,10 +145,10 @@ Control alignment stringency:
 .. code-block:: python
 
    # Strict alignment - high identity threshold
-   strict_db = mm.align_genes(bbh_threshold=80)
+   strict_db = multiModulon.align_genes(bbh_threshold=80)
    
    # Permissive alignment - lower threshold  
-   permissive_db = mm.align_genes(bbh_threshold=30)
+   permissive_db = multiModulon.align_genes(bbh_threshold=30)
    
    # Check alignment statistics
    print(f"Strict: {strict_db.notna().sum().sum()} genes aligned")
@@ -170,51 +170,18 @@ After alignment, generate aligned expression matrices:
    .. code-block:: python
       
       # Generate aligned expression matrices
-      mm.generate_X("Output_Gene_Info")
+      multiModulon.generate_X("Output_Gene_Info")
       
       # Access aligned matrices
-      for species in mm.species:
-          X = mm[species].X
+      for species in multiModulon.species:
+          X = multiModulon[species].X
           print(f"{species}: {X.shape}")
           print(f"Missing genes: {X.isna().sum().sum()}")
 
 The aligned matrices have:
 
 * **Consistent row order**: Same gene families in same positions
-* **NaN handling**: Missing genes filled with NaN
 * **Ready for ICA**: Can be directly used for multi-view ICA
-
-Working with Results
---------------------
-
-Access Ortholog Information
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   # Get orthologs between two species
-   orthologs = mm.get_orthologs('Species1', 'Species2')
-   print(orthologs.head())
-   
-   # Find orthologs for a specific gene
-   gene_of_interest = 'gene001'
-   gene_family = combined_gene_db[
-       combined_gene_db['Species1'] == gene_of_interest
-   ]
-   print(f"Orthologs of {gene_of_interest}:")
-   print(gene_family)
-
-Export Alignment Results
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   # The combined gene database is automatically saved
-   # You can also save it manually
-   combined_gene_db.to_csv("my_gene_alignment.csv")
-   
-   # Save BBH results
-   mm.save_bbh("bbh_results.pkl")
 
 Quality Control
 ---------------
@@ -243,42 +210,6 @@ Check alignment quality:
        ).sum()
        print(f"{species}-specific: {specific}")
 
-Troubleshooting
----------------
-
-**No BBH results:**
-
-.. code-block:: python
-
-   # Check if protein sequences exist
-   import os
-   for species in mm.species:
-       faa_path = f"Input_Data/{species}/protein.faa"
-       if os.path.exists(faa_path):
-           print(f"{species}: protein.faa exists")
-       else:
-           print(f"{species}: no protein.faa - check genome files")
-
-**Low ortholog coverage:**
-
-.. code-block:: python
-
-   # Try lower threshold
-   combined_gene_db = mm.align_genes(bbh_threshold=30)
-   
-   # Or check sequence quality
-   # Low quality assemblies may have fragmented genes
-
-**Memory issues with large datasets:**
-
-.. code-block:: python
-
-   # Process in batches or use more memory
-   # BBH is the memory-intensive step
-   
-   # Alternative: pre-compute BBH externally
-   # and provide results to align_genes
-
 Advanced Usage
 --------------
 
@@ -296,22 +227,8 @@ For custom ortholog definitions:
    from multimodulon.gene_alignment import create_combined_gene_db
    combined_db = create_combined_gene_db(
        custom_orthologs,
-       species_list=mm.species
+       species_list=multiModulon.species   
    )
-
-Incremental Analysis
-~~~~~~~~~~~~~~~~~~~~
-
-Add new species without re-running all BBH:
-
-.. code-block:: python
-
-   # Run BBH only for new species pairs
-   existing_species = ['Species1', 'Species2']
-   new_species = 'Species3'
-   
-   # Generate BBH only for new pairs
-   # Then re-run align_genes with all BBH files
 
 Next Steps
 ----------

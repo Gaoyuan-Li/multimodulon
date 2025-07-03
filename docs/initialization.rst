@@ -13,7 +13,7 @@ The MultiModulon object is the central class for all analyses:
    from multimodulon import MultiModulon
    
    # Initialize with path to your Input_Data directory
-   mm = MultiModulon("path/to/Input_Data")
+   multiModulon = MultiModulon("path/to/Input_Data")
 
 During initialization, MultiModulon will:
 
@@ -38,10 +38,10 @@ Constructor Parameters
    .. code-block:: python
       
       # Absolute path
-      mm = MultiModulon("/home/user/project/Input_Data")
+      multiModulon = MultiModulon("/home/user/project/Input_Data")
       
       # Relative path
-      mm = MultiModulon("./Input_Data")
+      multiModulon = MultiModulon("./Input_Data")
 
 Accessing Loaded Data
 ---------------------
@@ -54,7 +54,7 @@ View Summary
 .. code-block:: python
 
    # Print summary of all loaded data
-   mm.summary()
+   multiModulon.summary()
    
    # Output:
    # MultiModulon Summary:
@@ -69,7 +69,7 @@ List Species
 .. code-block:: python
 
    # Get list of loaded species
-   species_list = mm.species
+   species_list = multiModulon.species
    print(species_list)
    # ['Species1', 'Species2', 'Species3']
 
@@ -79,11 +79,11 @@ Access Species Data
 .. code-block:: python
 
    # Access data for a specific species using dictionary syntax
-   species1_data = mm['Species1']
+   species1_data = multiModulon['Species1']
    
    # Or iterate through all species
-   for species_name in mm.species:
-       data = mm[species_name]
+   for species_name in multiModulon.species:
+       data = multiModulon[species_name]
        print(f"{species_name}: {data.log_tpm.shape}")
 
 Species Data Container
@@ -112,7 +112,7 @@ Each species data is stored in a ``SpeciesData`` object with these attributes:
    .. code-block:: python
       
       # Access species data
-      species_data = mm['Species1']
+      species_data = multiModulon['Species1']
       
       # Access expression matrix
       expr_matrix = species_data.log_tpm
@@ -133,8 +133,8 @@ Manual Validation
 .. code-block:: python
 
    # Validate data for all species
-   for species in mm.species:
-       is_valid = mm[species].validate_data()
+   for species in multiModulon.species:
+       is_valid = multiModulon[species].validate_data()
        if not is_valid:
            print(f"Warning: {species} has data inconsistencies")
 
@@ -145,65 +145,6 @@ Common Validation Checks
 2. **Gene consistency**: Gene IDs are consistent across files  
 3. **Data types**: Numeric values in expression matrices
 4. **File formats**: Proper CSV formatting
-
-Handling Missing Data
----------------------
-
-MultiModulon gracefully handles missing optional files:
-
-.. code-block:: python
-
-   species_data = mm['Species1']
-   
-   # Check if optional data is available
-   if species_data.gene_table is not None:
-       print("Gene annotations available")
-   else:
-       print("No gene annotations - using gene IDs only")
-   
-   # Check if ICA has been run
-   if species_data.M is not None:
-       print("ICA results available")
-   else:
-       print("ICA not yet performed")
-
-Configuration Options
----------------------
-
-While MultiModulon has sensible defaults, you can configure behavior:
-
-Expression Matrix Selection
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   # By default, X uses log_tpm_norm if available, otherwise log_tpm
-   # You can manually set which matrix to use for analysis:
-   
-   species_data = mm['Species1']
-   
-   # Force use of non-normalized data
-   species_data._X = species_data.log_tpm
-   
-   # Or create custom normalized matrix
-   custom_norm = some_normalization_function(species_data.log_tpm)
-   species_data._X = custom_norm
-
-Memory Management
-~~~~~~~~~~~~~~~~~
-
-For large datasets, data is lazy-loaded to conserve memory:
-
-.. code-block:: python
-
-   # Data is only loaded when first accessed
-   species_data = mm['Species1']  # No data loaded yet
-   
-   # This triggers loading of expression matrix
-   expr = species_data.log_tpm  # Now data is loaded and cached
-   
-   # Subsequent accesses use cached data
-   expr2 = species_data.log_tpm  # Returns cached data
 
 Next Steps
 ----------
@@ -231,7 +172,7 @@ Troubleshooting
 .. code-block:: python
 
    # Check specific issues
-   species_data = mm['Species1']
+   species_data = multiModulon['Species1']
    
    # Verify sample names match
    expr_samples = set(species_data.log_tpm.columns)
