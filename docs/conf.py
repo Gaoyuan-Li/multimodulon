@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.abspath('../..'))
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'MultiModulon'
-copyright = '2024, MultiModulon Contributors'
-author = 'MultiModulon Contributors'
+copyright = '2025, Gaoyuan Li'
+author = 'Gaoyuan Li'
 release = '0.1.0'
 version = '0.1.0'
 
