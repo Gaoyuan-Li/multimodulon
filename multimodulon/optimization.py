@@ -493,15 +493,25 @@ def _check_component_consistency(multimodulon: 'MultiModulon', A: pd.DataFrame, 
             continue
             
         vals = row[cols].astype(float).values
-        if vals.size == 0:
+        if vals.size < 2:
             continue
         
-        abs_vals = np.abs(vals)
-        mixed_signs = (vals > 0).any() and (vals < 0).any()
-        all_big = (abs_vals > 5).all()
-        wide_span = abs_vals.max() - abs_vals.min() > 20
-        
-        if (mixed_signs and all_big) or wide_span:
-            return False  # Inconsistent
+        # Check pairwise consistency between all biological replicates
+        for i in range(len(vals)):
+            for j in range(i + 1, len(vals)):
+                val1, val2 = vals[i], vals[j]
+                abs1, abs2 = abs(val1), abs(val2)
+                
+                # Check if this pair has large opposite signs
+                opposite_signs = (val1 > 0 and val2 < 0) or (val1 < 0 and val2 > 0)
+                both_large = abs1 > 5 and abs2 > 5
+                
+                if opposite_signs and both_large:
+                    return False  # Inconsistent
+                
+                # Check if this pair has wide span
+                pair_span = abs(abs1 - abs2) > 20
+                if pair_span:
+                    return False  # Inconsistent
     
     return True  # Consistent

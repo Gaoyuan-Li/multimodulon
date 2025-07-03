@@ -1778,45 +1778,84 @@ class MultiModulon:
         
         # Get sample sheet
         sample_sheet = species_data.sample_sheet
+        condition_mode = False
+        condition_data = {}
+        
         if sample_sheet is None:
             # If no sample sheet, use simple bar plot without grouping
             x_positions = range(len(activities))
             x_labels = activities.index.tolist()
             group_labels = []
         else:
-            # Determine grouping column
-            group_col = None
-            if 'project' in sample_sheet.columns:
-                group_col = 'project'
-            elif 'study_accession' in sample_sheet.columns:
-                group_col = 'study_accession'
-            
-            if group_col:
+            # Check if condition column exists
+            if 'condition' in sample_sheet.columns:
+                condition_mode = True
                 # Ensure activities and sample_sheet are aligned
                 common_samples = [s for s in activities.index if s in sample_sheet.index]
                 activities = activities[common_samples]
                 sample_sheet = sample_sheet.loc[common_samples]
                 
-                # Get group labels
-                group_labels = sample_sheet[group_col].fillna('Unknown').astype(str).tolist()
-                unique_groups = []
-                for g in group_labels:
-                    if g not in unique_groups:
-                        unique_groups.append(g)
+                # Group samples by condition
+                for sample in common_samples:
+                    condition = sample_sheet.loc[sample, 'condition']
+                    if condition not in condition_data:
+                        condition_data[condition] = {
+                            'samples': [],
+                            'activities': [],
+                            'mean_activity': 0
+                        }
+                    condition_data[condition]['samples'].append(sample)
+                    condition_data[condition]['activities'].append(activities[sample])
                 
-                x_positions = range(len(activities))
-                x_labels = [unique_groups.index(g) if g in unique_groups else -1 for g in group_labels]
-            else:
-                # No grouping column available
-                x_positions = range(len(activities))
-                x_labels = activities.index.tolist()
+                # Calculate mean activities for each condition
+                conditions = list(condition_data.keys())
+                mean_activities = []
+                for condition in conditions:
+                    mean_act = np.mean(condition_data[condition]['activities'])
+                    condition_data[condition]['mean_activity'] = mean_act
+                    mean_activities.append(mean_act)
+                
+                x_positions = range(len(conditions))
+                x_labels = conditions
                 group_labels = []
+            else:
+                # Original logic for project/study grouping
+                # Determine grouping column
+                group_col = None
+                if 'project' in sample_sheet.columns:
+                    group_col = 'project'
+                elif 'study_accession' in sample_sheet.columns:
+                    group_col = 'study_accession'
+                
+                if group_col:
+                    # Ensure activities and sample_sheet are aligned
+                    common_samples = [s for s in activities.index if s in sample_sheet.index]
+                    activities = activities[common_samples]
+                    sample_sheet = sample_sheet.loc[common_samples]
+                    
+                    # Get group labels
+                    group_labels = sample_sheet[group_col].fillna('Unknown').astype(str).tolist()
+                    unique_groups = []
+                    for g in group_labels:
+                        if g not in unique_groups:
+                            unique_groups.append(g)
+                    
+                    x_positions = range(len(activities))
+                    x_labels = [unique_groups.index(g) if g in unique_groups else -1 for g in group_labels]
+                else:
+                    # No grouping column available
+                    x_positions = range(len(activities))
+                    x_labels = activities.index.tolist()
+                    group_labels = []
         
         # Prepare colors for bars
         colors = []
         legend_elements = []
         
-        if highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
+        if condition_mode:
+            # In condition mode, use default colors unless highlighting is specified
+            colors = ['lightblue'] * len(conditions)
+        elif highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
             # Convert single string to list for uniform handling
             if isinstance(highlight_project, str):
                 highlight_projects = [highlight_project]
@@ -1882,7 +1921,20 @@ class MultiModulon:
             plt.rcParams['font.family'] = font_prop.get_name()
         
         # Create bar plot
-        bars = ax.bar(x_positions, activities.values, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+        if condition_mode:
+            # Plot averaged bars for conditions
+            bars = ax.bar(x_positions, mean_activities, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+            
+            # Add individual sample points as black dots
+            for i, condition in enumerate(conditions):
+                sample_activities = condition_data[condition]['activities']
+                # Create small random jitter for x-position to avoid overlapping dots
+                jitter = np.random.uniform(-0.2, 0.2, size=len(sample_activities))
+                x_points = [i + j for j in jitter]
+                ax.scatter(x_points, sample_activities, color='black', s=30, zorder=10, alpha=0.7)
+        else:
+            # Original bar plot for individual samples
+            bars = ax.bar(x_positions, activities.values, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
         
         # Add horizontal line at y=0
         ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
@@ -1900,12 +1952,19 @@ class MultiModulon:
                     current_group = group_labels[i]
         
         # Set labels and title
-        ax.set_xlabel('Samples', fontsize=12)
+        if condition_mode:
+            ax.set_xlabel('Conditions', fontsize=12)
+        else:
+            ax.set_xlabel('Samples', fontsize=12)
         ax.set_ylabel('iModulon Activity', fontsize=12)
         ax.set_title(f'iModulon {component} on {species}', fontsize=14)
         
         # Set x-axis ticks
-        if group_col and group_labels:
+        if condition_mode:
+            # Show condition labels on x-axis
+            ax.set_xticks(x_positions)
+            ax.set_xticklabels(x_labels, rotation=45, ha='right')
+        elif group_col and group_labels:
             # Show group labels on x-axis
             tick_positions = []
             tick_labels = []
