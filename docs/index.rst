@@ -42,7 +42,6 @@ Contents
    :caption: Examples & Tutorials
    
    examples/basic_workflow
-   examples/optimization_tutorial
    examples/visualization_tutorial
    
 .. toctree::

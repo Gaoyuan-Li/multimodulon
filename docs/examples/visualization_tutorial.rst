@@ -1,4 +1,4 @@
-Visualization Tutorial
+Characterization and Visualization 
 ======================
 
 This tutorial demonstrates how to visualize and characterize iModulons after running MultiModulon analysis.

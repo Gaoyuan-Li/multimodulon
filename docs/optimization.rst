@@ -204,4 +204,3 @@ After optimization:
 
 1. :doc:`multiview_ica` - Run ICA with optimal parameters
 2. :doc:`visualization` - Visualize and interpret components
-3. :doc:`examples/optimization_tutorial` - Detailed optimization tutorial
