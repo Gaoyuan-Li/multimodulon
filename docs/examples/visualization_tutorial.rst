@@ -63,13 +63,7 @@ Get detailed information about genes in a component:
        component="Core_1"
    )
 
-This returns a DataFrame with:
-
-* Gene identifiers
-* Gene names and products
-* COG categories
-* Gene weights
-* Presence in component (0/1)
+This returns a subset of the gene table.
 
 Activity Visualization
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -103,7 +97,6 @@ Features:
 
 * Bar plot of activities
 * Project/study grouping on x-axis
-* Condition averaging (if applicable)
 * Color highlighting for specific projects
 
 Comparing Core Components Across Species
@@ -205,7 +198,7 @@ Customize plot appearance:
        component="Core_1",
        fig_size=(8, 6),
        font_path="/usr/share/fonts/truetype/arial.ttf",
-       save_path="custom_plot.pdf"
+       save_path="custom_plot.svg"  
    )
 
 Batch Visualization
@@ -229,13 +222,13 @@ Visualize all components systematically:
            species="Species1",
            component=comp,
            show_COG=True,
-           save_path=f"weights/{comp}_weights.png"
+           save_path=f"weights/{comp}_weights.svg"
        )
        
        multiModulon.view_iModulon_activities(
            species="Species1",
            component=comp,
-           save_path=f"activities/{comp}_activities.png"
+           save_path=f"activities/{comp}_activities.svg"
        )
 
 Interpreting Results
@@ -248,7 +241,6 @@ Core components represent conserved regulatory modules:
 
 * High conservation across species indicates fundamental regulation
 * Differences in gene membership reveal species adaptations
-* Activity patterns show condition-specific regulation
 
 Unique Components
 ~~~~~~~~~~~~~~~~~
@@ -257,33 +249,6 @@ Unique components capture species-specific regulation:
 
 * May represent adaptation to specific environments
 * Could indicate gain/loss of regulatory mechanisms
-* Activities often correlate with species-specific conditions
-
-Quality Assessment
-~~~~~~~~~~~~~~~~~~
-
-Check component quality:
-
-.. code-block:: python
-
-   # Access thresholds
-   thresholds = multiModulon['Species1'].M_thresholds
-   
-   # Check genes per component
-   presence = multiModulon['Species1'].presence_matrix
-   genes_per_component = presence.sum()
-   
-   print("Genes per component:")
-   print(genes_per_component.sort_values(ascending=False))
-
-Best Practices
---------------
-
-1. **Start with core components** - These are most reliable
-2. **Check gene enrichment** - Look for functional coherence
-3. **Examine activities** - Should correlate with known biology
-4. **Compare across species** - Conservation validates findings
-5. **Document interpretations** - Save plots with annotations
 
 Export for Further Analysis
 ---------------------------
