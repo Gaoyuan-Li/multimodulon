@@ -1,7 +1,7 @@
 Changelog
 =========
 
-Version 0.1.0 (2024-01)
+Version 0.1.0 (2025-07-03)
 -----------------------
 
 Initial release of MultiModulon package.
@@ -53,20 +53,3 @@ Initial release of MultiModulon package.
 * Comprehensive API documentation
 * Step-by-step tutorials
 * Example workflows
-* Best practices guide
-
-Known Issues
-------------
-
-* Font warnings on some systems - specify font_path parameter
-* Memory usage high for >10 species - use batch processing
-* GPU memory limits for very large datasets - reduce batch size
-
-Future Plans
-------------
-
-* Support for time-series analysis
-* Integration with regulatory databases
-* Interactive visualization dashboard
-* Automated biological interpretation
-* Cross-species regulatory network inference
