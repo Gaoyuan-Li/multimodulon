@@ -1725,7 +1725,10 @@ class MultiModulon:
     
     def view_iModulon_activities(self, species: str, component: str, save_path: Optional[str] = None,
                                 fig_size: Tuple[float, float] = (12, 3), font_path: Optional[str] = None,
-                                highlight_project: Optional[Union[str, List[str]]] = None, highlight_study: Optional[str] = None):
+                                highlight_project: Optional[Union[str, List[str]]] = None, highlight_study: Optional[str] = None,
+                                highlight_condition: Optional[Union[str, List[str]]] = None,
+                                show_highlight_only: bool = False,
+                                show_highlight_only_color: Optional[List[str]] = None):
         """
         Visualize iModulon activities for a specific component in a species.
         
@@ -1752,6 +1755,13 @@ class MultiModulon:
             Can be a single project name (string) or multiple project names (list)
         highlight_study : str, optional
             Study accession to highlight with different colors. Uses 'sample_description' column for legend
+        highlight_condition : str or list of str, optional
+            Condition name(s) to highlight. Only used when 'condition' column exists in sample sheet
+        show_highlight_only : bool, optional
+            If True, only show highlighted conditions. Default: False
+        show_highlight_only_color : list of str, optional
+            Colors for highlighted conditions when show_highlight_only=True.
+            Must match the number of highlighted conditions
             
         Raises
         ------
@@ -1775,6 +1785,21 @@ class MultiModulon:
         
         # Get component activities
         activities = species_data.A.loc[component]
+        
+        # Validate highlight parameters
+        if show_highlight_only and not highlight_condition:
+            raise ValueError("highlight_condition must be provided when show_highlight_only=True")
+            
+        if show_highlight_only and highlight_condition and show_highlight_only_color:
+            # Convert to list if string
+            if isinstance(highlight_condition, str):
+                highlight_conditions = [highlight_condition]
+            else:
+                highlight_conditions = highlight_condition
+                
+            if len(show_highlight_only_color) != len(highlight_conditions):
+                raise ValueError(f"Number of colors ({len(show_highlight_only_color)}) must match "
+                               f"number of highlighted conditions ({len(highlight_conditions)})")
         
         # Get sample sheet
         sample_sheet = species_data.sample_sheet
@@ -1813,6 +1838,19 @@ class MultiModulon:
                 for condition in conditions:
                     mean_act = np.mean(condition_data[condition]['activities'])
                     condition_data[condition]['mean_activity'] = mean_act
+                
+                # Filter conditions if show_highlight_only is True
+                if show_highlight_only and highlight_condition:
+                    if isinstance(highlight_condition, str):
+                        highlight_conditions = [highlight_condition]
+                    else:
+                        highlight_conditions = highlight_condition
+                    
+                    # Keep only highlighted conditions
+                    filtered_conditions = [c for c in conditions if c in highlight_conditions]
+                    if not filtered_conditions:
+                        raise ValueError(f"None of the highlighted conditions {highlight_conditions} found in data")
+                    conditions = filtered_conditions
                 
                 # Still use project/study grouping for x-axis
                 group_col = None
@@ -1890,7 +1928,28 @@ class MultiModulon:
         colors = []
         legend_elements = []
         
-        if condition_mode and highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
+        if condition_mode and show_highlight_only and show_highlight_only_color:
+            # Use provided colors for highlighted conditions
+            for i, condition in enumerate(conditions):
+                color = show_highlight_only_color[i]
+                colors.append(color)
+                legend_elements.append((condition, color))
+        elif condition_mode and highlight_condition and not show_highlight_only:
+            # Highlight specific conditions but show all
+            if isinstance(highlight_condition, str):
+                highlight_conditions = [highlight_condition]
+            else:
+                highlight_conditions = highlight_condition
+                
+            for condition in conditions:
+                if condition in highlight_conditions:
+                    color = plt.cm.tab10(len([elem for elem in legend_elements if elem[0] in highlight_conditions]))
+                    if condition not in [elem[0] for elem in legend_elements]:
+                        legend_elements.append((condition, color))
+                    colors.append(color)
+                else:
+                    colors.append('lightblue')
+        elif condition_mode and highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
             # In condition mode with highlighting, color by condition
             # Convert single string to list for uniform handling
             if isinstance(highlight_project, str):
@@ -2006,6 +2065,11 @@ class MultiModulon:
         # Add horizontal line at y=0
         ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
         
+        # Reduce gap between bars by adjusting x-axis limits
+        if condition_mode:
+            # Set tighter x-axis limits to reduce gaps
+            ax.set_xlim(-0.5, len(conditions) - 0.5)
+        
         # Remove grid
         ax.grid(False)
         
@@ -2024,7 +2088,10 @@ class MultiModulon:
         ax.set_title(f'iModulon {component} on {species}', fontsize=14)
         
         # Set x-axis ticks
-        if condition_mode and group_col and group_labels:
+        if condition_mode and show_highlight_only:
+            # No x-axis ticks when showing highlight only
+            ax.set_xticks([])
+        elif condition_mode and group_col and group_labels:
             # In condition mode with grouping, show group labels like normal
             # Show group labels on x-axis
             tick_positions = []
