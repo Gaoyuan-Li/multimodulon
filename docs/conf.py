@@ -7,6 +7,39 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath('../..'))
 
+# Mock imports for autodoc
+autodoc_mock_imports = [
+    'pandas',
+    'numpy',
+    'biopython',
+    'tqdm',
+    'ipywidgets',
+    'scipy',
+    'matplotlib',
+    'scikit-learn',
+    'sklearn',
+    'torch',
+    'torchvision',
+    'torchaudio',
+    'geotorch',
+    'Bio',
+]
+
+# Disable code execution in notebooks
+nbsphinx_execute = 'never'
+
+# For matplotlib/plotting, use static images
+plot_include_source = True
+plot_html_show_source_link = False
+plot_formats = ['png']
+
+# Disable any auto-execution extensions
+extensions = [
+    'sphinx.ext.autodoc',
+    'sphinx.ext.viewcode',
+    'nbsphinx',  # if using notebooks
+    # Remove or comment out execution-related extensions
+]
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
