@@ -6,18 +6,35 @@ This guide will help you install MultiModulon and its dependencies.
 Requirements
 ------------
 
-* Python 3.8 or higher
-* CUDA-capable GPU (optional, for GPU acceleration)
-* Docker (optional, for BBH analysis using containerized BLAST)
+* Python 3.10 or higher
+* CUDA-capable GPU
+* Docker
 
 Basic Installation
 ------------------
+
+Install BLAST+ (Required for BBH generation)
+
+.. code-block:: bash
+
+   conda install -c bioconda blast
+
+Install PyTorch (Required for multi-view ICA)
+
+.. code-block:: bash
+
+   # Install PyTorch with CUDA support
+   pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+
+   # Install geotorch
+   pip install geotorch==0.3.0
+
 
 Install MultiModulon using pip:
 
 .. code-block:: bash
 
-   pip install multimodulon
+   pip install git+https://github.com/Gaoyuan-Li/multimodulon.git
 
 Development Installation
 ------------------------
@@ -42,20 +59,6 @@ Core dependencies will be automatically installed:
 * pytorch (for multi-view ICA)
 * biopython (for sequence handling)
 
-Optional Dependencies
----------------------
-
-For GPU support:
-
-.. code-block:: bash
-
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-For BBH analysis with Docker:
-
-.. code-block:: bash
-
-   docker pull quay.io/biocontainers/blast:2.16.0--h66d330f_5
 
 Verifying Installation
 ----------------------
@@ -66,14 +69,3 @@ To verify that MultiModulon is installed correctly:
 
    import multimodulon
    print(multimodulon.__version__)
-
-Troubleshooting
----------------
-
-If you encounter issues:
-
-1. **ImportError**: Make sure all dependencies are installed
-2. **CUDA errors**: Check that your PyTorch installation matches your CUDA version
-3. **Docker errors**: Ensure Docker daemon is running and you have proper permissions
-
-For more help, please open an issue on our GitHub repository.

@@ -22,7 +22,7 @@ autodoc_mock_imports = [
     'torchaudio',
     'geotorch',
     'Bio',
-    "multimodulon"
+    'multimodulon'
 ]
 
 # Disable code execution in notebooks
@@ -40,6 +40,7 @@ extensions = [
     'nbsphinx',  # if using notebooks
     # Remove or comment out execution-related extensions
 ]
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
@@ -67,7 +68,7 @@ templates_path = ['_templates']
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
-exclude_patterns = []
+exclude_patterns = ['build', '_build', 'Thumbs.db', '.DS_Store']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
