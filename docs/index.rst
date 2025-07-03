@@ -5,6 +5,14 @@ Welcome to MultiModulon's documentation!
 
 **MultiModulon** is a Python package for an integrative multi-species/multi-strains/multi-modalities analysis framework. It enables the identification of conserved and species-specific regulatory modules across multiple bacterial strains or species.
 
+.. image:: https://img.shields.io/pypi/pyversions/multimodulon?style=for-the-badge&color=85A2C1
+   :target: https://www.python.org
+   :alt: Python 3.10+
+
+.. image:: https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white
+   :target: https://pytorch.org
+   :alt: PyTorch 2.6+
+
 .. note::
    This project is under active development. The API may change in future releases.
 
