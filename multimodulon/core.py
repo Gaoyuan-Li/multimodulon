@@ -1780,6 +1780,7 @@ class MultiModulon:
         sample_sheet = species_data.sample_sheet
         condition_mode = False
         condition_data = {}
+        group_col = None
         
         if sample_sheet is None:
             # If no sample sheet, use simple bar plot without grouping
@@ -1928,9 +1929,14 @@ class MultiModulon:
             # Add individual sample points as black dots
             for i, condition in enumerate(conditions):
                 sample_activities = condition_data[condition]['activities']
-                # Create small random jitter for x-position to avoid overlapping dots
-                jitter = np.random.uniform(-0.2, 0.2, size=len(sample_activities))
-                x_points = [i + j for j in jitter]
+                # Create evenly spaced positions for dots to avoid overlap
+                n_samples = len(sample_activities)
+                if n_samples == 1:
+                    x_points = [i]
+                else:
+                    # Spread dots evenly within -0.3 to 0.3 of the bar center
+                    x_offsets = np.linspace(-0.3, 0.3, n_samples)
+                    x_points = [i + offset for offset in x_offsets]
                 ax.scatter(x_points, sample_activities, color='black', s=30, zorder=10, alpha=0.7)
         else:
             # Original bar plot for individual samples
