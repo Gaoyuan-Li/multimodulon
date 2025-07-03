@@ -40,14 +40,14 @@ Basic Usage
 .. code-block:: python
 
    # Run with equal components per species
-   M_matrices = mm.run_multiview_ica(
+   M_matrices = multiModulon.run_multiview_ica(
        a=50,      # 50 total components per species
        c=20,      # 20 core components
        mode='gpu'
    )
    
    # Run with different components per species
-   M_matrices = mm.run_multiview_ica(
+   M_matrices = multiModulon.run_multiview_ica(
        a={'Species1': 50, 'Species2': 60, 'Species3': 45},
        c=20,
        mode='gpu'
@@ -61,7 +61,7 @@ Filter components by effect size:
 .. code-block:: python
 
    # Only keep components with Cohen's d > 5
-   M_matrices = mm.run_multiview_ica(
+   M_matrices = multiModulon.run_multiview_ica(
        a=60,
        c=25,
        effect_size_threshold=5,
@@ -100,7 +100,7 @@ Robust ICA Example
 .. code-block:: python
 
    # Run robust ICA with 100 runs
-   M_matrices, A_matrices = mm.run_robust_multiview_ica(
+   M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
        a={'Species1': 50, 'Species2': 60},
        c=20,
        num_runs=100,
@@ -123,7 +123,7 @@ Apply different thresholds to core and unique components:
 .. code-block:: python
 
    # Stricter threshold for core, looser for unique
-   M_matrices, A_matrices = mm.run_robust_multiview_ica(
+   M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
        a={'Species1': 50, 'Species2': 60},
        c=20,
        num_runs=100,
@@ -211,11 +211,11 @@ After running ICA, generate A matrices from M and X:
    .. code-block:: python
       
       # Generate A matrices after ICA
-      mm.generate_A()
+      multiModulon.generate_A()
       
       # Access generated matrices
-      for species in mm.species:
-          A = mm[species].A
+      for species in multiModulon.species:
+          A = multiModulon[species].A   
           print(f"{species} activities: {A.shape}")
 
 This is useful when:
@@ -237,7 +237,7 @@ Fine-tune the ICA algorithm:
    from multimodulon.multiview_ica import run_multiview_ica
    
    M_matrices = run_multiview_ica(
-       species_X_matrices={s: mm[s].X for s in mm.species},
+       species_X_matrices={s: multiModulon[s].X for s in multiModulon.species},
        a_values={'Species1': 50, 'Species2': 60},
        c=20,
        mode='gpu',
@@ -265,26 +265,10 @@ Choose based on your system:
        mode = 'cpu'
    
    # Run ICA
-   M_matrices = mm.run_multiview_ica(
+   M_matrices = multiModulon.run_multiview_ica(
        a=50,
        c=20,
        mode=mode
-   )
-
-Handling Large Datasets
-~~~~~~~~~~~~~~~~~~~~~~~
-
-For memory efficiency:
-
-.. code-block:: python
-
-   # Use batched processing
-   M_matrices = run_multiview_ica(
-       species_X_matrices=X_matrices,
-       a_values=a_values,
-       c=20,
-       batch_size=256,  # Process in batches
-       mode='gpu'
    )
 
 Quality Control
@@ -296,7 +280,7 @@ Assess ICA Results
 .. code-block:: python
 
    # Calculate explained variance
-   explained_var = mm.calculate_explained_variance()
+   explained_var = multiModulon.calculate_explained_variance()
    for species, var in explained_var.items():
        print(f"{species}: {var:.1%} variance explained")
    
@@ -307,16 +291,6 @@ Assess ICA Results
        M_matrices,
        num_top_gene=20
    )
-   
-   # Plot effect size distribution
-   import matplotlib.pyplot as plt
-   
-   plt.hist(effect_sizes, bins=30)
-   plt.xlabel("Cohen's d effect size")
-   plt.ylabel("Number of components")
-   plt.axvline(x=5, color='r', linestyle='--', label='Threshold')
-   plt.legend()
-   plt.show()
 
 Component Correlation
 ~~~~~~~~~~~~~~~~~~~~~
@@ -347,59 +321,12 @@ Check independence of components:
        corr = M1_core[comp].corr(M2_core[comp])
        print(f"{comp} correlation: {corr:.3f}")
 
-Troubleshooting
----------------
-
-**ICA doesn't converge:**
-
-.. code-block:: python
-
-   # Increase iterations
-   M_matrices = mm.run_multiview_ica(
-       a=50,
-       c=20,
-       max_iter=20000  # More iterations
-   )
-   
-   # Or try different initialization
-   M_matrices = mm.run_multiview_ica(
-       a=50,
-       c=20,
-       seed=123  # Different random seed
-   )
-
-**Memory errors:**
-
-.. code-block:: python
-
-   # Reduce batch size or switch to CPU
-   M_matrices = mm.run_multiview_ica(
-       a=50,
-       c=20,
-       mode='cpu',
-       batch_size=128  # Smaller batches
-   )
-
-**Poor component quality:**
-
-.. code-block:: python
-
-   # Try robust ICA with more runs
-   M_matrices, A_matrices = mm.run_robust_multiview_ica(
-       a={'Species1': 50, 'Species2': 60},
-       c=20,
-       num_runs=200,  # More runs
-       effect_size_threshold=7  # Stricter threshold
-   )
-
 Best Practices
 --------------
 
-1. **Always use robust ICA** for final results (100+ runs)
-2. **Check effect sizes** to ensure biological relevance
-3. **Validate core components** across species
-4. **Save intermediate results** for large analyses
-5. **Use GPU mode** when available for speed
+1. **Always use robust ICA** for final results (20+ runs)
+2. **Validate core components** across species
+3. **Use GPU mode** when available for speed
 
 Next Steps
 ----------

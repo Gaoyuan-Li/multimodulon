@@ -3,7 +3,7 @@
 Welcome to MultiModulon's documentation!
 ========================================
 
-**MultiModulon** is a Python package for an integrative multi-species/multi-strains/multi-modalities framework. It enables the identification of conserved and species-specific regulatory modules across multiple bacterial strains or species.
+**MultiModulon** is a Python package for an integrative multi-species/multi-strains/multi-modalities analysis framework. It enables the identification of conserved and species-specific regulatory modules across multiple bacterial strains or species.
 
 .. note::
    This project is under active development. The API may change in future releases.
@@ -16,9 +16,6 @@ Key Features
 * **Optimization Tools**: Automated optimization of component numbers using multiple metrics
 * **Visualization**: Comprehensive plotting functions for iModulon activities and gene weights
 * **GPU Support**: Accelerated computation using GPU for large-scale analyses
-
-.. note::
-   This project is under active development. The API may change in future releases.
 
 Contents
 --------
@@ -42,17 +39,6 @@ Contents
    
 .. toctree::
    :maxdepth: 2
-   :caption: API Reference
-   
-   api/core
-   api/optimization
-   api/gene_alignment
-   api/multiview_ica
-   api/visualization
-   api/utilities
-   
-.. toctree::
-   :maxdepth: 2
    :caption: Examples & Tutorials
    
    examples/basic_workflow
@@ -64,4 +50,4 @@ Contents
    :caption: Additional Information
    
    changelog
-   contributing
+   error_report

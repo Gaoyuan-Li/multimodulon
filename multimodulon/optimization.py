@@ -32,7 +32,7 @@ def optimize_number_of_core_components(
     mode: str = 'gpu',
     seed: int = 42,
     save_plot: Optional[str] = None,
-    metric: str = 'nre',
+    metric: str = 'effect_size',
     threshold: Optional[float] = None,
     effect_size_threshold: float = 5,
     num_top_gene: int = 20,

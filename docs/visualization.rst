@@ -6,12 +6,13 @@ This section covers the visualization functions for exploring iModulon gene weig
 Overview
 --------
 
-MultiModulon provides two main visualization functions:
+MultiModulon provides three main visualization functions:
 
-1. **view_iModulon_weights** - Visualize gene weights within a component
-2. **view_iModulon_activities** - Visualize component activities across samples
+1. **view_iModulon_weights** - Visualize gene weights within a component for a single species
+2. **view_core_iModulon_weights** - Visualize a core iModulon component across all species
+3. **view_iModulon_activities** - Visualize component activities across samples
 
-Both functions support customization of appearance, highlighting, and export options.
+All functions support customization of appearance, highlighting, and export options.
 
 Visualizing Gene Weights
 ------------------------
@@ -33,18 +34,18 @@ Basic Usage
 .. code-block:: python
 
    # Simple gene weight plot
-   mm.view_iModulon_weights(
+   multiModulon.view_iModulon_weights(
        species='Species1',
        component='Core_1',
-       save_path='core1_weights.png'
+       save_path='core1_weights.svg'
    )
    
    # With COG coloring
-   mm.view_iModulon_weights(
+   multiModulon.view_iModulon_weights(
        species='Species1', 
        component='Core_1',
        show_COG=True,
-       save_path='core1_weights_COG.png'
+       save_path='core1_weights_COG.svg'
    )
 
 Understanding the Plot
@@ -88,13 +89,98 @@ Customizing Appearance
 .. code-block:: python
 
    # Larger figure with custom font
-   mm.view_iModulon_weights(
+   multiModulon.view_iModulon_weights(
        species='Species1',
        component='Core_1',
        fig_size=(8, 6),
        font_path='/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-       save_path='custom_weights.png'
+       save_path='custom_weights.svg'
    )
+
+Visualizing Core iModulons Across Species
+-----------------------------------------
+
+.. py:method:: MultiModulon.view_core_iModulon_weights(component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, reference_order=None)
+
+   Visualize a core iModulon component across all species. Creates individual plots for each species
+   showing the same core component, or a combined plot with subplots when COG coloring is enabled.
+
+   :param str component: Core component name (e.g., 'Core_1', 'Core_2')
+   :param str save_path: Directory path to save plots (optional)
+   :param tuple fig_size: Figure size for individual plots (default: (6, 4))
+   :param str font_path: Path to custom font file (optional)
+   :param bool show_COG: Color genes by COG category (default: False)
+   :param list reference_order: Custom species order for subplot arrangement (optional)
+
+Basic Usage
+~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Visualize core component across all species
+   multiModulon.view_core_iModulon_weights(
+       component='Core_1',
+       save_path='core_plots/'
+   )
+   
+   # With COG coloring - creates combined plot
+   multiModulon.view_core_iModulon_weights(
+       component='Core_1',
+       show_COG=True,
+       save_path='core1_all_species_COG.svg'
+   )
+
+Custom Species Order
+~~~~~~~~~~~~~~~~~~~~
+
+When using COG coloring, arrange species in a specific order:
+
+.. code-block:: python
+
+   # Define custom order (first 3 in top row, rest in bottom row)
+   multiModulon.view_core_iModulon_weights(
+       component='Core_1',
+       show_COG=True,
+       reference_order=['MG1655', 'BL21', 'C', 'Crooks', 'W', 'W3110'],
+       save_path='core1_ordered.svg'
+   )
+
+Understanding the Output
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Without COG coloring**: Creates individual plots for each species
+   - Each plot saved as '{species}_{component}_iModulon.svg'
+   - Shows gene weights on genomic coordinates
+   - Includes threshold lines if available
+
+**With COG coloring**: Creates a single combined plot
+   - All species shown as subplots
+   - Shared COG category legend at bottom
+   - Genes colored by functional category
+   - Grey dots indicate genes below threshold
+
+Batch Processing Core Components
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Plot all core components
+   M = multiModulon[multiModulon.species[0]].M
+   core_components = [c for c in M.columns if c.startswith('Core_')]
+   
+   for comp in core_components:
+       # Individual species plots
+       multiModulon.view_core_iModulon_weights(
+           component=comp,
+           save_path=f'core_plots/{comp}/'
+       )
+       
+       # Combined COG plot
+       multiModulon.view_core_iModulon_weights(
+           component=comp,
+           show_COG=True,
+           save_path=f'core_plots/{comp}_COG.svg'
+       )
 
 Visualizing iModulon Activities
 -------------------------------
@@ -120,18 +206,18 @@ Basic Usage
 .. code-block:: python
 
    # Simple activity plot
-   mm.view_iModulon_activities(
+   multiModulon.view_iModulon_activities(
        species='Species1',
        component='Core_1',
-       save_path='core1_activities.png'
+       save_path='core1_activities.svg'
    )
    
    # Highlight specific project
-   mm.view_iModulon_activities(
+   multiModulon.view_iModulon_activities(
        species='Species1',
        component='Core_1',
        highlight_project='ProjectA',
-       save_path='core1_highlighted.png'
+       save_path='core1_highlighted.svg'
    )
 
 Condition-based Visualization
@@ -143,18 +229,18 @@ When a ``condition`` column exists in the sample sheet:
 
    # Activities are averaged by condition
    # Individual sample values shown as black dots
-   mm.view_iModulon_activities(
+   multiModulon.view_iModulon_activities(
        species='Species1',
        component='Core_1',
-       save_path='condition_averaged.png'
+       save_path='condition_averaged.svg'
    )
    
    # Highlight specific conditions
-   mm.view_iModulon_activities(
+   multiModulon.view_iModulon_activities(
        species='Species1',
        component='Core_1',
        highlight_condition=['Treatment1', 'Treatment2'],
-       save_path='conditions_highlighted.png'
+       save_path='conditions_highlighted.svg'
    )
 
 Show Only Highlighted Conditions
@@ -165,13 +251,13 @@ Focus on specific conditions:
 .. code-block:: python
 
    # Show only specific conditions with custom colors
-   mm.view_iModulon_activities(
+   multiModulon.view_iModulon_activities(
        species='Species1',
        component='Core_1',
        highlight_condition=['Control', 'Stress', 'Recovery'],
        show_highlight_only=True,
        show_highlight_only_color=['blue', 'red', 'green'],
-       save_path='focused_conditions.png'
+       save_path='focused_conditions.svg'
    )
 
 Multiple Highlighting Options
@@ -180,19 +266,19 @@ Multiple Highlighting Options
 .. code-block:: python
 
    # Highlight multiple projects
-   mm.view_iModulon_activities(
+   multiModulon.view_iModulon_activities(
        species='Species1',
        component='Core_1',
        highlight_project=['ProjectA', 'ProjectB'],
-       save_path='multi_project.png'
+       save_path='multi_project.svg'
    )
    
    # Highlight by study
-   mm.view_iModulon_activities(
+   multiModulon.view_iModulon_activities(
        species='Species1',
        component='Core_1',
        highlight_study='GSE12345',
-       save_path='study_highlighted.png'
+       save_path='study_highlighted.svg'
    )
 
 Advanced Visualization
@@ -206,114 +292,25 @@ Create plots for multiple components:
 .. code-block:: python
 
    # Plot all core components
-   for species in mm.species:
-       M = mm[species].M
+   for species in multiModulon.species:
+       M = multiModulon[species].M
        core_comps = [c for c in M.columns if c.startswith('Core_')]
        
        for comp in core_comps:
            # Gene weights
-           mm.view_iModulon_weights(
+           multiModulon.view_iModulon_weights(
                species=species,
                component=comp,
                show_COG=True,
-               save_path=f'weights/{species}_{comp}_weights.png'
+               save_path=f'weights/{species}_{comp}_weights.svg'
            )
            
            # Activities
-           mm.view_iModulon_activities(
+           multiModulon.view_iModulon_activities(
                species=species,
                component=comp,
-               save_path=f'activities/{species}_{comp}_activities.png'
+               save_path=f'activities/{species}_{comp}_activities.svg'
            )
-
-Custom Plotting
-~~~~~~~~~~~~~~~
-
-Access the data directly for custom plots:
-
-.. code-block:: python
-
-   import matplotlib.pyplot as plt
-   import seaborn as sns
-   
-   # Get component data
-   species = 'Species1'
-   component = 'Core_1'
-   
-   # Gene weights
-   M = mm[species].M
-   weights = M[component].sort_values(ascending=False)
-   
-   # Custom weight plot
-   plt.figure(figsize=(10, 6))
-   plt.bar(range(len(weights)), weights.values)
-   plt.xlabel('Genes (sorted by weight)')
-   plt.ylabel('Weight')
-   plt.title(f'{component} gene weights in {species}')
-   
-   # Annotate top genes
-   for i, (gene, weight) in enumerate(weights.head(5).items()):
-       plt.annotate(gene, (i, weight), rotation=45)
-   
-   plt.tight_layout()
-   plt.savefig('custom_weights.png')
-
-Activity Heatmaps
-~~~~~~~~~~~~~~~~~
-
-Create heatmaps for multiple components:
-
-.. code-block:: python
-
-   # Get activity matrix
-   A = mm['Species1'].A
-   
-   # Select components of interest
-   components = ['Core_1', 'Core_2', 'Core_3', 'Unique_1', 'Unique_2']
-   A_subset = A.loc[components]
-   
-   # Create heatmap
-   plt.figure(figsize=(15, 5))
-   sns.heatmap(
-       A_subset,
-       cmap='RdBu_r',
-       center=0,
-       cbar_kws={'label': 'Activity'},
-       yticklabels=True
-   )
-   plt.xlabel('Samples')
-   plt.ylabel('Components')
-   plt.title('iModulon activity heatmap')
-   plt.tight_layout()
-   plt.savefig('activity_heatmap.png')
-
-Comparative Visualization
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Compare components across species:
-
-.. code-block:: python
-
-   # Compare Core_1 across species
-   fig, axes = plt.subplots(len(mm.species), 1, figsize=(12, 4*len(mm.species)))
-   
-   component = 'Core_1'
-   for i, species in enumerate(mm.species):
-       ax = axes[i] if len(mm.species) > 1 else axes
-       
-       # Get activities
-       A = mm[species].A
-       activities = A.loc[component]
-       
-       # Plot
-       ax.bar(range(len(activities)), activities.values)
-       ax.set_title(f'{component} activities in {species}')
-       ax.set_xlabel('Samples')
-       ax.set_ylabel('Activity')
-       ax.axhline(y=0, color='black', linewidth=0.5)
-   
-   plt.tight_layout()
-   plt.savefig('core1_comparison.png')
 
 Export Options
 --------------
@@ -326,21 +323,21 @@ Save plots in different formats:
 .. code-block:: python
 
    # Vector format (scalable)
-   mm.view_iModulon_weights(
+   multiModulon.view_iModulon_weights(
        species='Species1',
        component='Core_1',
        save_path='weights.svg'  # SVG format
    )
    
    # High-resolution raster
-   mm.view_iModulon_weights(
+   multiModulon.view_iModulon_weights(
        species='Species1',
        component='Core_1',
-       save_path='weights.png'  # PNG at 300 DPI
+       save_path='weights.png'  # png at 300 DPI
    )
    
    # PDF for publications
-   mm.view_iModulon_weights(
+   multiModulon.view_iModulon_weights(
        species='Species1',
        component='Core_1',
        save_path='weights.pdf'
@@ -361,28 +358,28 @@ Organize outputs systematically:
        os.makedirs(f'{base_dir}/{subdir}', exist_ok=True)
    
    # Save with organized naming
-   for species in mm.species:
+   for species in multiModulon.species:
        for comp in ['Core_1', 'Core_2', 'Unique_1']:
            # Weights without COG
-           mm.view_iModulon_weights(
+           multiModulon.view_iModulon_weights(
                species=species,
                component=comp,
-               save_path=f'{base_dir}/weights/{species}_{comp}.png'
+               save_path=f'{base_dir}/weights/{species}_{comp}.svg'
            )
            
            # Weights with COG
-           mm.view_iModulon_weights(
+           multiModulon.view_iModulon_weights(
                species=species,
                component=comp,
                show_COG=True,
-               save_path=f'{base_dir}/weights_COG/{species}_{comp}.png'
+               save_path=f'{base_dir}/weights_COG/{species}_{comp}.svg'
            )
            
            # Activities
-           mm.view_iModulon_activities(
+           multiModulon.view_iModulon_activities(
                species=species,
                component=comp,
-               save_path=f'{base_dir}/activities/{species}_{comp}.png'
+               save_path=f'{base_dir}/activities/{species}_{comp}.svg'
            )
 
 Best Practices
@@ -390,59 +387,8 @@ Best Practices
 
 1. **Use descriptive filenames** - Include species and component names
 2. **Consistent figure sizes** - Use same dimensions for comparable plots
-3. **Save vector formats** - Use SVG/PDF for publication figures
+3. **Save vector formats** - Use SVG for publication figures
 4. **Document parameters** - Note thresholds and highlighting used
-5. **Check orientations** - Ensure text is readable in saved files
-
-Troubleshooting
----------------
-
-**Font warnings:**
-
-.. code-block:: python
-
-   # Use system fonts or specify path
-   import matplotlib.font_manager as fm
-   
-   # List available fonts
-   fonts = fm.findSystemFonts()
-   print("Available fonts:", fonts[:5])
-   
-   # Use a specific font
-   mm.view_iModulon_weights(
-       species='Species1',
-       component='Core_1',
-       font_path=fonts[0]  # Use first available
-   )
-
-**Large datasets (many samples):**
-
-.. code-block:: python
-
-   # Increase figure width for many samples
-   n_samples = len(mm['Species1'].A.columns)
-   fig_width = max(12, n_samples * 0.1)  # Scale with samples
-   
-   mm.view_iModulon_activities(
-       species='Species1',
-       component='Core_1',
-       fig_size=(fig_width, 3)
-   )
-
-**Memory issues with batch plotting:**
-
-.. code-block:: python
-
-   # Close figures after saving
-   import matplotlib.pyplot as plt
-   
-   for comp in components:
-       mm.view_iModulon_weights(
-           species='Species1',
-           component=comp,
-           save_path=f'{comp}.png'
-       )
-       plt.close('all')  # Free memory
 
 Next Steps
 ----------
