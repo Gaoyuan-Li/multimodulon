@@ -6,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 import logging
 
-from .utils import parse_gff
+from .utils.gff_parser import parse_gff
 
 logger = logging.getLogger(__name__)
 
