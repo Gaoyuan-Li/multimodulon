@@ -6,11 +6,12 @@ This section covers the visualization functions for exploring iModulon gene weig
 Overview
 --------
 
-MultiModulon provides three main visualization functions:
+MultiModulon provides four main visualization functions:
 
 1. **view_iModulon_weights** - Visualize gene weights within a component for a single species
 2. **view_core_iModulon_weights** - Visualize a core iModulon component across all species
 3. **view_iModulon_activities** - Visualize component activities across samples
+4. **compare_core_iModulon_activity** - Compare core iModulon activities across multiple species for specific conditions
 
 All functions support customization of appearance, highlighting, and export options.
 
@@ -381,6 +382,118 @@ Organize outputs systematically:
                component=comp,
                save_path=f'{base_dir}/activities/{species}_{comp}.svg'
            )
+
+Comparing Core iModulon Activities Across Species
+-------------------------------------------------
+
+.. py:method:: MultiModulon.compare_core_iModulon_activity(component, species_in_comparison, condition_list, save_path=None, fig_size=(12, 3), font_path=None)
+
+   Compare core iModulon activities across multiple species for specific conditions.
+   Creates a grouped bar plot with conditions on x-axis and species shown as different colored bars.
+
+   :param str component: Core component name (e.g., 'Core_1', 'Core_2')
+   :param list species_in_comparison: List of species names to compare
+   :param list condition_list: List of conditions in format "condition:project"
+   :param str save_path: Path to save the plot (optional)
+   :param tuple fig_size: Figure size (default: (12, 3))
+   :param str font_path: Path to custom font file (optional)
+
+Basic Usage
+~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Compare Core_1 activities across species for specific conditions
+   multiModulon.compare_core_iModulon_activity(
+       component='Core_1',
+       species_in_comparison=['E_coli', 'S_enterica', 'K_pneumoniae'],
+       condition_list=['glucose:project1', 'lactose:project1', 'arabinose:project2']
+   )
+
+Condition Format
+~~~~~~~~~~~~~~~~
+
+Conditions must be specified as "condition:project" pairs:
+
+.. code-block:: python
+
+   # Comparing growth conditions from different projects
+   multiModulon.compare_core_iModulon_activity(
+       component='Core_1',
+       species_in_comparison=['Species1', 'Species2', 'Species3'],
+       condition_list=[
+           'exponential:growth_study',    # Exponential phase from growth_study
+           'stationary:growth_study',     # Stationary phase from growth_study
+           'heat_shock:stress_project',   # Heat shock from stress_project
+           'cold_shock:stress_project'    # Cold shock from stress_project
+       ],
+       save_path='core1_condition_comparison.svg'
+   )
+
+Understanding the Plot
+~~~~~~~~~~~~~~~~~~~~~~
+
+* **X-axis**: Conditions (grouped by the order in condition_list)
+* **Y-axis**: iModulon activity values
+* **Bars**: Different colors for each species
+* **Dots**: Individual sample values (black dots on bars)
+* **Legend**: Species names with corresponding colors
+
+Error Handling
+~~~~~~~~~~~~~~
+
+The function validates that all conditions exist in all species:
+
+.. code-block:: python
+
+   # This will raise an error if any species lacks a condition
+   try:
+       multiModulon.compare_core_iModulon_activity(
+           component='Core_1',
+           species_in_comparison=['Species1', 'Species2'],
+           condition_list=['rare_condition:project1']
+       )
+   except ValueError as e:
+       print(f"Error: {e}")
+
+Customizing Appearance
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Larger figure with custom font
+   multiModulon.compare_core_iModulon_activity(
+       component='Core_1',
+       species_in_comparison=['Species1', 'Species2', 'Species3'],
+       condition_list=['control:exp1', 'treatment:exp1'],
+       fig_size=(15, 5),  # Wider figure
+       font_path='/path/to/font.ttf',
+       save_path='comparison_custom.svg'
+   )
+
+Use Cases
+~~~~~~~~~
+
+1. **Stress Response Comparison**: Compare how different species respond to the same stresses
+2. **Metabolic Adaptation**: Analyze metabolic shifts across species under different carbon sources
+3. **Evolutionary Analysis**: Study conservation of regulatory responses
+
+.. code-block:: python
+
+   # Example: Comparing stress responses
+   stress_conditions = [
+       'control:stress_study',
+       'heat_42C:stress_study',
+       'oxidative_H2O2:stress_study',
+       'acid_pH5:stress_study'
+   ]
+   
+   multiModulon.compare_core_iModulon_activity(
+       component='Core_1',  # Assuming Core_1 is stress-related
+       species_in_comparison=['E_coli', 'S_enterica', 'K_pneumoniae'],
+       condition_list=stress_conditions,
+       save_path='stress_response_comparison.svg'
+   )
 
 Best Practices
 --------------

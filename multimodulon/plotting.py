@@ -1673,3 +1673,191 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     plt.show()
     
     return result_dict
+
+
+def compare_core_iModulon_activity(multimodulon, component: str, species_in_comparison: List[str], 
+                                  condition_list: List[str], save_path: Optional[str] = None,
+                                  fig_size: Tuple[float, float] = (12, 3), font_path: Optional[str] = None):
+    """
+    Compare core iModulon activities across multiple species for specific conditions.
+    
+    Creates a grouped bar plot showing activities of a core component across different species
+    for specified conditions. Conditions are grouped together with bars for each species.
+    
+    Parameters
+    ----------
+    multimodulon : MultiModulon
+        MultiModulon instance containing the data
+    component : str
+        Core component name (e.g., 'Core_1', 'Core_2')
+    species_in_comparison : list of str
+        List of species names to compare
+    condition_list : list of str
+        List of conditions to visualize in format "condition name:project name"
+        The colon (:) is used as separator between condition and project
+    save_path : str, optional
+        Path to save the plot. Can be a directory or file path.
+        If directory, saves as '{component}_activity_comparison.svg'
+        If None, displays plot without saving
+    fig_size : tuple, optional
+        Figure size as (width, height). Default: (12, 3)
+    font_path : str, optional
+        Path to font file for custom font rendering
+        
+    Raises
+    ------
+    ValueError
+        If component not found, species not found, or conditions not available
+        
+    Examples
+    --------
+    >>> # Compare Core_1 activities across 3 species for specific conditions
+    >>> mm.compare_core_iModulon_activity(
+    ...     component='Core_1',
+    ...     species_in_comparison=['E_coli', 'S_enterica', 'K_pneumoniae'],
+    ...     condition_list=['glucose:project1', 'lactose:project1', 'arabinose:project2']
+    ... )
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.font_manager as fm
+    import numpy as np
+    from pathlib import Path
+    
+    # Validate component exists in all species
+    for species in species_in_comparison:
+        if species not in multimodulon._species_data:
+            raise ValueError(f"Species '{species}' not found in loaded data")
+        
+        species_data = multimodulon._species_data[species]
+        if species_data.A is None:
+            raise ValueError(f"A matrix not found for {species}. Please run ICA first.")
+        
+        if component not in species_data.A.index:
+            raise ValueError(f"Component '{component}' not found in {species}")
+    
+    # Parse condition list
+    parsed_conditions = []
+    for cond_str in condition_list:
+        if ':' not in cond_str:
+            raise ValueError(f"Invalid condition format: '{cond_str}'. Expected 'condition:project'")
+        parts = cond_str.split(':', 1)
+        parsed_conditions.append({'condition': parts[0], 'project': parts[1]})
+    
+    # Collect activities for each species and condition
+    activity_data = {}
+    
+    for species in species_in_comparison:
+        species_data = multimodulon._species_data[species]
+        sample_sheet = species_data.sample_sheet
+        
+        if sample_sheet is None:
+            raise ValueError(f"Sample sheet not found for {species}")
+        
+        if 'condition' not in sample_sheet.columns:
+            raise ValueError(f"'condition' column not found in sample sheet for {species}")
+        
+        if 'project' not in sample_sheet.columns:
+            raise ValueError(f"'project' column not found in sample sheet for {species}")
+        
+        activities = species_data.A.loc[component]
+        activity_data[species] = {}
+        
+        # Check each requested condition
+        for cond_dict in parsed_conditions:
+            condition = cond_dict['condition']
+            project = cond_dict['project']
+            
+            # Find samples matching condition and project
+            mask = (sample_sheet['condition'] == condition) & (sample_sheet['project'] == project)
+            matching_samples = sample_sheet[mask].index.tolist()
+            
+            # Get samples that exist in activities
+            valid_samples = [s for s in matching_samples if s in activities.index]
+            
+            if not valid_samples:
+                raise ValueError(f"No samples found for condition '{condition}' in project '{project}' for species {species}")
+            
+            # Calculate mean activity
+            mean_activity = activities[valid_samples].mean()
+            activity_data[species][f"{condition}:{project}"] = {
+                'mean': mean_activity,
+                'activities': activities[valid_samples].tolist()
+            }
+    
+    # Set font properties if provided
+    if font_path and os.path.exists(font_path):
+        font_prop = fm.FontProperties(fname=font_path)
+        plt.rcParams['font.family'] = font_prop.get_name()
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=fig_size)
+    
+    # Setup bar positions
+    n_conditions = len(condition_list)
+    n_species = len(species_in_comparison)
+    bar_width = 0.8 / n_species
+    x = np.arange(n_conditions)
+    
+    # Colors for different species using tab20 colormap
+    colors = plt.cm.tab20(np.linspace(0, 1, n_species))
+    
+    # Plot bars for each species
+    for i, species in enumerate(species_in_comparison):
+        positions = x + (i - n_species/2 + 0.5) * bar_width
+        means = [activity_data[species][cond]['mean'] for cond in condition_list]
+        
+        # Plot bars
+        ax.bar(positions, means, bar_width, label=species, color=colors[i], 
+               alpha=0.8, edgecolor='black', linewidth=0.5)
+        
+        # Add individual sample points as dots
+        for j, cond in enumerate(condition_list):
+            sample_activities = activity_data[species][cond]['activities']
+            x_points = [positions[j]] * len(sample_activities)
+            ax.scatter(x_points, sample_activities, color='black', s=10, zorder=10, alpha=0.7)
+    
+    # Add horizontal line at y=0
+    ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
+    
+    # Set labels and title
+    ax.set_xlabel('Conditions', fontsize=12)
+    ax.set_ylabel('iModulon Activity', fontsize=12)
+    ax.set_title(f'Core iModulon {component} Activity Comparison', fontsize=14)
+    
+    # Set x-axis ticks to condition labels
+    ax.set_xticks(x)
+    ax.set_xticklabels([c.split(':')[0] for c in condition_list], rotation=45, ha='right')
+    
+    # Add legend
+    ax.legend(title='Species', loc='center left', bbox_to_anchor=(1.02, 0.5), 
+              frameon=True, fontsize=9)
+    
+    # Apply font to all text elements if font provided
+    if font_path and os.path.exists(font_path):
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
+        ax.xaxis.label.set_fontproperties(font_prop)
+        ax.yaxis.label.set_fontproperties(font_prop)
+        ax.title.set_fontproperties(font_prop)
+        legend = ax.get_legend()
+        if legend:
+            for text in legend.get_texts():
+                text.set_fontproperties(font_prop)
+            legend.get_title().set_fontproperties(font_prop)
+    
+    # Adjust layout to accommodate legend
+    plt.subplots_adjust(left=0.1, right=0.85, top=0.95, bottom=0.15)
+    
+    # Save or show
+    if save_path:
+        save_path = Path(save_path)
+        if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg']:
+            save_file = save_path
+        else:
+            save_path.mkdir(parents=True, exist_ok=True)
+            save_file = save_path / f'{component}_activity_comparison.svg'
+        
+        plt.savefig(save_file, dpi=300, bbox_inches='tight')
+        logger.info(f"Activity comparison plot saved to {save_file}")
+    else:
+        plt.show()
