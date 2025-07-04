@@ -46,10 +46,30 @@ Basic BBH Generation
 How BBH Works
 ~~~~~~~~~~~~~
 
-1. **Protein sequences**: Extracts from genome files or uses provided protein.faa
-2. **BLAST search**: All-vs-all BLAST between each species pair
-3. **Best hits**: Identifies reciprocal best hits
-4. **Output format**: CSV files with columns: query, subject, pident, length, etc.
+1. **Protein sequences**: Uses existing protein.faa files from each strain's ref_genome directory
+2. **Gene ID mapping**: Creates mappings from protein IDs (NCBI_GP) to locus_tags using genomic.gff files
+   
+   - Standard strains: Uses ``locus_tag`` attribute from GFF files
+   - W3110 strain: Extracts JW-numbers (e.g., JW4367) from Note field format "ECK0001:JW4367:b0001"
+   - Warnings are printed when fallback extraction methods are used, including the strain name
+   
+3. **BLAST search**: Runs all-vs-all BLAST comparisons between species
+4. **Best hits**: Identifies reciprocal best hits
+5. **Output format**: CSV files with locus_tag-to-locus_tag mappings containing:
+   
+   - gene: Query gene locus_tag
+   - subject: Subject gene locus_tag
+   - PID: Percent identity
+   - alnLength: Alignment length
+   - mismatchCount: Number of mismatches
+   - gapOpenCount: Number of gap openings
+   - queryStart/queryEnd: Query alignment coordinates
+   - subjectStart/subjectEnd: Subject alignment coordinates
+   - eVal: E-value
+   - bitScore: Bit score
+   - gene_length: Query gene length
+   - COV: Coverage (alnLength/gene_length)
+   - BBH: Bidirectional best hit indicator ("<=>")
 
 Requirements
 ~~~~~~~~~~~~
