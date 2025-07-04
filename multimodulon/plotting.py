@@ -1509,14 +1509,14 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         if ADJUSTTEXT_AVAILABLE:
-                            # Add initial offset to prevent text from being on dots
+                            # Add larger initial offset to prevent text from being on dots
                             angle = (i * 137.5) % 360  # Golden angle
-                            radius = 0.015 * (max(y_weights) - min(y_weights))
+                            radius = 0.03 * (max(y_weights) - min(y_weights))  # Doubled from 0.015
                             x_offset = radius * np.cos(np.radians(angle))
                             y_offset = radius * np.sin(np.radians(angle))
                             
                             text = ax.text(x + x_offset, y + y_offset, gene_name, 
-                                         fontsize=5, ha='center', va='center',
+                                         fontsize=6, ha='center', va='center',
                                          bbox=dict(boxstyle='round,pad=0.1', 
                                                  facecolor='white', 
                                                  edgecolor='none',
@@ -1534,25 +1534,57 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                    y=[y for _, _, y in genes_to_label],
                                    arrowprops=None,  # Disable arrows to avoid FancyArrowPatch issues
                                    autoalign='xy',
-                                   force_points=(0.4, 0.6),  # Stronger repulsion from points
-                                   force_text=(0.8, 1.0),
-                                   expand_points=(2.0, 2.5),  # More expansion around points
-                                   expand_text=(1.5, 2.0),
+                                   force_points=(0.8, 1.0),  # Much stronger repulsion for crowded subplots
+                                   force_text=(1.5, 2.0),  # Stronger text repulsion
+                                   expand_points=(3.0, 3.5),  # More expansion around points
+                                   expand_text=(2.5, 3.0),  # More text expansion
                                    ensure_inside_axes=True,
                                    only_move={'points':'', 'text':'xy'},
-                                   iter_lim=800,
+                                   iter_lim=2000,  # Many more iterations for complex layouts
                                    ax=ax)
                         
                         # After adjustment, manually add simple lines
                         for i, ((gene, x, y), text) in enumerate(zip(genes_to_label, texts)):
                             text_x, text_y = text.get_position()
-                            # Only draw line if text is far enough from point
-                            dist = np.sqrt((text_x - x)**2 + (text_y - y)**2)
-                            if dist > 0.02 * (max(y_weights) - min(y_weights)):
-                                ax.plot([x, text_x], [y, text_y], 
-                                       color='gray', lw=0.2, alpha=0.5, zorder=1)
+                            # Always draw line to show connection
+                            ax.plot([x, text_x], [y, text_y], 
+                                   color='gray', lw=0.2, alpha=0.5, zorder=1)
                     except Exception as e:
-                        logger.warning(f"adjust_text failed for {species}: {e}")
+                        logger.warning(f"adjust_text failed for {species}: {e}. Using smart positioning.")
+                        
+                        # Fallback: Use smart positioning when adjust_text fails
+                        # Clear existing texts
+                        for text in texts:
+                            text.remove()
+                        texts = []
+                        
+                        # Sort genes by x position for systematic placement
+                        genes_sorted = sorted(genes_to_label, key=lambda x: x[1])
+                        
+                        # Create alternating pattern for text placement
+                        for i, (gene, x, y) in enumerate(genes_sorted):
+                            if gene in gene_table.index:
+                                gene_name = get_gene_name(gene, gene_table.loc[gene])
+                                
+                                # Alternate between above and below
+                                if i % 2 == 0:
+                                    y_offset = 0.08 * (max(y_weights) - min(y_weights))
+                                else:
+                                    y_offset = -0.08 * (max(y_weights) - min(y_weights))
+                                
+                                # Slight x offset to avoid vertical overlap
+                                x_offset = (i % 4 - 1.5) * 0.01 * (max(x_positions) - min(x_positions))
+                                
+                                text = ax.text(x + x_offset, y + y_offset, gene_name,
+                                             fontsize=6, ha='center', va='center',
+                                             bbox=dict(boxstyle='round,pad=0.1',
+                                                     facecolor='white',
+                                                     edgecolor='none',
+                                                     alpha=0.6))
+                                
+                                # Draw connecting line
+                                ax.plot([x, x + x_offset], [y, y + y_offset],
+                                       color='gray', lw=0.2, alpha=0.5, zorder=1)
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
@@ -1578,9 +1610,9 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             axes[row, col].axis('off')
         
         # Add main title with reduced gap
-        fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.99)
+        fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.96)
         if font_path and os.path.exists(font_path):
-            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.99, fontproperties=font_prop)
+            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.96, fontproperties=font_prop)
         
         # Create legend at bottom
         if all_unique_colors:
@@ -2417,27 +2449,13 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
             # Use a combination of radial and position-based offset
             offset_angle = (i * 137.5) % 360  # Golden angle for better distribution
             
-            # Base offset proportional to axis range
+            # Use larger initial offset like in view_iModulon_weights
             axis_range = max_val - min_val
-            base_offset = 0.05 * axis_range  # 5% of axis range
+            base_offset = 0.08 * axis_range  # 8% of axis range for better separation
             
-            # Additional offset based on point position to avoid clustering
-            position_factor = 1.0
-            if abs(x_val) > 0.7 * max(abs(mean_activities_1.max()), abs(mean_activities_1.min())):
-                position_factor = 1.5  # Push text further for extreme points
-            
-            x_offset = base_offset * position_factor * np.cos(np.radians(offset_angle))
-            y_offset = base_offset * position_factor * np.sin(np.radians(offset_angle))
-            
-            # For points near the diagonal, adjust offset to avoid the line
-            if abs(x_val - y_val) < 0.1 * axis_range:
-                # Near diagonal, push text perpendicular to diagonal
-                if x_val > y_val:
-                    x_offset = abs(x_offset) * 1.5
-                    y_offset = -abs(y_offset) * 1.5
-                else:
-                    x_offset = -abs(x_offset) * 1.5
-                    y_offset = abs(y_offset) * 1.5
+            # Simple radial offset without complex adjustments
+            x_offset = base_offset * np.cos(np.radians(offset_angle))
+            y_offset = base_offset * np.sin(np.radians(offset_angle))
             
             text = ax.text(x_val + x_offset, y_val + y_offset, component, 
                           fontsize=8, ha='center', va='center',
@@ -2463,13 +2481,13 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                        autoalign='xy',
                        ha='center',
                        va='center',
-                       force_points=(1.0, 1.0),  # Much stronger repulsion from points
-                       force_text=(1.5, 1.5),
-                       expand_points=(3.0, 3.0),  # Much more expansion around points
-                       expand_text=(2.0, 2.0),
+                       force_points=(0.6, 0.8),  # Same as view_iModulon_weights
+                       force_text=(1.2, 1.5),
+                       expand_points=(2.5, 3.0),  # Same expansion as view_iModulon_weights
+                       expand_text=(2.0, 2.5),
                        ensure_inside_axes=True,
                        only_move={'points':'', 'text':'xy'},
-                       iter_lim=1000,  # More iterations for better convergence
+                       iter_lim=1500,  # More iterations for better convergence
                        ax=ax)
             
             # After adjustment, manually draw simple lines from text to points
@@ -2478,27 +2496,9 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                 y_val = mean_activities_2[comp]
                 text_x, text_y = text.get_position()
                 
-                # Only draw line if text is far enough from point
-                dist = np.sqrt((text_x - x_val)**2 + (text_y - y_val)**2)
-                if dist > 0.08 * (max_val - min_val):  # 8% of axis range
-                    # Draw line from edge of text box to point
-                    # Calculate direction vector
-                    dx = x_val - text_x
-                    dy = y_val - text_y
-                    length = np.sqrt(dx**2 + dy**2)
-                    dx_norm = dx / length
-                    dy_norm = dy / length
-                    
-                    # Start line slightly away from text box center
-                    line_start_x = text_x + dx_norm * 0.02 * (max_val - min_val)
-                    line_start_y = text_y + dy_norm * 0.02 * (max_val - min_val)
-                    
-                    # End line slightly away from point center
-                    line_end_x = x_val - dx_norm * 0.015 * (max_val - min_val)
-                    line_end_y = y_val - dy_norm * 0.015 * (max_val - min_val)
-                    
-                    ax.plot([line_end_x, line_start_x], [line_end_y, line_start_y], 
-                           color='gray', lw=0.4, alpha=0.4, zorder=1)
+                # Always draw simple line from text to point
+                ax.plot([x_val, text_x], [y_val, text_y], 
+                       color='gray', lw=0.3, alpha=0.5, zorder=1)
                            
         except Exception as e:
             logger.warning(f"adjust_text optimization failed: {e}. Using initial positions.")

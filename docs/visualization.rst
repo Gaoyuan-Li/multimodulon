@@ -80,9 +80,10 @@ Understanding the Plot
   - Automatically shown for small components (<10 genes above threshold)
   - Uses Preferred_name if available, otherwise uses standard gene names
   - Text has white background boxes for better readability
-  - Positioned with initial offset from dots to avoid overlap
-  - Uses adjustText library for optimized positioning when available
+  - Positioned with initial offset (2% of y-range) from dots using golden angle distribution
+  - Uses adjustText library for optimized positioning with strong repulsion parameters
   - Simple lines connect labels to their corresponding points
+  - Fallback smart positioning with alternating pattern if adjustText fails
 
 COG Categories
 ~~~~~~~~~~~~~~
@@ -202,6 +203,8 @@ Understanding the Output
    - Gene labels shown if show_gene_names=True (no limit for species-specific genes)
    - When show_gene_names=True, only species-specific genes are labeled
    - Shared genes across all species are printed to console instead
+   - Enhanced text positioning with 3% initial offset and stronger repulsion for crowded subplots
+   - Fallback alternating pattern positioning if adjustText fails
 
 Batch Processing Core Components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -596,7 +599,7 @@ Understanding the Plot
 * **Grey dots**: Components with minimal change between conditions
 * **Light blue dots**: Components with significant change (absolute difference > scaled threshold)
 * **Labels**: Component names shown for significant changes
-  - Text positioned with initial offset (5% of axis range) from dots using golden angle distribution
+  - Text positioned with initial offset (8% of axis range) from dots using golden angle distribution
   - White background boxes with light gray borders for readability
   - Simple gray lines connect labels to their points when distance > 8% of axis range
   - Special handling for points near the diagonal line to avoid overlap
