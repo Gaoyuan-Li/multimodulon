@@ -1518,17 +1518,38 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         if ADJUSTTEXT_AVAILABLE:
-                            # Use golden angle spiral with very large radius for better initial distribution
-                            angle = (i * 137.5) % 360  # Golden angle
-                            # Very large initial radius to start labels far from points
-                            radius = 0.25 * (max(y_weights) - min(y_weights))
-                            # Add some randomness to prevent initial overlaps
-                            radius += np.random.uniform(-0.02, 0.02) * (max(y_weights) - min(y_weights))
-                            x_offset = radius * np.cos(np.radians(angle))
-                            y_offset = radius * np.sin(np.radians(angle))
+                            # Distribute labels in all directions for better spacing
+                            # Use strategic angles: 0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°
+                            preferred_angles = [0, 45, 90, 135, 180, 225, 270, 315]
+                            angle_index = i % len(preferred_angles)
+                            base_angle = preferred_angles[angle_index]
+                            
+                            # Add small variation to prevent exact overlaps
+                            angle = base_angle + np.random.uniform(-15, 15)
+                            
+                            # Calculate radius based on plot scale
+                            x_range = max(x_positions) - min(x_positions)
+                            y_range = max(y_weights) - min(y_weights)
+                            
+                            # Use different radius for x and y to account for aspect ratio
+                            x_radius = 0.05 * x_range  # Horizontal spacing
+                            y_radius = 0.25 * y_range  # Vertical spacing
+                            
+                            x_offset = x_radius * np.cos(np.radians(angle))
+                            y_offset = y_radius * np.sin(np.radians(angle))
+                            
+                            # Adjust horizontal and vertical alignment based on angle
+                            if 45 <= angle <= 135:
+                                ha, va = 'center', 'bottom'
+                            elif 135 < angle <= 225:
+                                ha, va = 'right', 'center'
+                            elif 225 < angle <= 315:
+                                ha, va = 'center', 'top'
+                            else:
+                                ha, va = 'left', 'center'
                             
                             text = ax.text(x + x_offset, y + y_offset, gene_name, 
-                                         fontsize=5, ha='center', va='center',
+                                         fontsize=5, ha=ha, va=va,
                                          bbox=dict(boxstyle='round,pad=0.3', 
                                                  facecolor='white', 
                                                  edgecolor='none',
@@ -1546,16 +1567,14 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                    x=[x for _, x, _ in genes_to_label],
                                    y=[y for _, _, y in genes_to_label],
                                    arrowprops=None,  # Disable arrows to avoid compatibility issues
-                                   autoalign='xy',
-                                   ha='center',
-                                   va='center',
-                                   force_points=(5.0, 6.0),      # Maximum repulsion from points
-                                   force_text=(8.0, 9.0),        # Ultra-strong text-text repulsion
-                                   expand_points=(10.0, 12.0),   # Huge expansion around points
-                                   expand_text=(8.0, 10.0),      # Huge text expansion
+                                   autoalign=False,  # Don't force alignment, allow free positioning
+                                   force_points=(3.0, 3.5),      # Strong repulsion from points
+                                   force_text=(4.0, 4.5),        # Strong text-text repulsion
+                                   expand_points=(8.0, 8.0),     # Equal expansion in x and y
+                                   expand_text=(5.0, 5.0),       # Equal text expansion in x and y
                                    ensure_inside_axes=True,
                                    only_move={'points':'', 'text':'xy'},
-                                   iter_lim=20000,  # Many more iterations for convergence
+                                   iter_lim=15000,  # Many iterations for convergence
                                    lim=500,         # Maximum adjustments per iteration
                                    precision=0.001,  # Higher precision for final positioning
                                    ax=ax)
