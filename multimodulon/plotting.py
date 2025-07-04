@@ -1626,8 +1626,10 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             n_rows_legend = (n_legend_items + n_cols_legend - 1) // n_cols_legend
             
             # Adjust legend position based on number of rows
-            # Keep original settings for n_rows <= 5, add small adjustment for 6+
-            if n_rows_legend <= 5:
+            if n_rows_legend <= 2:
+                legend_y_pos = -0.015  # Move up by 0.015 from original (-0.03)
+                bottom_margin = 0.08
+            elif n_rows_legend <= 5:
                 legend_y_pos = -0.03
                 bottom_margin = 0.08
             else:  # 6 or more rows
@@ -1719,10 +1721,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
         else:
             shared_gene_names = sorted(shared_genes_across_all)
         
-        # Print in columns for readability
-        n_cols = 6  # Number of columns
-        for i in range(0, len(shared_gene_names), n_cols):
-            print("  " + "  ".join(f"{gene:<12}" for gene in shared_gene_names[i:i+n_cols]))
+        # Print as Python list structure
+        print(f"  {shared_gene_names}")
 
 
 def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species', 
