@@ -55,8 +55,8 @@ def generate_species_colors(species_list):
     hue = 0
     
     for i, species in enumerate(sorted(species_list)):
-        # Convert HSL to RGB (hue in [0,1], saturation=0.3, lightness=0.5)
-        rgb = colorsys.hls_to_rgb(hue, 0.5, 0.3)
+        # Convert HSL to RGB (hue in [0,1], saturation=0.4, lightness=0.5)
+        rgb = colorsys.hls_to_rgb(hue, 0.5, 0.4)
         # Convert to hex
         hex_color = '#{:02X}{:02X}{:02X}'.format(
             int(rgb[0] * 255),
