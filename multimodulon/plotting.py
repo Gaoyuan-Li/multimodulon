@@ -419,23 +419,34 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
             activities = activities[common_samples]
             sample_sheet = sample_sheet.loc[common_samples]
             
-            # Group samples by condition
+            # Group samples by condition AND project (if available)
+            # This prevents grouping same conditions from different projects
             for sample in common_samples:
                 condition = sample_sheet.loc[sample, 'condition']
-                if condition not in condition_data:
-                    condition_data[condition] = {
+                # Check if project column exists to create unique condition keys
+                if 'project' in sample_sheet.columns:
+                    project = sample_sheet.loc[sample, 'project']
+                    # Create a unique key that combines condition and project
+                    condition_key = (condition, project)
+                else:
+                    condition_key = (condition, None)
+                    
+                if condition_key not in condition_data:
+                    condition_data[condition_key] = {
                         'samples': [],
                         'activities': [],
-                        'mean_activity': 0
+                        'mean_activity': 0,
+                        'condition': condition,
+                        'project': project if 'project' in sample_sheet.columns else None
                     }
-                condition_data[condition]['samples'].append(sample)
-                condition_data[condition]['activities'].append(activities[sample])
+                condition_data[condition_key]['samples'].append(sample)
+                condition_data[condition_key]['activities'].append(activities[sample])
             
             # Calculate mean activities for each condition
             conditions = list(condition_data.keys())
-            for condition in conditions:
-                mean_act = np.mean(condition_data[condition]['activities'])
-                condition_data[condition]['mean_activity'] = mean_act
+            for condition_key in conditions:
+                mean_act = np.mean(condition_data[condition_key]['activities'])
+                condition_data[condition_key]['mean_activity'] = mean_act
             
             # Filter conditions if show_highlight_only is True
             if show_highlight_only and highlight_condition:
@@ -444,8 +455,8 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
                 else:
                     highlight_conditions = highlight_condition
                 
-                # Keep only highlighted conditions
-                filtered_conditions = [c for c in conditions if c in highlight_conditions]
+                # Keep only highlighted conditions (check the condition part of the key)
+                filtered_conditions = [c for c in conditions if condition_data[c]['condition'] in highlight_conditions]
                 if not filtered_conditions:
                     raise ValueError(f"None of the highlighted conditions {highlight_conditions} found in data")
                 conditions = filtered_conditions
@@ -460,19 +471,23 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
             if group_col:
                 # Create a mapping of conditions to their project/study groups
                 condition_groups = {}
-                for condition in conditions:
-                    # Get the most common group for this condition
-                    condition_samples = condition_data[condition]['samples']
-                    groups = [sample_sheet.loc[s, group_col] for s in condition_samples if s in sample_sheet.index]
-                    if groups:
-                        # Use the most common group
-                        most_common_group = max(set(groups), key=groups.count)
-                        condition_groups[condition] = most_common_group
+                for condition_key in conditions:
+                    # Use the project/study directly from the condition data
+                    if group_col == 'project' and condition_data[condition_key]['project'] is not None:
+                        condition_groups[condition_key] = condition_data[condition_key]['project']
                     else:
-                        condition_groups[condition] = 'Unknown'
+                        # Get the most common group for this condition
+                        condition_samples = condition_data[condition_key]['samples']
+                        groups = [sample_sheet.loc[s, group_col] for s in condition_samples if s in sample_sheet.index]
+                        if groups:
+                            # Use the most common group
+                            most_common_group = max(set(groups), key=groups.count)
+                            condition_groups[condition_key] = most_common_group
+                        else:
+                            condition_groups[condition_key] = 'Unknown'
                 
-                # Sort conditions by their project/study group
-                sorted_conditions = sorted(conditions, key=lambda c: (condition_groups.get(c, 'Unknown'), c))
+                # Sort conditions by their project/study group and then by condition name
+                sorted_conditions = sorted(conditions, key=lambda c: (condition_groups.get(c, 'Unknown'), condition_data[c]['condition']))
                 conditions = sorted_conditions
                 
                 # Get mean activities in the sorted order
@@ -528,10 +543,12 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
     
     if condition_mode and show_highlight_only and show_highlight_only_color:
         # Use provided colors for highlighted conditions
-        for i, condition in enumerate(conditions):
+        for i, condition_key in enumerate(conditions):
             color = show_highlight_only_color[i]
             colors.append(color)
-            legend_elements.append((condition, color))
+            # Get the condition name for legend
+            condition_name = condition_data[condition_key]['condition']
+            legend_elements.append((condition_name, color))
     elif condition_mode and highlight_condition and not show_highlight_only:
         # Highlight specific conditions but show all
         if isinstance(highlight_condition, str):
@@ -539,12 +556,30 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
         else:
             highlight_conditions = highlight_condition
             
-        for condition in conditions:
-            if condition in highlight_conditions:
-                color = plt.cm.tab10(len([elem for elem in legend_elements if elem[0] in highlight_conditions]))
-                if condition not in [elem[0] for elem in legend_elements]:
-                    legend_elements.append((condition, color))
-                colors.append(color)
+        # Use tab20 for more colors (20 distinct colors)
+        colormap = plt.cm.tab20
+        color_idx = 0
+        for condition_key in conditions:
+            condition_name = condition_data[condition_key]['condition']
+            if condition_name in highlight_conditions:
+                # Check if we need to add project suffix
+                project = condition_data[condition_key]['project']
+                if project:
+                    legend_label = f"{condition_name} ({project})"
+                else:
+                    legend_label = condition_name
+                    
+                if legend_label not in [elem[0] for elem in legend_elements]:
+                    color = colormap(color_idx % 20)
+                    legend_elements.append((legend_label, color))
+                    colors.append(color)
+                    color_idx += 1
+                else:
+                    # Find existing color for this condition
+                    for label, col in legend_elements:
+                        if label == legend_label:
+                            colors.append(col)
+                            break
             else:
                 colors.append('lightblue')
     elif condition_mode and highlight_project and sample_sheet is not None and 'project' in sample_sheet.columns:
@@ -555,24 +590,39 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
         else:
             highlight_projects = highlight_project
         
-        for i, condition in enumerate(conditions):
-            # Check if any sample in this condition belongs to highlighted project
-            condition_samples = condition_data[condition]['samples']
-            projects = [sample_sheet.loc[s, 'project'] for s in condition_samples if s in sample_sheet.index]
+        for i, condition_key in enumerate(conditions):
+            condition_name = condition_data[condition_key]['condition']
+            project = condition_data[condition_key]['project']
             
-            # Check if any project in this condition is highlighted
-            condition_highlighted = any(str(hp) in [str(p) for p in projects] for hp in highlight_projects)
+            # Check if this condition's project is highlighted
+            condition_highlighted = project and any(str(hp) == str(project) for hp in highlight_projects)
             
             if condition_highlighted:
-                # Assign unique color per condition
-                if condition not in [elem[0] for elem in legend_elements]:
-                    color = plt.cm.tab10(len(legend_elements))
-                    legend_elements.append((condition, color))
+                # Create legend label with project name if there might be duplicates
+                # Check if this condition appears in multiple highlighted projects
+                condition_appears_multiple = False
+                for other_key in conditions:
+                    if (condition_data[other_key]['condition'] == condition_name and 
+                        other_key != condition_key and
+                        condition_data[other_key]['project'] and
+                        any(str(hp) == str(condition_data[other_key]['project']) for hp in highlight_projects)):
+                        condition_appears_multiple = True
+                        break
+                
+                if condition_appears_multiple:
+                    legend_label = f"{condition_name} ({project})"
+                else:
+                    legend_label = condition_name
+                
+                # Assign unique color per condition using tab20 for more colors
+                if legend_label not in [elem[0] for elem in legend_elements]:
+                    color = plt.cm.tab20(len(legend_elements) % 20)
+                    legend_elements.append((legend_label, color))
                     colors.append(color)
                 else:
                     # Find existing color for this condition
-                    for cond, col in legend_elements:
-                        if cond == condition:
+                    for label, col in legend_elements:
+                        if label == legend_label:
                             colors.append(col)
                             break
             else:
@@ -596,9 +646,9 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
                 
                 if project_highlighted:
                     condition = sample_sheet.loc[sample, 'condition'] if 'condition' in sample_sheet.columns else 'Unknown'
-                    # Assign unique color per condition
+                    # Assign unique color per condition using tab20 for more colors
                     if condition not in [elem[0] for elem in legend_elements]:
-                        color = plt.cm.tab10(len(legend_elements))
+                        color = plt.cm.tab20(len(legend_elements) % 20)
                         legend_elements.append((condition, color))
                         colors.append(color)
                     else:
@@ -618,9 +668,9 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
                 study = sample_sheet.loc[sample, 'study_accession']
                 if str(study) == str(highlight_study):
                     desc = sample_sheet.loc[sample, 'sample_description'] if 'sample_description' in sample_sheet.columns else 'Unknown'
-                    # Assign unique color per description
+                    # Assign unique color per description using tab20 for more colors
                     if desc not in [elem[0] for elem in legend_elements]:
-                        color = plt.cm.tab10(len(legend_elements))
+                        color = plt.cm.tab20(len(legend_elements) % 20)
                         legend_elements.append((desc, color))
                         colors.append(color)
                     else:
@@ -647,12 +697,12 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
     
     # Create bar plot
     if condition_mode:
-        # Plot averaged bars for conditions with half width
-        ax.bar(x_positions, mean_activities, width=0.5, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
+        # Plot averaged bars for conditions with reduced gap between bars
+        ax.bar(x_positions, mean_activities, width=0.75, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
         
         # Add individual sample points as black dots
-        for i, condition in enumerate(conditions):
-            sample_activities = condition_data[condition]['activities']
+        for i, condition_key in enumerate(conditions):
+            sample_activities = condition_data[condition_key]['activities']
             # All dots at the horizontal center of the bar
             x_points = [i] * len(sample_activities)
             ax.scatter(x_points, sample_activities, color='black', s=10, zorder=10, alpha=0.7)
@@ -747,11 +797,23 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
     if legend_elements:
         from matplotlib.patches import Patch
         patches = [Patch(color=color, label=label) for label, color in legend_elements]
-        ax.legend(handles=patches, loc='center left', bbox_to_anchor=(1, 0.5))
+        
+        # Calculate number of columns needed based on figure height
+        # Base: 8 items per column for fig_height=3
+        n_items = len(legend_elements)
+        fig_height = fig_size[1]  # Get the figure height
+        items_per_column = round(8 * (fig_height / 3))  # Scale proportionally
+        
+        # Calculate number of columns needed
+        ncol = max(1, (n_items + items_per_column - 1) // items_per_column)  # Ceiling division
+        
+        # Create legend with multiple columns
+        legend = ax.legend(handles=patches, loc='center left', bbox_to_anchor=(1.02, 0.5),
+                          ncol=ncol, frameon=True, fontsize=9)
         
         # Apply font to legend if provided
         if font_path and os.path.exists(font_path):
-            for text in ax.get_legend().get_texts():
+            for text in legend.get_texts():
                 text.set_fontproperties(font_prop)
     
     # Set font for tick labels if font_path provided
@@ -762,11 +824,16 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
         ax.yaxis.label.set_fontproperties(font_prop)
         ax.title.set_fontproperties(font_prop)
     
-    # Tight layout - adjust if legend is present
+    # Adjust layout based on legend
     if legend_elements:
-        plt.tight_layout()
-        # Make room for legend on the right
-        plt.subplots_adjust(right=0.85)
+        # Calculate space needed for legend based on number of columns
+        # More columns need more horizontal space
+        # Base formula: right_space = 0.85 - (ncol - 1) * 0.1
+        # But don't go below 0.45
+        right_space = max(0.45, 0.85 - (ncol - 1) * 0.1)
+        
+        # Use subplots_adjust instead of tight_layout to avoid warnings
+        plt.subplots_adjust(left=0.1, right=right_space, top=0.95, bottom=0.15)
     else:
         plt.tight_layout()
     
