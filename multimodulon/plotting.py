@@ -1509,19 +1509,19 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         if ADJUSTTEXT_AVAILABLE:
-                            # Use golden angle spiral with larger radius for better initial distribution
+                            # Use golden angle spiral with much larger radius for better initial distribution
                             angle = (i * 137.5) % 360  # Golden angle
-                            # Larger initial radius to start labels further from points
-                            radius = 0.08 * (max(y_weights) - min(y_weights))
+                            # Much larger initial radius to start labels further from points
+                            radius = 0.15 * (max(y_weights) - min(y_weights))
                             x_offset = radius * np.cos(np.radians(angle))
                             y_offset = radius * np.sin(np.radians(angle))
                             
                             text = ax.text(x + x_offset, y + y_offset, gene_name, 
                                          fontsize=5, ha='center', va='center',
-                                         bbox=dict(boxstyle='round,pad=0.2', 
+                                         bbox=dict(boxstyle='round,pad=0.3', 
                                                  facecolor='white', 
                                                  edgecolor='none',
-                                                 alpha=0.7))
+                                                 alpha=0.8))
                             texts.append(text)
                         else:
                             ax.annotate(gene_name, (x, y), xytext=(1, 1), textcoords='offset points',
@@ -1530,7 +1530,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 # Adjust text positions if adjustText is available
                 if ADJUSTTEXT_AVAILABLE and texts:
                     try:
-                        # Use very aggressive parameters to prevent any overlapping
+                        # Use extremely aggressive parameters to prevent any overlapping
                         adjust_text(texts,
                                    x=[x for _, x, _ in genes_to_label],
                                    y=[y for _, _, y in genes_to_label],
@@ -1538,13 +1538,14 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                    autoalign='xy',
                                    ha='center',
                                    va='center',
-                                   force_points=(2.0, 2.5),  # Much stronger repulsion from points
-                                   force_text=(3.5, 4.0),    # Very strong text-text repulsion
-                                   expand_points=(5.0, 5.5),  # Large expansion around points
-                                   expand_text=(4.5, 5.0),   # Large text expansion
+                                   force_points=(3.0, 3.5),    # Extremely strong repulsion from points
+                                   force_text=(5.0, 5.5),      # Maximum text-text repulsion
+                                   expand_points=(7.0, 8.0),   # Very large expansion around points
+                                   expand_text=(6.0, 7.0),     # Very large text expansion
                                    ensure_inside_axes=True,
                                    only_move={'points':'', 'text':'xy'},
-                                   iter_lim=5000,  # Many more iterations for better convergence
+                                   iter_lim=10000,  # Double the iterations for better convergence
+                                   time_lim=30,     # Allow up to 30 seconds for adjustment
                                    ax=ax)
                         
                         # After adjustment, manually add simple lines
