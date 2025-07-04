@@ -331,6 +331,9 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 30 genes will have labels printed.")
             genes_to_label = genes_to_label[:30]
         
+        # Further sort genes_to_label by x position for better label arrangement
+        genes_to_label_by_pos = sorted(genes_to_label, key=lambda x: x[1])
+        
         # Add labels
         texts = []
         for gene, x, y in genes_to_label:
@@ -345,17 +348,95 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         
         # Adjust text positions if adjustText is available
         if ADJUSTTEXT_AVAILABLE and texts:
-            adjust_text(texts,
-                       x=[x for _, x, _ in genes_to_label],
-                       y=[y for _, _, y in genes_to_label],
-                       arrowprops=dict(arrowstyle='-', color='gray', lw=0.3, alpha=0.5),
-                       autoalign=True,
-                       force_points=(0.1, 0.1),
-                       force_text=(0.3, 0.3),
-                       expand_points=(1.05, 1.05),
-                       expand_text=(1.05, 1.05),
-                       ensure_inside_axes=True,
-                       ax=ax)
+            # Apply font to texts before adjustment if needed
+            if font_path and os.path.exists(font_path) and font_prop:
+                for text in texts:
+                    text.set_fontproperties(font_prop)
+            
+            try:
+                # Use simple line style to avoid FancyArrowPatch issues
+                adjust_text(texts,
+                           x=[x for _, x, _ in genes_to_label],
+                           y=[y for _, _, y in genes_to_label],
+                           arrowprops=dict(arrowstyle='->',
+                                         connectionstyle='arc3,rad=0',
+                                         color='gray', 
+                                         lw=0.5, 
+                                         alpha=0.5),
+                           autoalign='xy',
+                           ha='center',
+                           va='center',
+                           force_points=(0.3, 0.5),
+                           force_text=(0.8, 1.0),
+                           expand_points=(1.5, 2.0),
+                           expand_text=(1.5, 2.5),
+                           ensure_inside_axes=True,
+                           only_move={'points':'', 'text':'xy'},
+                           iter_lim=500,
+                           ax=ax)
+            except Exception as e:
+                # If adjust_text fails, use custom smart positioning
+                logger.warning(f"adjust_text encountered an issue: {e}. Using custom text positioning.")
+                
+                # Clear existing texts
+                for text in texts:
+                    text.remove()
+                texts = []
+                
+                # Group genes by position bins to avoid overlap
+                x_range = max([x for _, x, _ in genes_to_label]) - min([x for _, x, _ in genes_to_label])
+                bin_width = x_range / 10 if x_range > 0 else 1
+                
+                # Create position bins
+                gene_bins = {}
+                for gene, x, y in genes_to_label_by_pos:
+                    bin_idx = int(x / bin_width) if bin_width > 0 else 0
+                    if bin_idx not in gene_bins:
+                        gene_bins[bin_idx] = []
+                    gene_bins[bin_idx].append((gene, x, y))
+                
+                # Position labels smartly
+                for bin_idx, bin_genes in gene_bins.items():
+                    # Sort genes in each bin by y-coordinate
+                    bin_genes.sort(key=lambda x: x[2])
+                    
+                    for i, (gene, x, y) in enumerate(bin_genes):
+                        if gene in gene_table.index:
+                            gene_name = get_gene_name(gene, gene_table.loc[gene])
+                            
+                            # Calculate offset based on position in bin
+                            n_in_bin = len(bin_genes)
+                            if n_in_bin == 1:
+                                y_offset = 8 if y > 0 else -8
+                                x_offset = 0
+                            else:
+                                # Distribute labels vertically
+                                offset_factor = (i - n_in_bin/2) / max(n_in_bin/2, 1)
+                                y_offset = 8 + abs(offset_factor) * 5
+                                if y < 0:
+                                    y_offset = -y_offset
+                                # Add slight x offset for crowded regions
+                                x_offset = offset_factor * 3
+                            
+                            # Create annotation
+                            ann = ax.annotate(gene_name, (x, y), 
+                                            xytext=(x + x_offset, y + y_offset), 
+                                            textcoords='data',
+                                            fontsize=6,
+                                            ha='center',
+                                            va='bottom' if y_offset > 0 else 'top',
+                                            arrowprops=dict(arrowstyle='-',
+                                                          connectionstyle='arc3,rad=0.1',
+                                                          color='gray',
+                                                          lw=0.5,
+                                                          alpha=0.5),
+                                            bbox=dict(boxstyle='round,pad=0.2',
+                                                    facecolor='white',
+                                                    edgecolor='none',
+                                                    alpha=0.7))
+                            
+                            if font_path and os.path.exists(font_path) and font_prop:
+                                ann.set_fontproperties(font_prop)
     
     # Set labels and title
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
@@ -2153,12 +2234,16 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
     if font_path and os.path.exists(font_path):
         font_prop = fm.FontProperties(fname=font_path)
     
+    # Get axis limits for reference lines and text positioning
+    min_val = min(mean_activities_1.min(), mean_activities_2.min())
+    max_val = max(mean_activities_1.max(), mean_activities_2.max())
+    
     # Plot non-significant components in grey
     non_sig_components = mean_activities_1[~significant_mask]
     if len(non_sig_components) > 0:
         ax.scatter(mean_activities_1[~significant_mask], 
                   mean_activities_2[~significant_mask],
-                  color='grey', alpha=0.5, s=50)
+                  color='grey', alpha=0.5, s=50, zorder=5)
     
     # Plot significant components in light blue
     sig_components = mean_activities_1[significant_mask]
@@ -2170,40 +2255,100 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
     
     # Add component labels for significant changes
     texts = []
-    for component in activities.index[significant_mask]:
-        x_val = mean_activities_1[component]
-        y_val = mean_activities_2[component]
-        if ADJUSTTEXT_AVAILABLE:
-            # Create text object for adjust_text
-            text = ax.text(x_val, y_val, component, fontsize=8, ha='center', va='center')
+    significant_components = activities.index[significant_mask]
+    
+    if ADJUSTTEXT_AVAILABLE and len(significant_components) > 0:
+        # Create text objects with initial offset to avoid point overlap
+        for i, component in enumerate(significant_components):
+            x_val = mean_activities_1[component]
+            y_val = mean_activities_2[component]
+            
+            # Add small initial offset to prevent text from being directly on points
+            # Alternate offsets to reduce initial clustering
+            offset_angle = (i * 137.5) % 360  # Golden angle for better distribution
+            x_offset = 0.02 * (max_val - min_val) * np.cos(np.radians(offset_angle))
+            y_offset = 0.02 * (max_val - min_val) * np.sin(np.radians(offset_angle))
+            
+            text = ax.text(x_val + x_offset, y_val + y_offset, component, 
+                          fontsize=8, ha='center', va='center',
+                          bbox=dict(boxstyle='round,pad=0.3', 
+                                   facecolor='white', 
+                                   edgecolor='none',
+                                   alpha=0.8),
+                          zorder=20)  # Ensure text is on top
             texts.append(text)
-        else:
-            # Fallback to regular annotation if adjustText not available
-            ax.annotate(component, (x_val, y_val), 
-                       xytext=(5, 5), textcoords='offset points',
-                       fontsize=8, ha='left')
-    
-    # Show warning if adjustText not available and there are overlapping labels
-    if not ADJUSTTEXT_AVAILABLE and len(texts) == 0 and significant_mask.sum() > 0:
-        logger.warning("adjustText not installed. Labels may overlap. Install with: pip install adjustText")
-    
-    # Adjust text positions to avoid overlaps if adjustText is available
-    if ADJUSTTEXT_AVAILABLE and texts:
-        # Get current axis limits to ensure labels stay within plot
-        xlim = ax.get_xlim()
-        ylim = ax.get_ylim()
+            
+            # Apply font if provided
+            if font_prop:
+                text.set_fontproperties(font_prop)
         
-        adjust_text(texts, 
-                   x=mean_activities_1[significant_mask].values, 
-                   y=mean_activities_2[significant_mask].values,
-                   arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, alpha=0.5),
-                   autoalign=True,
-                   force_points=(0.2, 0.2),
-                   force_text=(0.5, 0.5),
-                   expand_points=(1.1, 1.1),
-                   expand_text=(1.1, 1.1),
-                   ensure_inside_axes=True,
-                   ax=ax)
+        # Adjust text positions to avoid overlaps
+        try:
+            adjust_text(texts, 
+                       x=mean_activities_1[significant_mask].values, 
+                       y=mean_activities_2[significant_mask].values,
+                       arrowprops=dict(arrowstyle='->', 
+                                     connectionstyle='arc3,rad=0.2',
+                                     color='gray', 
+                                     lw=0.5, 
+                                     alpha=0.5,
+                                     shrinkA=5,  # Shrink from text box
+                                     shrinkB=3),  # Shrink from point
+                       autoalign='xy',
+                       ha='center',
+                       va='center',
+                       force_points=(0.3, 0.3),
+                       force_text=(0.8, 0.8),
+                       expand_points=(1.2, 1.2),
+                       expand_text=(1.3, 1.5),
+                       ensure_inside_axes=True,
+                       only_move={'points':'', 'text':'xy'},
+                       iter_lim=300,
+                       ax=ax)
+        except Exception as e:
+            logger.warning(f"adjust_text optimization failed: {e}. Using initial positions.")
+    
+    elif len(significant_components) > 0:
+        # Fallback to manual positioning if adjustText not available
+        # Sort components by their position to assign offsets systematically
+        comp_positions = [(comp, mean_activities_1[comp], mean_activities_2[comp]) 
+                         for comp in significant_components]
+        comp_positions.sort(key=lambda x: (x[1], x[2]))
+        
+        for i, (component, x_val, y_val) in enumerate(comp_positions):
+            # Calculate smart offset based on position
+            # Use alternating pattern with more spacing
+            if i % 4 == 0:
+                x_offset, y_offset = 8, 8
+            elif i % 4 == 1:
+                x_offset, y_offset = -8, 8
+            elif i % 4 == 2:
+                x_offset, y_offset = 8, -8
+            else:
+                x_offset, y_offset = -8, -8
+            
+            ann = ax.annotate(component, (x_val, y_val), 
+                             xytext=(x_offset, y_offset), 
+                             textcoords='offset points',
+                             fontsize=8, 
+                             ha='center',
+                             va='center',
+                             bbox=dict(boxstyle='round,pad=0.3',
+                                     facecolor='white',
+                                     edgecolor='none',
+                                     alpha=0.8),
+                             arrowprops=dict(arrowstyle='->',
+                                           connectionstyle='arc3,rad=0.2',
+                                           color='gray',
+                                           lw=0.5,
+                                           alpha=0.5),
+                             zorder=20)
+            
+            if font_prop:
+                ann.set_fontproperties(font_prop)
+        
+        if not ADJUSTTEXT_AVAILABLE:
+            logger.warning("adjustText not installed. Labels may overlap. Install with: pip install adjustText")
     
     # Add reference lines
     # Get axis limits for reference lines
@@ -2305,21 +2450,41 @@ def show_gene_iModulon_correlation(multimodulon, gene: str, component: str,
     if multimodulon.combined_gene_db is None:
         raise ValueError("combined_gene_db not found. Please run align_genes() first.")
     
-    # Check if gene exists in combined_gene_db
-    if gene not in multimodulon.combined_gene_db.index:
-        available_genes = list(multimodulon.combined_gene_db.index[:10])
-        raise ValueError(f"Gene '{gene}' not found in combined_gene_db. "
-                        f"Example genes: {available_genes}")
-    
-    # Find species that have this gene (non-None values, ignoring row_label)
-    gene_row = multimodulon.combined_gene_db.loc[gene]
+    # Find which row contains this gene (search in all columns)
+    gene_found = False
+    gene_row_index = None
     species_with_gene = []
     species_gene_names = {}
     
-    for col in multimodulon.combined_gene_db.columns:
-        if col != 'row_label' and pd.notna(gene_row[col]):
-            species_with_gene.append(col)
-            species_gene_names[col] = gene_row[col]
+    # Search for the gene in all columns of combined_gene_db
+    for idx, row in multimodulon.combined_gene_db.iterrows():
+        for col in multimodulon.combined_gene_db.columns:
+            if col != 'row_label' and pd.notna(row[col]) and str(row[col]) == str(gene):
+                gene_found = True
+                gene_row_index = idx
+                # Get all species that have genes in this row (same gene group)
+                for species_col in multimodulon.combined_gene_db.columns:
+                    if species_col != 'row_label' and pd.notna(row[species_col]):
+                        species_with_gene.append(species_col)
+                        species_gene_names[species_col] = row[species_col]
+                break
+        if gene_found:
+            break
+    
+    if not gene_found:
+        # Provide helpful examples from the dataframe
+        example_genes = []
+        for _, row in multimodulon.combined_gene_db.head(5).iterrows():
+            for col in multimodulon.combined_gene_db.columns:
+                if col != 'row_label' and pd.notna(row[col]):
+                    example_genes.append(str(row[col]))
+                    if len(example_genes) >= 10:
+                        break
+            if len(example_genes) >= 10:
+                break
+        
+        raise ValueError(f"Gene '{gene}' not found in combined_gene_db. "
+                        f"Example genes: {', '.join(example_genes[:10])}")
     
     if not species_with_gene:
         raise ValueError(f"Gene '{gene}' not found in any species")
