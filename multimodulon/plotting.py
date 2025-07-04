@@ -309,10 +309,10 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         # Helper function to get gene name
         def get_gene_name(gene_idx, gene_table_row):
             # Try gene_name first
-            if 'gene_name' in gene_table_row and pd.notna(gene_table_row['gene_name']) and str(gene_table_row['gene_name']).strip():
+            if 'gene_name' in gene_table_row and pd.notna(gene_table_row['gene_name']) and str(gene_table_row['gene_name']).strip() and str(gene_table_row['gene_name']).strip() != '-':
                 return str(gene_table_row['gene_name'])
             # Try Preferred_name
-            elif 'Preferred_name' in gene_table_row and pd.notna(gene_table_row['Preferred_name']) and str(gene_table_row['Preferred_name']).strip():
+            elif 'Preferred_name' in gene_table_row and pd.notna(gene_table_row['Preferred_name']) and str(gene_table_row['Preferred_name']).strip() and str(gene_table_row['Preferred_name']).strip() != '-':
                 return str(gene_table_row['Preferred_name'])
             # Use index
             else:
@@ -1456,10 +1456,10 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 # Helper function to get gene name
                 def get_gene_name(gene_idx, gene_table_row):
                     # Try gene_name first
-                    if 'gene_name' in gene_table_row and pd.notna(gene_table_row['gene_name']) and str(gene_table_row['gene_name']).strip():
+                    if 'gene_name' in gene_table_row and pd.notna(gene_table_row['gene_name']) and str(gene_table_row['gene_name']).strip() and str(gene_table_row['gene_name']).strip() != '-':
                         return str(gene_table_row['gene_name'])
                     # Try Preferred_name
-                    elif 'Preferred_name' in gene_table_row and pd.notna(gene_table_row['Preferred_name']) and str(gene_table_row['Preferred_name']).strip():
+                    elif 'Preferred_name' in gene_table_row and pd.notna(gene_table_row['Preferred_name']) and str(gene_table_row['Preferred_name']).strip() and str(gene_table_row['Preferred_name']).strip() != '-':
                         return str(gene_table_row['Preferred_name'])
                     # Use index
                     else:
