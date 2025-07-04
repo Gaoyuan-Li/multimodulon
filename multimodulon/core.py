@@ -1528,3 +1528,208 @@ class MultiModulon:
     def show_gene_iModulon_correlation(self, *args, **kwargs):
         """Show correlation between gene expression and iModulon activity across species."""
         return show_gene_iModulon_correlation(self, *args, **kwargs)
+    
+    def remove_component(self, component: str, species: Optional[str] = None):
+        """
+        Remove a component from the MultiModulon object and rename subsequent components
+        to maintain continuous numbering.
+        
+        For Core components (starting with 'Core_'), removes from all species by default
+        and renames Core_8 to Core_7, Core_9 to Core_8, etc.
+        
+        For Unique components (starting with 'Unique_'), requires species specification
+        and renames subsequent Unique components in that species only.
+        
+        Parameters
+        ----------
+        component : str
+            Name of the component to remove (e.g., 'Core_1', 'Unique_1')
+        species : str, optional
+            Species name. Required for Unique components, ignored with warning for Core components.
+            
+        Raises
+        ------
+        ValueError
+            If component not found, or if species required but not provided for Unique components.
+        """
+        if not component:
+            raise ValueError("Component name cannot be empty")
+        
+        # Determine component type
+        is_core = component.startswith('Core_')
+        is_unique = component.startswith('Unique_')
+        
+        if not is_core and not is_unique:
+            warnings.warn(f"Component '{component}' does not follow standard naming (Core_* or Unique_*)")
+        
+        # Handle Core components
+        if is_core:
+            if species is not None:
+                warnings.warn(f"Species parameter ignored for Core component '{component}'. "
+                            f"Core components will be removed from all species.")
+            
+            # Remove from all species
+            removed_from = []
+            for species_name, species_data in self._species_data.items():
+                if self._remove_component_from_species(component, species_name):
+                    removed_from.append(species_name)
+            
+            if not removed_from:
+                raise ValueError(f"Component '{component}' not found in any species")
+            
+            logger.info(f"Removed Core component '{component}' from species: {', '.join(removed_from)}")
+            
+            # Rename subsequent Core components in all species
+            component_num = int(component.split('_')[1])
+            self._rename_subsequent_components('Core', component_num, species_list=removed_from)
+        
+        # Handle Unique components
+        elif is_unique:
+            if species is None:
+                raise ValueError(f"Species parameter is required for Unique component '{component}'")
+            
+            if species not in self._species_data:
+                raise ValueError(f"Species '{species}' not found in loaded data")
+            
+            if not self._remove_component_from_species(component, species):
+                raise ValueError(f"Component '{component}' not found in species '{species}'")
+            
+            logger.info(f"Removed Unique component '{component}' from species '{species}'")
+            
+            # Rename subsequent Unique components in this species only
+            component_num = int(component.split('_')[1])
+            self._rename_subsequent_components('Unique', component_num, species_list=[species])
+        
+        # Handle other components
+        else:
+            if species is None:
+                # Try to remove from all species
+                removed_from = []
+                for species_name in self._species_data:
+                    if self._remove_component_from_species(component, species_name):
+                        removed_from.append(species_name)
+                
+                if not removed_from:
+                    raise ValueError(f"Component '{component}' not found in any species")
+                
+                logger.info(f"Removed component '{component}' from species: {', '.join(removed_from)}")
+            else:
+                # Remove from specific species
+                if species not in self._species_data:
+                    raise ValueError(f"Species '{species}' not found in loaded data")
+                
+                if not self._remove_component_from_species(component, species):
+                    raise ValueError(f"Component '{component}' not found in species '{species}'")
+                
+                logger.info(f"Removed component '{component}' from species '{species}'")
+    
+    def _remove_component_from_species(self, component: str, species: str) -> bool:
+        """
+        Helper method to remove component from a specific species.
+        
+        Parameters
+        ----------
+        component : str
+            Component name to remove
+        species : str
+            Species name
+            
+        Returns
+        -------
+        bool
+            True if component was found and removed, False otherwise
+        """
+        species_data = self._species_data[species]
+        component_found = False
+        
+        # Remove from M matrix (column)
+        if species_data._M is not None and component in species_data._M.columns:
+            species_data._M = species_data._M.drop(columns=[component])
+            component_found = True
+            logger.debug(f"Removed '{component}' from M matrix of {species}")
+        
+        # Remove from A matrix (row)
+        if species_data._A is not None and component in species_data._A.index:
+            species_data._A = species_data._A.drop(index=[component])
+            component_found = True
+            logger.debug(f"Removed '{component}' from A matrix of {species}")
+        
+        # Remove from M_thresholds (row)
+        if species_data._M_thresholds is not None and component in species_data._M_thresholds.index:
+            species_data._M_thresholds = species_data._M_thresholds.drop(index=[component])
+            component_found = True
+            logger.debug(f"Removed '{component}' from M_thresholds of {species}")
+        
+        # Remove from presence_matrix (column)
+        if species_data._presence_matrix is not None and component in species_data._presence_matrix.columns:
+            species_data._presence_matrix = species_data._presence_matrix.drop(columns=[component])
+            component_found = True
+            logger.debug(f"Removed '{component}' from presence_matrix of {species}")
+        
+        return component_found
+    
+    def _rename_subsequent_components(self, component_type: str, removed_num: int, species_list: List[str]):
+        """
+        Rename subsequent components after removal to maintain continuous numbering.
+        
+        Parameters
+        ----------
+        component_type : str
+            'Core' or 'Unique'
+        removed_num : int
+            The number of the removed component
+        species_list : List[str]
+            List of species to rename components in
+        """
+        logger.info(f"Renaming subsequent {component_type} components after removing {component_type}_{removed_num}")
+        
+        # Find all components that need renaming
+        for species_name in species_list:
+            species_data = self._species_data[species_name]
+            components_to_rename = []
+            
+            # Check M matrix for components that need renaming
+            if species_data._M is not None:
+                for col in species_data._M.columns:
+                    # Only process components that match the exact pattern (Core_N or Unique_N)
+                    if col.startswith(f'{component_type}_'):
+                        parts = col.split('_')
+                        # Ensure it's exactly in format "Core_N" or "Unique_N" (not renamed components)
+                        if len(parts) == 2 and parts[0] == component_type:
+                            try:
+                                comp_num = int(parts[1])
+                                if comp_num > removed_num:
+                                    components_to_rename.append((col, comp_num))
+                            except ValueError:
+                                # Skip if the part after underscore is not a number
+                                continue
+            
+            # Sort components by number
+            components_to_rename.sort(key=lambda x: x[1])
+            
+            # Rename each component
+            for old_name, old_num in components_to_rename:
+                new_num = old_num - 1
+                new_name = f'{component_type}_{new_num}'
+                
+                # Rename in M matrix (column)
+                if species_data._M is not None and old_name in species_data._M.columns:
+                    species_data._M = species_data._M.rename(columns={old_name: new_name})
+                    logger.debug(f"Renamed '{old_name}' to '{new_name}' in M matrix of {species_name}")
+                
+                # Rename in A matrix (row)
+                if species_data._A is not None and old_name in species_data._A.index:
+                    species_data._A = species_data._A.rename(index={old_name: new_name})
+                    logger.debug(f"Renamed '{old_name}' to '{new_name}' in A matrix of {species_name}")
+                
+                # Rename in M_thresholds (row)
+                if species_data._M_thresholds is not None and old_name in species_data._M_thresholds.index:
+                    species_data._M_thresholds = species_data._M_thresholds.rename(index={old_name: new_name})
+                    logger.debug(f"Renamed '{old_name}' to '{new_name}' in M_thresholds of {species_name}")
+                
+                # Rename in presence_matrix (column)
+                if species_data._presence_matrix is not None and old_name in species_data._presence_matrix.columns:
+                    species_data._presence_matrix = species_data._presence_matrix.rename(columns={old_name: new_name})
+                    logger.debug(f"Renamed '{old_name}' to '{new_name}' in presence_matrix of {species_name}")
+        
+        logger.info(f"Completed renaming of {component_type} components")

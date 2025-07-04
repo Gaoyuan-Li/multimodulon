@@ -989,10 +989,10 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
         patches = [Patch(color=color, label=label) for label, color in legend_elements]
         
         # Calculate number of columns needed based on figure height
-        # Base: 8 items per column for fig_height=3
+        # Base: 12 items per column for fig_height=3
         n_items = len(legend_elements)
         fig_height = fig_size[1]  # Get the figure height
-        items_per_column = round(8 * (fig_height / 3))  # Scale proportionally
+        items_per_column = round(12 * (fig_height / 3))  # Scale proportionally
         
         # Calculate number of columns needed
         ncol = max(1, (n_items + items_per_column - 1) // items_per_column)  # Ceiling division
@@ -2396,6 +2396,11 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
     min_val = min(mean_activities_1.min(), mean_activities_2.min())
     max_val = max(mean_activities_1.max(), mean_activities_2.max())
     
+    # Get species color from palette
+    species_color = 'lightblue'  # Default color
+    if hasattr(multimodulon, 'species_palette') and species in multimodulon.species_palette:
+        species_color = multimodulon.species_palette[species]
+    
     # Plot non-significant components in grey
     non_sig_components = mean_activities_1[~significant_mask]
     if len(non_sig_components) > 0:
@@ -2403,12 +2408,12 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                   mean_activities_2[~significant_mask],
                   color='grey', alpha=0.5, s=50, zorder=5)
     
-    # Plot significant components in light blue
+    # Plot significant components in species color
     sig_components = mean_activities_1[significant_mask]
     if len(sig_components) > 0:
         ax.scatter(mean_activities_1[significant_mask], 
                   mean_activities_2[significant_mask],
-                  color='lightblue', edgecolor='black', linewidth=0.5, 
+                  color=species_color, edgecolor='black', linewidth=0.5, 
                   s=100, zorder=10)
     
     # Add component labels for significant changes
