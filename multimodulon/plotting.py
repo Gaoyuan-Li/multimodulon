@@ -1509,9 +1509,19 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         if ADJUSTTEXT_AVAILABLE:
-                            # Add larger initial offset to prevent text from being on dots
+                            # Add much larger initial offset for crowded subplots
                             angle = (i * 137.5) % 360  # Golden angle
-                            radius = 0.03 * (max(y_weights) - min(y_weights))  # Doubled from 0.015
+                            # Use position-aware radius - larger for crowded regions
+                            base_radius = 0.05 * (max(y_weights) - min(y_weights))
+                            
+                            # Check local density - increase offset if many points nearby
+                            nearby_count = sum(1 for _, px, _ in genes_to_label 
+                                             if abs(px - x) < 0.1 * (max(x_positions) - min(x_positions)))
+                            if nearby_count > 5:
+                                radius = base_radius * 1.5
+                            else:
+                                radius = base_radius
+                            
                             x_offset = radius * np.cos(np.radians(angle))
                             y_offset = radius * np.sin(np.radians(angle))
                             
@@ -1552,39 +1562,77 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     except Exception as e:
                         logger.warning(f"adjust_text failed for {species}: {e}. Using smart positioning.")
                         
-                        # Fallback: Use smart positioning when adjust_text fails
+                        # Fallback: Use binning logic from view_iModulon_weights
                         # Clear existing texts
                         for text in texts:
                             text.remove()
                         texts = []
                         
-                        # Sort genes by x position for systematic placement
-                        genes_sorted = sorted(genes_to_label, key=lambda x: x[1])
+                        # Sort genes by x position
+                        genes_to_label_by_pos = sorted(genes_to_label, key=lambda x: x[1])
                         
-                        # Create alternating pattern for text placement
-                        for i, (gene, x, y) in enumerate(genes_sorted):
-                            if gene in gene_table.index:
-                                gene_name = get_gene_name(gene, gene_table.loc[gene])
-                                
-                                # Alternate between above and below
-                                if i % 2 == 0:
-                                    y_offset = 0.08 * (max(y_weights) - min(y_weights))
-                                else:
-                                    y_offset = -0.08 * (max(y_weights) - min(y_weights))
-                                
-                                # Slight x offset to avoid vertical overlap
-                                x_offset = (i % 4 - 1.5) * 0.01 * (max(x_positions) - min(x_positions))
-                                
-                                text = ax.text(x + x_offset, y + y_offset, gene_name,
-                                             fontsize=6, ha='center', va='center',
-                                             bbox=dict(boxstyle='round,pad=0.1',
-                                                     facecolor='white',
-                                                     edgecolor='none',
-                                                     alpha=0.6))
-                                
-                                # Draw connecting line
-                                ax.plot([x, x + x_offset], [y, y + y_offset],
-                                       color='gray', lw=0.2, alpha=0.5, zorder=1)
+                        # Group genes by position bins to avoid overlap
+                        x_range = max([x for _, x, _ in genes_to_label]) - min([x for _, x, _ in genes_to_label])
+                        n_bins = min(15, max(10, len(genes_to_label) // 3))
+                        bin_width = x_range / n_bins if x_range > 0 else 1
+                        
+                        # Create position bins
+                        gene_bins = {}
+                        for gene, x, y in genes_to_label_by_pos:
+                            bin_idx = int((x - min([x for _, x, _ in genes_to_label])) / bin_width) if bin_width > 0 else 0
+                            bin_idx = min(bin_idx, n_bins - 1)
+                            if bin_idx not in gene_bins:
+                                gene_bins[bin_idx] = []
+                            gene_bins[bin_idx].append((gene, x, y))
+                        
+                        # Position labels smartly within each bin
+                        for bin_idx, bin_genes in gene_bins.items():
+                            # Sort genes in each bin by y-coordinate
+                            bin_genes.sort(key=lambda x: x[2])
+                            
+                            for i, (gene, x, y) in enumerate(bin_genes):
+                                if gene in gene_table.index:
+                                    gene_name = get_gene_name(gene, gene_table.loc[gene])
+                                    
+                                    # Calculate offset based on position in bin
+                                    n_in_bin = len(bin_genes)
+                                    y_range = max(y_weights) - min(y_weights)
+                                    
+                                    if n_in_bin == 1:
+                                        # Single gene in bin - simple offset
+                                        y_offset = 0.08 * y_range if y > 0 else -0.08 * y_range
+                                        x_offset = 0
+                                    else:
+                                        # Multiple genes - distribute them
+                                        offset_factor = (i - n_in_bin/2) / max(n_in_bin/2, 1)
+                                        
+                                        # Base y offset with alternating pattern
+                                        base_y_offset = 0.08 * y_range
+                                        if i % 2 == 0:
+                                            y_offset = base_y_offset + abs(offset_factor) * 0.04 * y_range
+                                        else:
+                                            y_offset = -base_y_offset - abs(offset_factor) * 0.04 * y_range
+                                        
+                                        # X offset for crowded regions
+                                        x_offset = offset_factor * 0.02 * x_range
+                                        
+                                        # For very crowded bins, use wider spacing
+                                        if n_in_bin > 5:
+                                            if i % 2 == 0:
+                                                x_offset = abs(x_offset) + 0.01 * x_range
+                                            else:
+                                                x_offset = -abs(x_offset) - 0.01 * x_range
+                                    
+                                    text = ax.text(x + x_offset, y + y_offset, gene_name,
+                                                 fontsize=5, ha='center', va='center',
+                                                 bbox=dict(boxstyle='round,pad=0.1',
+                                                         facecolor='white',
+                                                         edgecolor='none',
+                                                         alpha=0.7))
+                                    
+                                    # Draw connecting line
+                                    ax.plot([x, x + x_offset], [y, y + y_offset],
+                                           color='gray', lw=0.2, alpha=0.5, zorder=1)
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
@@ -2473,21 +2521,22 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
         
         # Adjust text positions to avoid overlaps
         try:
-            # Use adjust_text without arrows to avoid FancyArrowPatch issues
+            # Use adjust_text to avoid ALL points (both significant and non-significant)
+            # This prevents labels from being placed on other dots
             adjust_text(texts, 
-                       x=mean_activities_1[significant_mask].values, 
-                       y=mean_activities_2[significant_mask].values,
+                       x=mean_activities_1.values,  # ALL points, not just significant ones
+                       y=mean_activities_2.values,  # ALL points, not just significant ones
                        arrowprops=None,  # Disable arrows to avoid compatibility issues
                        autoalign='xy',
                        ha='center',
                        va='center',
-                       force_points=(0.6, 0.8),  # Same as view_iModulon_weights
-                       force_text=(1.2, 1.5),
-                       expand_points=(2.5, 3.0),  # Same expansion as view_iModulon_weights
-                       expand_text=(2.0, 2.5),
+                       force_points=(0.8, 1.0),  # Stronger repulsion from ALL points
+                       force_text=(1.5, 2.0),    # Stronger text repulsion
+                       expand_points=(3.0, 3.5),  # More expansion around ALL points
+                       expand_text=(2.5, 3.0),   # More text expansion
                        ensure_inside_axes=True,
                        only_move={'points':'', 'text':'xy'},
-                       iter_lim=1500,  # More iterations for better convergence
+                       iter_lim=2000,  # More iterations for better convergence
                        ax=ax)
             
             # After adjustment, manually draw simple lines from text to points
@@ -2501,7 +2550,51 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                        color='gray', lw=0.3, alpha=0.5, zorder=1)
                            
         except Exception as e:
-            logger.warning(f"adjust_text optimization failed: {e}. Using initial positions.")
+            logger.warning(f"adjust_text optimization failed: {e}. Using fallback positioning.")
+            
+            # Fallback: Re-position texts using a grid-based approach
+            # Clear existing texts
+            for text in texts:
+                text.remove()
+            texts = []
+            
+            # Sort components by distance from origin to assign systematic positions
+            comp_distances = [(comp, mean_activities_1[comp], mean_activities_2[comp],
+                              np.sqrt(mean_activities_1[comp]**2 + mean_activities_2[comp]**2))
+                             for comp in significant_components]
+            comp_distances.sort(key=lambda x: x[3])
+            
+            # Create a grid of safe positions around the plot
+            axis_range = max_val - min_val
+            for i, (comp, x_val, y_val, _) in enumerate(comp_distances):
+                # Use a spiral pattern for positioning
+                angle = (i * 137.5) % 360  # Golden angle
+                radius = 0.15 * axis_range + (i // 8) * 0.05 * axis_range
+                
+                # Calculate text position
+                text_x = x_val + radius * np.cos(np.radians(angle))
+                text_y = y_val + radius * np.sin(np.radians(angle))
+                
+                # Keep text within axes bounds
+                margin = 0.05 * axis_range
+                text_x = max(min_val + margin, min(max_val - margin, text_x))
+                text_y = max(min_val + margin, min(max_val - margin, text_y))
+                
+                text = ax.text(text_x, text_y, comp,
+                             fontsize=8, ha='center', va='center',
+                             bbox=dict(boxstyle='round,pad=0.3',
+                                     facecolor='white',
+                                     edgecolor='lightgray',
+                                     linewidth=0.5,
+                                     alpha=0.9),
+                             zorder=20)
+                
+                # Draw line from text to point
+                ax.plot([x_val, text_x], [y_val, text_y],
+                       color='gray', lw=0.3, alpha=0.5, zorder=1)
+                
+                if font_prop:
+                    text.set_fontproperties(font_prop)
     
     elif len(significant_components) > 0:
         # Fallback to manual positioning if adjustText not available

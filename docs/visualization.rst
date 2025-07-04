@@ -203,8 +203,10 @@ Understanding the Output
    - Gene labels shown if show_gene_names=True (no limit for species-specific genes)
    - When show_gene_names=True, only species-specific genes are labeled
    - Shared genes across all species are printed to console instead
-   - Enhanced text positioning with 3% initial offset and stronger repulsion for crowded subplots
-   - Fallback alternating pattern positioning if adjustText fails
+   - Enhanced text positioning with 5% initial offset and density-aware spacing
+   - Much stronger repulsion parameters (0.8-1.0 for points, 1.5-2.0 for text)
+   - Sophisticated binning fallback that groups genes by position to prevent overlap
+   - Adaptive offset increases in crowded regions
 
 Batch Processing Core Components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -601,8 +603,9 @@ Understanding the Plot
 * **Labels**: Component names shown for significant changes
   - Text positioned with initial offset (8% of axis range) from dots using golden angle distribution
   - White background boxes with light gray borders for readability
-  - Simple gray lines connect labels to their points when distance > 8% of axis range
-  - Special handling for points near the diagonal line to avoid overlap
+  - Simple gray lines connect labels to their corresponding points
+  - Uses ALL points (not just significant ones) to avoid placing labels on other dots
+  - Fallback spiral positioning with increasing radius if optimization fails
 * **Dotted lines**: Three reference lines at y=x (diagonal), x=0 (vertical), and y=0 (horizontal)
 
 Note: The threshold is automatically scaled based on the range of activities to handle negative ICA values appropriately.
