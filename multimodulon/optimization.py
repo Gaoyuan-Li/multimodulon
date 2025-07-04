@@ -192,15 +192,15 @@ def run_nre_optimization(
     num_top_gene: int = 20,
     fig_size: Tuple[float, float] = (5, 3),
     font_path: Optional[str] = None,
-    robust_runs: Optional[int] = None
+    num_runs_per_dimension: Optional[int] = None
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
     Optimization using NRE or Cohen's d metric.
     
     Args:
         metric: 'nre' for Normalized Reconstruction Error, 'effect_size' for Cohen's d effect size
-        robust_runs: Number of ICA runs for robust clustering (only for effect_size metric).
-                    If provided, uses robust clustering to count components.
+        num_runs_per_dimension: Number of ICA runs per k value for robust clustering (only for effect_size metric).
+                               If provided, uses robust clustering to count components.
     """
     
     # Sort species list for consistent ordering across runs
@@ -291,7 +291,7 @@ def run_nre_optimization(
                 score = calculate_nre_proper(test_sources, k)
                 
             else:  # effect_size
-                if robust_runs is not None and robust_runs > 1:
+                if num_runs_per_dimension is not None and num_runs_per_dimension > 1:
                     # Use robust clustering approach
                     from .multiview_ica import run_multiview_ica
                     from sklearn.cluster import HDBSCAN
@@ -302,14 +302,14 @@ def run_nre_optimization(
                     # Collect core components from multiple runs
                     core_components = {species: [] for species in species_list}
                     
-                    for robust_run in range(robust_runs):
+                    for robust_run in range(num_runs_per_dimension):
                         # Run multi-view ICA with different seed
                         M_matrices = run_multiview_ica(
                             species_X_matrices,
                             a_values,
                             k,  # c = k (square ICA)
                             mode=mode,
-                            seed=seed + robust_run + run * robust_runs  # Different seed for each robust run
+                            seed=seed + robust_run + run * num_runs_per_dimension  # Different seed for each robust run
                         )
                         
                         # Process core components for each species
@@ -331,7 +331,7 @@ def run_nre_optimization(
                     # Calculate scaled parameters
                     base_per_dataset = 50
                     base_runs = 100
-                    runs_scaling_factor = robust_runs / base_runs
+                    runs_scaling_factor = num_runs_per_dimension / base_runs
                     core_min_cluster_size = max(2, int(base_per_dataset * n_species * runs_scaling_factor))
                     core_min_samples = max(2, int(base_per_dataset * n_species * runs_scaling_factor))
                     core_min_per_dataset_count = max(1, int(base_per_dataset * runs_scaling_factor))
@@ -503,7 +503,7 @@ def run_nre_optimization(
     if metric == 'nre':
         print(f"\nOptimal k = {optimal_num_core_components} (NRE = {mean_metric_per_k[optimal_num_core_components]:.6f})")
     else:
-        if robust_runs is not None and robust_runs > 1:
+        if num_runs_per_dimension is not None and num_runs_per_dimension > 1:
             print(f"\nOptimal k = {optimal_num_core_components} (Number of robust components above threshold = {mean_metric_per_k[optimal_num_core_components]:.1f})")
         else:
             print(f"\nOptimal k = {optimal_num_core_components} (Number of components above threshold = {mean_metric_per_k[optimal_num_core_components]:.1f})")
@@ -584,7 +584,7 @@ def run_nre_optimization(
             ax.scatter([optimal_num_core_components], [mean_metric_per_k[optimal_num_core_components]], color='red', s=120, zorder=5,
                       edgecolors='darkred', linewidth=2)
             
-            if robust_runs is not None and robust_runs > 1:
+            if num_runs_per_dimension is not None and num_runs_per_dimension > 1:
                 ax.set_ylabel('Number of robust QC-passed components', fontsize=12)
                 ax.set_title('Optimization of Core components (Robust clustering)', 
                             fontsize=14, fontweight='bold')
@@ -619,7 +619,7 @@ def run_nre_optimization(
         if metric == 'nre':
             label_text = f'Optimal k = {optimal_num_core_components}\nNRE = {mean_metric_per_k[optimal_num_core_components]:.6f}'
         else:
-            if robust_runs is not None and robust_runs > 1:
+            if num_runs_per_dimension is not None and num_runs_per_dimension > 1:
                 label_text = f'Optimal k = {optimal_num_core_components}\n{int(mean_metric_per_k[optimal_num_core_components])} robust components above threshold'
             else:
                 label_text = f'Optimal k = {optimal_num_core_components}\n{int(mean_metric_per_k[optimal_num_core_components])} components above threshold'
@@ -659,7 +659,8 @@ def optimize_number_of_core_components(
     num_top_gene: int = 20,
     save_path: Optional[str] = None,
     fig_size: Tuple[float, float] = (7, 5),
-    font_path: Optional[str] = None
+    font_path: Optional[str] = None,
+    num_runs_per_dimension: Optional[int] = None
 ) -> Tuple[int, Dict[int, float]]:
     """
     Optimize the number of core components using specified metric.
@@ -711,6 +712,9 @@ def optimize_number_of_core_components(
     font_path : str, optional
         Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
         If provided, uses this font for all text elements
+    num_runs_per_dimension : int, optional
+        Number of ICA runs per k value for robust clustering (only for 'effect_size' metric).
+        If provided, uses robust clustering to identify consistent components
     
     Returns
     -------
@@ -793,7 +797,7 @@ def optimize_number_of_core_components(
         num_top_gene=num_top_gene,
         fig_size=fig_size,
         font_path=font_path,
-        robust_runs=num_runs if metric == 'effect_size' else None
+        num_runs_per_dimension=num_runs_per_dimension
     )
     
     # Handle save_plot (deprecated) and save_path
@@ -835,7 +839,7 @@ def optimize_number_of_unique_components(
     save_path: Optional[str] = None,
     fig_size: Tuple[float, float] = (7, 5),
     font_path: Optional[str] = None,
-    num_runs: int = 1
+    num_runs_per_dimension: int = 1
 ) -> Tuple[Dict[str, int], Dict[str, int]]:
     """
     Optimize the number of unique components for each species.
@@ -870,8 +874,8 @@ def optimize_number_of_unique_components(
     font_path : str, optional
         Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
         If provided, uses this font for all text elements
-    num_runs : int, default=1
-        Number of ICA runs for robust clustering to identify consistent components
+    num_runs_per_dimension : int, default=1
+        Number of ICA runs per a value for robust clustering to identify consistent components
         
     Returns
     -------
@@ -932,7 +936,7 @@ def optimize_number_of_unique_components(
         
         # Test each a value
         for a_test in tqdm(a_candidates, desc=f"Testing a values for {target_species}"):
-            if num_runs > 1:
+            if num_runs_per_dimension > 1:
                 # Use robust clustering approach
                 from sklearn.cluster import HDBSCAN
                 
@@ -947,7 +951,7 @@ def optimize_number_of_unique_components(
                 # Collect unique components from multiple runs
                 unique_components_runs = []
                 
-                for run_idx in range(num_runs):
+                for run_idx in range(num_runs_per_dimension):
                     # Run ICA
                     from .multiview_ica import run_multiview_ica
                     M_matrices = run_multiview_ica(
@@ -979,7 +983,7 @@ def optimize_number_of_unique_components(
                     # Calculate scaled parameters
                     base_unique_min = 50
                     base_runs = 100
-                    runs_scaling_factor = num_runs / base_runs
+                    runs_scaling_factor = num_runs_per_dimension / base_runs
                     unique_min_cluster_size = max(2, int(base_unique_min * runs_scaling_factor))
                     unique_min_samples = max(2, int(base_unique_min * runs_scaling_factor))
                     
@@ -1101,7 +1105,7 @@ def optimize_number_of_unique_components(
                   edgecolors='darkred', linewidth=2)
         
         ax.set_xlabel('Number of Total Components (a)', fontsize=12)
-        if num_runs > 1:
+        if num_runs_per_dimension > 1:
             ax.set_ylabel('Number of robust QC-passed components', fontsize=12)
             ax.set_title(f'Optimization of Unique Components for {target_species} (Robust clustering)', fontsize=14, fontweight='bold')
         else:
@@ -1124,7 +1128,7 @@ def optimize_number_of_unique_components(
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
         # Add text box with result
-        if num_runs > 1:
+        if num_runs_per_dimension > 1:
             label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} robust unique components'
         else:
             label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} consistent unique components'
@@ -1156,7 +1160,7 @@ def optimize_number_of_unique_components(
         else:
             plt.show()
         
-        if num_runs > 1:
+        if num_runs_per_dimension > 1:
             print(f"\nOptimal a for {target_species}: {optimal_a} ({consistent_counts[optimal_a]} robust unique components)")
         else:
             print(f"\nOptimal a for {target_species}: {optimal_a} ({consistent_counts[optimal_a]} consistent unique components)")
