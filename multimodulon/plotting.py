@@ -255,14 +255,14 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             legend_elements = [Patch(facecolor=unique_colors[cat], label=cat) 
                              for cat in sorted_categories]
             
-            # Add legend with appropriate font
+            # Add legend with appropriate font - align to top edge
             if font_path and os.path.exists(font_path):
-                legend = ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5),
+                legend = ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1),
                                  frameon=True, fontsize=10)
                 for text in legend.get_texts():
                     text.set_fontproperties(font_prop)
             else:
-                ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5),
+                ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1),
                         frameon=True, fontsize=10)
     
     elif threshold is not None:
@@ -1222,10 +1222,10 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             col = idx % n_cols
             axes[row, col].axis('off')
         
-        # Add main title
-        fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98)
+        # Add main title with reduced gap
+        fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.99)
         if font_path and os.path.exists(font_path):
-            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.98, fontproperties=font_prop)
+            fig.suptitle(f'Core iModulon {component}', fontsize=16, y=0.99, fontproperties=font_prop)
         
         # Create legend at bottom
         if all_unique_colors:
@@ -1267,8 +1267,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 fig.legend(handles=legend_elements, loc='lower center', 
                          bbox_to_anchor=(0.5, -0.03), ncol=3, frameon=True, fontsize=10)
         
-        # Adjust layout
-        plt.tight_layout(rect=[0, 0.08, 1, 0.96])
+        # Adjust layout with reduced top margin
+        plt.tight_layout(rect=[0, 0.08, 1, 0.97])
         
         # Save or show
         if save_path:
