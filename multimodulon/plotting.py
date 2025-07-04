@@ -1503,54 +1503,63 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 # Sort by absolute weight - no limit since we're only showing species-specific genes
                 genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
                 
-                # Smart label positioning to avoid overlaps
+                # Add labels with initial offset using golden angle spiral (like view_iModulon_weights)
                 texts = []
-                
-                # Sort genes by x position for systematic placement
-                genes_sorted = sorted(genes_to_label, key=lambda x: x[1])
-                
-                # Calculate dimensions
-                x_range = max([x for _, x, _ in genes_to_label]) - min([x for _, x, _ in genes_to_label]) if genes_to_label else 1
-                y_range = max(y_weights) - min(y_weights) if len(y_weights) > 0 else 1
-                
-                # Place labels in layers to avoid overlap
-                layer_offset = 0.12 * y_range  # Space between layers
-                labels_per_layer = max(1, len(genes_to_label) // 4)  # Distribute across 4 layers
-                
-                for i, (gene, x, y) in enumerate(genes_sorted):
+                for i, (gene, x, y) in enumerate(genes_to_label):
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
-                        
-                        # Determine layer and position within layer
-                        layer = i // labels_per_layer
-                        pos_in_layer = i % labels_per_layer
-                        
-                        # Alternate above and below
-                        if layer % 2 == 0:
-                            # Above the point
-                            y_offset = layer_offset * (1 + layer // 2)
+                        if ADJUSTTEXT_AVAILABLE:
+                            # Use golden angle spiral for initial distribution
+                            angle = (i * 137.5) % 360  # Golden angle
+                            radius = 0.02 * (max(y_weights) - min(y_weights))
+                            x_offset = radius * np.cos(np.radians(angle))
+                            y_offset = radius * np.sin(np.radians(angle))
+                            
+                            text = ax.text(x + x_offset, y + y_offset, gene_name, 
+                                         fontsize=5, ha='center', va='center',
+                                         bbox=dict(boxstyle='round,pad=0.1', 
+                                                 facecolor='white', 
+                                                 edgecolor='none',
+                                                 alpha=0.6))
+                            texts.append(text)
                         else:
-                            # Below the point
-                            y_offset = -layer_offset * (1 + layer // 2)
+                            ax.annotate(gene_name, (x, y), xytext=(1, 1), textcoords='offset points',
+                                       fontsize=5, ha='left', va='bottom')
+                
+                # Adjust text positions if adjustText is available
+                if ADJUSTTEXT_AVAILABLE and texts:
+                    try:
+                        # Use same parameters as view_iModulon_weights but with even stronger forces for crowded subplots
+                        adjust_text(texts,
+                                   x=[x for _, x, _ in genes_to_label],
+                                   y=[y for _, _, y in genes_to_label],
+                                   arrowprops=None,  # Disable arrows to avoid compatibility issues
+                                   autoalign='xy',
+                                   ha='center',
+                                   va='center',
+                                   force_points=(1.0, 1.2),  # Even stronger repulsion from points
+                                   force_text=(2.0, 2.5),    # Much stronger text repulsion
+                                   expand_points=(3.5, 4.0),  # More expansion around points
+                                   expand_text=(3.0, 3.5),   # More text expansion
+                                   ensure_inside_axes=True,
+                                   only_move={'points':'', 'text':'xy'},
+                                   iter_lim=2500,  # More iterations for convergence
+                                   ax=ax)
                         
-                        # Slight x offset to prevent vertical stacking
-                        x_offset = (pos_in_layer - labels_per_layer/2) * 0.01 * x_range
-                        
-                        # Place text
-                        text_x = x + x_offset
-                        text_y = y + y_offset
-                        
-                        text = ax.text(text_x, text_y, gene_name,
-                                     fontsize=5, ha='center', va='center',
-                                     bbox=dict(boxstyle='round,pad=0.1',
-                                             facecolor='white',
-                                             edgecolor='none',
-                                             alpha=0.7))
-                        texts.append(text)
-                        
-                        # Draw connecting line
-                        ax.plot([x, text_x], [y, text_y],
-                               color='gray', lw=0.2, alpha=0.5, zorder=1)
+                        # After adjustment, manually add simple lines
+                        for i, ((gene, x, y), text) in enumerate(zip(genes_to_label, texts)):
+                            text_x, text_y = text.get_position()
+                            # Draw simple line from text to point
+                            ax.plot([x, text_x], [y, text_y], 
+                                   color='gray', lw=0.2, alpha=0.5, zorder=1)
+                                   
+                    except Exception as e:
+                        logger.warning(f"adjust_text failed for {species}: {e}")
+                        # Just use the initial positions with lines
+                        for i, ((gene, x, y), text) in enumerate(zip(genes_to_label, texts)):
+                            text_x, text_y = text.get_position()
+                            ax.plot([x, text_x], [y, text_y], 
+                                   color='gray', lw=0.2, alpha=0.5, zorder=1)
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
@@ -2453,7 +2462,12 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                 x_offset = radius * np.cos(np.radians(angle))
                 y_offset = radius * np.sin(np.radians(angle))
             
-            text = ax.text(x_val + x_offset, y_val + y_offset, component, 
+            # Calculate text position
+            text_x = x_val + x_offset
+            text_y = y_val + y_offset
+            
+            # Create the text object
+            text = ax.text(text_x, text_y, component, 
                           fontsize=8, ha='center', va='center',
                           bbox=dict(boxstyle='round,pad=0.3', 
                                    facecolor='white', 
@@ -2568,7 +2582,7 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
             save_path.mkdir(parents=True, exist_ok=True)
             save_file = save_path / f'{species}_{condition_1}_vs_{condition_2}_activity_change.svg'
         
-        plt.savefig(save_file, dpi=300, bbox_inches='tight')
+        plt.savefig(save_file, dpi=300, bbox_inches='tight', pad_inches=0.05)
         logger.info(f"Activity change plot saved to {save_file}")
     else:
         plt.show()
