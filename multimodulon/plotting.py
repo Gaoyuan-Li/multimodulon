@@ -1512,31 +1512,44 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 # Sort by absolute weight - no limit since we're only showing species-specific genes
                 genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
                 
-                # Add labels with initial offset using golden angle spiral (like view_iModulon_weights)
+                # Add labels with initial offset distributed evenly around circle
                 texts = []
+                n_labels = len(genes_to_label)
+                
+                # Create a shuffled list of angles to avoid clustering
+                if n_labels <= 8:
+                    # For few labels, use evenly spaced angles
+                    base_angles = np.linspace(0, 360, n_labels, endpoint=False)
+                else:
+                    # For many labels, use golden angle spiral for better distribution
+                    golden_angle = 137.5
+                    base_angles = [(i * golden_angle) % 360 for i in range(n_labels)]
+                
+                # Shuffle to avoid patterns based on gene order
+                angle_indices = list(range(n_labels))
+                np.random.shuffle(angle_indices)
+                
                 for i, (gene, x, y) in enumerate(genes_to_label):
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         if ADJUSTTEXT_AVAILABLE:
-                            # Distribute labels in all directions for better spacing
-                            # Use strategic angles: 0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°
-                            preferred_angles = [0, 45, 90, 135, 180, 225, 270, 315]
-                            angle_index = i % len(preferred_angles)
-                            base_angle = preferred_angles[angle_index]
-                            
-                            # Add small variation to prevent exact overlaps
-                            angle = base_angle + np.random.uniform(-15, 15)
+                            # Use shuffled angle
+                            angle = base_angles[angle_indices[i]]
+                            # Add small random variation
+                            angle += np.random.uniform(-10, 10)
                             
                             # Calculate radius based on plot scale
                             x_range = max(x_positions) - min(x_positions)
                             y_range = max(y_weights) - min(y_weights)
                             
                             # Use different radius for x and y to account for aspect ratio
-                            x_radius = 0.05 * x_range  # Horizontal spacing
-                            y_radius = 0.25 * y_range  # Vertical spacing
+                            x_radius = 0.08 * x_range  # Increased horizontal spacing
+                            y_radius = 0.3 * y_range   # Increased vertical spacing
                             
-                            x_offset = x_radius * np.cos(np.radians(angle))
-                            y_offset = y_radius * np.sin(np.radians(angle))
+                            # Add some variation to radius to prevent concentric circles
+                            radius_variation = 1 + np.random.uniform(-0.2, 0.2)
+                            x_offset = x_radius * radius_variation * np.cos(np.radians(angle))
+                            y_offset = y_radius * radius_variation * np.sin(np.radians(angle))
                             
                             # Adjust horizontal and vertical alignment based on angle
                             if 45 <= angle <= 135:
@@ -1568,15 +1581,15 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                    y=[y for _, _, y in genes_to_label],
                                    arrowprops=None,  # Disable arrows to avoid compatibility issues
                                    autoalign=False,  # Don't force alignment, allow free positioning
-                                   force_points=(3.0, 3.5),      # Strong repulsion from points
-                                   force_text=(4.0, 4.5),        # Strong text-text repulsion
-                                   expand_points=(8.0, 8.0),     # Equal expansion in x and y
-                                   expand_text=(5.0, 5.0),       # Equal text expansion in x and y
+                                   force_points=(2.0, 2.0),      # Balanced repulsion from points
+                                   force_text=(3.0, 3.0),        # Strong text-text repulsion
+                                   expand_points=(6.0, 6.0),     # Good expansion around points
+                                   expand_text=(4.0, 4.0),       # Good text expansion
                                    ensure_inside_axes=True,
                                    only_move={'points':'', 'text':'xy'},
-                                   iter_lim=15000,  # Many iterations for convergence
-                                   lim=500,         # Maximum adjustments per iteration
-                                   precision=0.001,  # Higher precision for final positioning
+                                   iter_lim=20000,  # More iterations for better convergence
+                                   lim=1000,        # More adjustments per iteration
+                                   precision=0.0001, # Much higher precision
                                    ax=ax)
                         
                         # After adjustment, manually add simple lines
