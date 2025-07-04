@@ -185,6 +185,7 @@ def save_to_json_multimodulon(multi_modulon: 'MultiModulon', save_path: str) -> 
     - All species data (log_tpm, log_tpm_norm, X, M, A, gene_table, sample_sheet, M_thresholds, presence_matrix)
     - Combined gene database
     - Input folder path
+    - Species color palette
     
     Parameters
     ----------
@@ -205,8 +206,13 @@ def save_to_json_multimodulon(multi_modulon: 'MultiModulon', save_path: str) -> 
     data = {
         'input_folder_path': str(multi_modulon.input_folder_path),
         'species_data': {},
-        'combined_gene_db': None
+        'combined_gene_db': None,
+        'species_palette': None
     }
+    
+    # Save species palette if available
+    if hasattr(multi_modulon, 'species_palette') and multi_modulon.species_palette is not None:
+        data['species_palette'] = multi_modulon.species_palette
     
     # Save combined gene database if available
     if hasattr(multi_modulon, '_combined_gene_db') and multi_modulon._combined_gene_db is not None:
@@ -358,6 +364,11 @@ def load_json_multimodulon(load_path: str) -> 'MultiModulon':
     multi_modulon.input_folder_path = Path(input_folder)
     multi_modulon._species_data = {}
     multi_modulon._bbh = None
+    multi_modulon.species_palette = None
+    
+    # Load species palette
+    if data.get('species_palette') is not None:
+        multi_modulon.species_palette = data['species_palette']
     
     # Load combined gene database
     if data.get('combined_gene_db') is not None:
@@ -401,5 +412,10 @@ def load_json_multimodulon(load_path: str) -> 'MultiModulon':
     
     logger.info(f"MultiModulon object loaded from {load_path}")
     logger.info(f"Loaded {len(multi_modulon._species_data)} species")
+    
+    # Initialize species_palette if not loaded from JSON (for backward compatibility)
+    if multi_modulon.species_palette is None and multi_modulon._species_data:
+        from .core import generate_species_colors
+        multi_modulon.species_palette = generate_species_colors(list(multi_modulon._species_data.keys()))
     
     return multi_modulon

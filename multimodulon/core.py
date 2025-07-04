@@ -28,6 +28,49 @@ import os
 logger = logging.getLogger(__name__)
 
 
+def generate_species_colors(species_list):
+    """
+    Generate visually distinct colors for a list of species.
+    
+    Uses HSL color space to create colors with good visual separation,
+    mid-saturation (60%), and moderate lightness (50%).
+    
+    Parameters
+    ----------
+    species_list : list
+        List of species names
+        
+    Returns
+    -------
+    dict
+        Dictionary mapping species names to hex color codes
+    """
+    import colorsys
+    
+    n_species = len(species_list)
+    colors = {}
+    
+    # Use golden ratio for hue distribution to maximize visual separation
+    golden_ratio = 0.618033988749895
+    hue = 0
+    
+    for i, species in enumerate(sorted(species_list)):
+        # Convert HSL to RGB (hue in [0,1], saturation=0.6, lightness=0.5)
+        rgb = colorsys.hls_to_rgb(hue, 0.5, 0.6)
+        # Convert to hex
+        hex_color = '#{:02X}{:02X}{:02X}'.format(
+            int(rgb[0] * 255),
+            int(rgb[1] * 255),
+            int(rgb[2] * 255)
+        )
+        colors[species] = hex_color
+        
+        # Increment hue using golden ratio
+        hue = (hue + golden_ratio) % 1.0
+    
+    return colors
+
+
 class MultiModulon:
     """
     Main class for multi-species expression analysis.
@@ -106,6 +149,9 @@ class MultiModulon:
         print("\n" + "=" * 60)
         print(f"Successfully loaded {len(self._species_data)} species/strains/modalities")
         print("=" * 60)
+        
+        # Initialize species color palette
+        self.species_palette = generate_species_colors(list(self._species_data.keys()))
     
     def _run_bbh_analysis(self):
         """Run bidirectional best hits analysis."""

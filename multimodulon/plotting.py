@@ -1688,7 +1688,8 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
 
 def compare_core_iModulon_activity(multimodulon, component: str, species_in_comparison: List[str], 
                                   condition_list: List[str], save_path: Optional[str] = None,
-                                  fig_size: Tuple[float, float] = (12, 3), font_path: Optional[str] = None):
+                                  fig_size: Tuple[float, float] = (12, 3), font_path: Optional[str] = None,
+                                  legend_title: Optional[str] = None, title: Optional[str] = None):
     """
     Compare core iModulon activities across multiple species for specific conditions.
     
@@ -1714,6 +1715,10 @@ def compare_core_iModulon_activity(multimodulon, component: str, species_in_comp
         Figure size as (width, height). Default: (12, 3)
     font_path : str, optional
         Path to font file for custom font rendering
+    legend_title : str, optional
+        Custom title for the legend. Default: 'Species'
+    title : str, optional
+        Custom title for the plot. Default: 'Core iModulon {component} Activity Comparison'
         
     Raises
     ------
@@ -1805,16 +1810,22 @@ def compare_core_iModulon_activity(multimodulon, component: str, species_in_comp
     bar_width = 0.8 / n_species
     x = np.arange(n_conditions)
     
-    # Colors for different species using tab20 colormap
-    colors = plt.cm.tab20(np.linspace(0, 1, n_species))
+    # Use species palette colors if available, otherwise use tab20 colormap
+    if hasattr(multimodulon, 'species_palette'):
+        colors = [multimodulon.species_palette.get(sp, '#808080') for sp in species_in_comparison]
+    else:
+        colors = plt.cm.tab20(np.linspace(0, 1, n_species))
     
     # Plot bars for each species
     for i, species in enumerate(species_in_comparison):
         positions = x + (i - n_species/2 + 0.5) * bar_width
         means = [activity_data[species][cond]['mean'] for cond in condition_list]
         
+        # Get color for this species
+        species_color = colors[i] if isinstance(colors[i], str) else colors[i]
+        
         # Plot bars
-        ax.bar(positions, means, bar_width, label=species, color=colors[i], 
+        ax.bar(positions, means, bar_width, label=species, color=species_color, 
                alpha=0.8, edgecolor='black', linewidth=0.5)
         
         # Add individual sample points as dots
@@ -1829,14 +1840,16 @@ def compare_core_iModulon_activity(multimodulon, component: str, species_in_comp
     # Set labels and title
     ax.set_xlabel('Conditions', fontsize=12)
     ax.set_ylabel('iModulon Activity', fontsize=12)
-    ax.set_title(f'Core iModulon {component} Activity Comparison', fontsize=14)
+    plot_title = title if title is not None else f'Core iModulon {component} Activity Comparison'
+    ax.set_title(plot_title, fontsize=14)
     
     # Set x-axis ticks to condition labels
     ax.set_xticks(x)
     ax.set_xticklabels([c.split(':')[0] for c in condition_list], rotation=45, ha='right')
     
     # Add legend
-    ax.legend(title='Species', loc='center left', bbox_to_anchor=(1.02, 0.5), 
+    legend_label = legend_title if legend_title is not None else 'Species'
+    ax.legend(title=legend_label, loc='center left', bbox_to_anchor=(1.02, 0.5), 
               frameon=True, fontsize=9)
     
     # Apply font to all text elements if font provided

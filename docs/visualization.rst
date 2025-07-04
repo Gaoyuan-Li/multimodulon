@@ -386,7 +386,7 @@ Organize outputs systematically:
 Comparing Core iModulon Activities Across Species
 -------------------------------------------------
 
-.. py:method:: MultiModulon.compare_core_iModulon_activity(component, species_in_comparison, condition_list, save_path=None, fig_size=(12, 3), font_path=None)
+.. py:method:: MultiModulon.compare_core_iModulon_activity(component, species_in_comparison, condition_list, save_path=None, fig_size=(12, 3), font_path=None, legend_title=None, title=None)
 
    Compare core iModulon activities across multiple species for specific conditions.
    Creates a grouped bar plot with conditions on x-axis and species shown as different colored bars.
@@ -397,6 +397,8 @@ Comparing Core iModulon Activities Across Species
    :param str save_path: Path to save the plot (optional)
    :param tuple fig_size: Figure size (default: (12, 3))
    :param str font_path: Path to custom font file (optional)
+   :param str legend_title: Custom title for the legend (default: 'Species')
+   :param str title: Custom title for the plot (default: 'Core iModulon {component} Activity Comparison')
 
 Basic Usage
 ~~~~~~~~~~~
@@ -469,6 +471,16 @@ Customizing Appearance
        fig_size=(15, 5),  # Wider figure
        font_path='/path/to/font.ttf',
        save_path='comparison_custom.svg'
+   )
+   
+   # Custom title and legend
+   multiModulon.compare_core_iModulon_activity(
+       component='Core_1',
+       species_in_comparison=['E_coli_K12', 'E_coli_B', 'E_coli_C'],
+       condition_list=['glucose:carbon_study', 'lactose:carbon_study'],
+       title='Carbon Source Response in E. coli Strains',
+       legend_title='E. coli Strain',
+       save_path='ecoli_carbon_response.svg'
    )
 
 Use Cases
