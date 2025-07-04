@@ -136,6 +136,7 @@ Main class for multi-species/strain analysis.
 - `compare_core_iModulon(*args, **kwargs)`: Compare core iModulon across species
 - `compare_core_iModulon_activity(*args, **kwargs)`: Compare core iModulon activities across species
 - `show_iModulon_activity_change(*args, **kwargs)`: Visualize iModulon activity changes between conditions
+- `show_gene_iModulon_correlation(*args, **kwargs)`: Show correlation between gene expression and iModulon activity
 
 **Data Management:**
 - `get_orthologs(species1, species2)`: Get ortholog pairs between two species

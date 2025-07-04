@@ -17,7 +17,7 @@ from .optimization import optimize_number_of_core_components, optimize_number_of
 from .utils import BBHAnalyzer, extract_protein_sequences, gff2pandas, create_gene_table
 from .multiview_ica import run_multiview_ica
 from .core_io import save_bbh, load_bbh, get_orthologs, save_to_json_multimodulon, load_json_multimodulon
-from .plotting import view_iModulon_weights, view_iModulon_activities, view_iModulon_genes, view_core_iModulon_weights, compare_core_iModulon, compare_core_iModulon_activity, show_iModulon_activity_change
+from .plotting import view_iModulon_weights, view_iModulon_activities, view_iModulon_genes, view_core_iModulon_weights, compare_core_iModulon, compare_core_iModulon_activity, show_iModulon_activity_change, show_gene_iModulon_correlation
 from sklearn.cluster import HDBSCAN
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
@@ -1524,3 +1524,7 @@ class MultiModulon:
     def show_iModulon_activity_change(self, *args, **kwargs):
         """Visualize iModulon activity changes between two conditions."""
         return show_iModulon_activity_change(self, *args, **kwargs)
+    
+    def show_gene_iModulon_correlation(self, *args, **kwargs):
+        """Show correlation between gene expression and iModulon activity across species."""
+        return show_gene_iModulon_correlation(self, *args, **kwargs)

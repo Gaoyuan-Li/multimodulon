@@ -13,6 +13,7 @@ import matplotlib.font_manager as fm
 from matplotlib.patches import Patch
 import matplotlib.patches as patches
 import os
+from scipy import stats
 try:
     from adjustText import adjust_text
     ADJUSTTEXT_AVAILABLE = True
@@ -2255,5 +2256,200 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
         
         plt.savefig(save_file, dpi=300, bbox_inches='tight')
         logger.info(f"Activity change plot saved to {save_file}")
+    else:
+        plt.show()
+
+
+def show_gene_iModulon_correlation(multimodulon, gene: str, component: str, 
+                                  save_path: Optional[str] = None,
+                                  fig_size: Tuple[float, float] = (5, 4),
+                                  font_path: Optional[str] = None):
+    """
+    Show correlation between gene expression and iModulon activity across species.
+    
+    For a given gene and iModulon component, creates scatter plots showing the 
+    correlation between gene expression (from log_tpm) and component activity 
+    (from A matrix) for each species where the gene is present.
+    
+    Parameters
+    ----------
+    multimodulon : MultiModulon
+        MultiModulon instance containing the data
+    gene : str
+        Gene name (any value from combined_gene_db)
+    component : str
+        Component name (e.g., 'Core_1', 'Unique_1')
+    save_path : str, optional
+        Path to save the figure. Can be:
+        - Full file path with extension (e.g., 'output/correlation.svg')
+        - Directory path (will save as '{gene}_{component}_correlation.svg')
+        If None, displays the plot without saving
+    fig_size : tuple, optional
+        Figure size for each subplot as (width, height). Default: (5, 4)
+    font_path : str, optional
+        Path to font file for custom fonts. If None, uses default matplotlib font
+        
+    Raises
+    ------
+    ValueError
+        If gene not found in combined_gene_db or component not found in any species
+        
+    Notes
+    -----
+    - Creates subplots with max 3 columns per row
+    - Shows correlation coefficient (r) in top left of each subplot
+    - Adds fitted line to show linear relationship
+    - Title format: "Gene {gene} - iModulon {component} Activity Correlation"
+    """
+    # Check if combined_gene_db exists
+    if multimodulon.combined_gene_db is None:
+        raise ValueError("combined_gene_db not found. Please run align_genes() first.")
+    
+    # Check if gene exists in combined_gene_db
+    if gene not in multimodulon.combined_gene_db.index:
+        available_genes = list(multimodulon.combined_gene_db.index[:10])
+        raise ValueError(f"Gene '{gene}' not found in combined_gene_db. "
+                        f"Example genes: {available_genes}")
+    
+    # Find species that have this gene (non-None values, ignoring row_label)
+    gene_row = multimodulon.combined_gene_db.loc[gene]
+    species_with_gene = []
+    species_gene_names = {}
+    
+    for col in multimodulon.combined_gene_db.columns:
+        if col != 'row_label' and pd.notna(gene_row[col]):
+            species_with_gene.append(col)
+            species_gene_names[col] = gene_row[col]
+    
+    if not species_with_gene:
+        raise ValueError(f"Gene '{gene}' not found in any species")
+    
+    # Verify component exists in at least one species
+    component_found = False
+    for species in species_with_gene:
+        if species in multimodulon._species_data:
+            species_data = multimodulon._species_data[species]
+            if species_data.A is not None and component in species_data.A.index:
+                component_found = True
+                break
+    
+    if not component_found:
+        raise ValueError(f"Component '{component}' not found in any species with gene '{gene}'")
+    
+    # Filter to only species that have both the gene and the component
+    valid_species = []
+    for species in species_with_gene:
+        if species in multimodulon._species_data:
+            species_data = multimodulon._species_data[species]
+            if (species_data.A is not None and component in species_data.A.index and
+                species_data.log_tpm is not None):
+                # Check if the gene exists in log_tpm
+                species_gene = species_gene_names[species]
+                if species_gene in species_data.log_tpm.index:
+                    valid_species.append(species)
+    
+    if not valid_species:
+        raise ValueError(f"No species found with both gene '{gene}' and component '{component}'")
+    
+    # Determine subplot layout
+    n_plots = len(valid_species)
+    max_cols = 3
+    n_cols = min(n_plots, max_cols)
+    n_rows = (n_plots + n_cols - 1) // n_cols
+    
+    # Create figure
+    fig_width = fig_size[0] * n_cols
+    fig_height = fig_size[1] * n_rows
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
+    
+    # Ensure axes is always a list
+    if n_plots == 1:
+        axes = [axes]
+    else:
+        axes = axes.flatten()
+    
+    # Set font properties if provided
+    font_prop = None
+    if font_path and os.path.exists(font_path):
+        font_prop = fm.FontProperties(fname=font_path)
+    
+    # Plot for each species
+    for idx, species in enumerate(valid_species):
+        ax = axes[idx]
+        species_data = multimodulon._species_data[species]
+        
+        # Get gene expression data
+        species_gene = species_gene_names[species]
+        gene_expression = species_data.log_tpm.loc[species_gene]
+        
+        # Get component activity
+        component_activity = species_data.A.loc[component]
+        
+        # Ensure same sample order
+        common_samples = gene_expression.index.intersection(component_activity.index)
+        gene_expr_values = gene_expression.loc[common_samples].values
+        activity_values = component_activity.loc[common_samples].values
+        
+        # Create scatter plot
+        ax.scatter(activity_values, gene_expr_values, alpha=0.6, s=30)
+        
+        # Calculate correlation
+        r, p_value = stats.pearsonr(activity_values, gene_expr_values)
+        
+        # Add fitted line
+        z = np.polyfit(activity_values, gene_expr_values, 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(activity_values.min(), activity_values.max(), 100)
+        ax.plot(x_line, p(x_line), "r-", alpha=0.8, linewidth=2)
+        
+        # Add correlation value in top left
+        ax.text(0.05, 0.95, f'r = {r:.2f}', transform=ax.transAxes,
+                verticalalignment='top', horizontalalignment='left',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8),
+                fontsize=10)
+        
+        # Set labels and title
+        ax.set_xlabel(f'{component} Activity')
+        ax.set_ylabel(f'{species_gene} Expression (log TPM)')
+        ax.set_title(f'{species}')
+        
+        # Apply font if provided
+        if font_prop:
+            ax.xaxis.label.set_fontproperties(font_prop)
+            ax.yaxis.label.set_fontproperties(font_prop)
+            ax.title.set_fontproperties(font_prop)
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            # Apply to text annotations
+            for text in ax.texts:
+                text.set_fontproperties(font_prop)
+    
+    # Hide empty subplots
+    for idx in range(n_plots, len(axes)):
+        axes[idx].axis('off')
+    
+    # Set overall title
+    fig.suptitle(f'Gene {gene} - iModulon {component} Activity Correlation', 
+                 fontsize=16, y=0.98)
+    if font_prop:
+        fig._suptitle.set_fontproperties(font_prop)
+    
+    # Adjust layout
+    plt.tight_layout()
+    
+    # Save or show
+    if save_path:
+        save_path = Path(save_path)
+        if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg']:
+            # Full file path provided
+            save_file = save_path
+        else:
+            # Directory provided, use default name
+            save_path.mkdir(parents=True, exist_ok=True)
+            save_file = save_path / f"{gene}_{component}_correlation.svg"
+        
+        plt.savefig(save_file, dpi=300, bbox_inches='tight')
+        logger.info(f"Correlation plot saved to {save_file}")
+        plt.close()
     else:
         plt.show()

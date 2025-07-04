@@ -6,13 +6,14 @@ This section covers the visualization functions for exploring iModulon gene weig
 Overview
 --------
 
-MultiModulon provides five main visualization functions:
+MultiModulon provides six main visualization functions:
 
 1. **view_iModulon_weights** - Visualize gene weights within a component for a single species
 2. **view_core_iModulon_weights** - Visualize a core iModulon component across all species
 3. **view_iModulon_activities** - Visualize component activities across samples
 4. **compare_core_iModulon_activity** - Compare core iModulon activities across multiple species for specific conditions
 5. **show_iModulon_activity_change** - Visualize activity changes between two conditions
+6. **show_gene_iModulon_correlation** - Show correlation between gene expression and iModulon activity across species
 
 All functions support customization of appearance, highlighting, and export options.
 
@@ -637,6 +638,79 @@ Use Cases
        condition_2='stationary:growth_phases',
        font_path='/path/to/Arial.ttf',
        save_path='growth_phase_comparison.pdf'
+   )
+
+Gene-iModulon Correlation Analysis
+----------------------------------
+
+.. py:method:: MultiModulon.show_gene_iModulon_correlation(gene, component, save_path=None, fig_size=(5, 4), font_path=None)
+
+   Show correlation between gene expression and iModulon activity across species.
+   
+   Creates scatter plots showing the correlation between gene expression (from log_tpm) 
+   and component activity (from A matrix) for each species where the gene is present.
+
+   :param str gene: Gene name (any value from combined_gene_db)
+   :param str component: Component name (e.g., 'Core_1', 'Unique_1')
+   :param str save_path: Path to save the figure (optional). Can be:
+                         - Full file path with extension (e.g., 'output/correlation.svg')
+                         - Directory path (will save as '{gene}_{component}_correlation.svg')
+   :param tuple fig_size: Figure size for each subplot (default: (5, 4))
+   :param str font_path: Path to custom font file (optional)
+
+Basic Usage
+~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Show correlation for a specific gene and core iModulon
+   multiModulon.show_gene_iModulon_correlation(
+       gene='argA',
+       component='Core_1',
+       save_path='argA_Core1_correlation.svg'
+   )
+   
+   # With custom appearance
+   multiModulon.show_gene_iModulon_correlation(
+       gene='trpE',
+       component='Core_3',
+       fig_size=(6, 5),
+       font_path='/path/to/Arial.ttf',
+       save_path='output_dir/'
+   )
+
+Features
+~~~~~~~~
+
+- **Multi-species visualization**: Shows correlation for all species containing the gene
+- **Correlation coefficient**: Displays Pearson's r in the top left of each subplot
+- **Fitted line**: Shows linear relationship between expression and activity
+- **Automatic layout**: Maximum 3 columns per row for multiple species
+- **Species-specific gene names**: Uses appropriate gene identifiers for each species
+
+Use Cases
+~~~~~~~~~
+
+1. **Validate iModulon members**: Confirm genes are truly regulated by the iModulon
+2. **Cross-species comparison**: See if gene-iModulon relationships are conserved
+3. **Identify outliers**: Find conditions where typical correlations break down
+4. **Regulatory strength**: Assess how tightly a gene follows iModulon activity
+
+.. code-block:: python
+
+   # Example: Analyzing amino acid biosynthesis regulation
+   multiModulon.show_gene_iModulon_correlation(
+       gene='hisG',  # Histidine biosynthesis
+       component='Core_5',  # Amino acid biosynthesis iModulon
+       save_path='histidine_regulation.pdf'
+   )
+   
+   # Example: Stress response gene analysis
+   multiModulon.show_gene_iModulon_correlation(
+       gene='dnaK',  # Heat shock protein
+       component='Core_8',  # Stress response iModulon
+       fig_size=(5, 4),
+       save_path='stress_response_correlation.svg'
    )
 
 Best Practices
