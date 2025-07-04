@@ -334,13 +334,25 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         # Further sort genes_to_label by x position for better label arrangement
         genes_to_label_by_pos = sorted(genes_to_label, key=lambda x: x[1])
         
-        # Add labels
+        # Add labels with initial offset to avoid dot overlap
         texts = []
-        for gene, x, y in genes_to_label:
+        for i, (gene, x, y) in enumerate(genes_to_label):
             if gene in gene_table.index:
                 gene_name = get_gene_name(gene, gene_table.loc[gene])
                 if ADJUSTTEXT_AVAILABLE:
-                    text = ax.text(x, y, gene_name, fontsize=6, ha='center', va='center')
+                    # Add initial offset to prevent text from being on dots
+                    # Use a spiral pattern for better initial distribution
+                    angle = (i * 137.5) % 360  # Golden angle
+                    radius = 0.02 * (max(y_weights) - min(y_weights))
+                    x_offset = radius * np.cos(np.radians(angle))
+                    y_offset = radius * np.sin(np.radians(angle))
+                    
+                    text = ax.text(x + x_offset, y + y_offset, gene_name, 
+                                 fontsize=6, ha='center', va='center',
+                                 bbox=dict(boxstyle='round,pad=0.1', 
+                                         facecolor='white', 
+                                         edgecolor='none',
+                                         alpha=0.7))
                     texts.append(text)
                 else:
                     ax.annotate(gene_name, (x, y), xytext=(2, 2), textcoords='offset points',
@@ -363,13 +375,13 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                            autoalign='xy',
                            ha='center',
                            va='center',
-                           force_points=(0.4, 0.6),
-                           force_text=(1.0, 1.2),
-                           expand_points=(1.8, 2.2),
+                           force_points=(0.6, 0.8),  # Stronger repulsion from points
+                           force_text=(1.2, 1.5),
+                           expand_points=(2.5, 3.0),  # Much more expansion around points
                            expand_text=(2.0, 2.5),
                            ensure_inside_axes=True,
                            only_move={'points':'', 'text':'xy'},
-                           iter_lim=1000,  # More iterations for 50 labels
+                           iter_lim=1500,  # More iterations for 50 labels
                            ax=ax)
                 
                 # After adjustment, manually add simple lines from text to points
@@ -1187,7 +1199,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
     show_gene_names : bool, optional
         If True, show gene names for genes above threshold. If None (default), 
         automatically set to True if component has <10 genes, False otherwise.
-        Maximum 30 gene labels will be shown per species (top genes by weight magnitude).
+        Maximum 50 gene labels will be shown per species (top genes by weight magnitude).
         
     Raises
     ------
@@ -1432,19 +1444,30 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 else:
                     genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
                 
-                # Sort by absolute weight and limit to top 30
+                # Sort by absolute weight and limit to top 50
                 genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
-                if len(genes_to_label) > 30:
-                    print(f"Component {component} in {species} has {len(genes_to_label)} genes above threshold. Only the top 30 genes will have labels printed.")
-                    genes_to_label = genes_to_label[:30]
+                if len(genes_to_label) > 50:
+                    print(f"Component {component} in {species} has {len(genes_to_label)} genes above threshold. Only the top 50 genes will have labels printed.")
+                    genes_to_label = genes_to_label[:50]
                 
-                # Add labels
+                # Add labels with initial offset to avoid dots
                 texts = []
-                for gene, x, y in genes_to_label:
+                for i, (gene, x, y) in enumerate(genes_to_label):
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         if ADJUSTTEXT_AVAILABLE:
-                            text = ax.text(x, y, gene_name, fontsize=5, ha='center', va='center')
+                            # Add initial offset to prevent text from being on dots
+                            angle = (i * 137.5) % 360  # Golden angle
+                            radius = 0.015 * (max(y_weights) - min(y_weights))
+                            x_offset = radius * np.cos(np.radians(angle))
+                            y_offset = radius * np.sin(np.radians(angle))
+                            
+                            text = ax.text(x + x_offset, y + y_offset, gene_name, 
+                                         fontsize=5, ha='center', va='center',
+                                         bbox=dict(boxstyle='round,pad=0.1', 
+                                                 facecolor='white', 
+                                                 edgecolor='none',
+                                                 alpha=0.6))
                             texts.append(text)
                         else:
                             ax.annotate(gene_name, (x, y), xytext=(1, 1), textcoords='offset points',
@@ -1452,17 +1475,31 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 
                 # Adjust text positions if adjustText is available
                 if ADJUSTTEXT_AVAILABLE and texts:
-                    adjust_text(texts,
-                               x=[x for _, x, _ in genes_to_label],
-                               y=[y for _, _, y in genes_to_label],
-                               arrowprops=dict(arrowstyle='-', color='gray', lw=0.2, alpha=0.5),
-                               autoalign=True,
-                               force_points=(0.05, 0.05),
-                               force_text=(0.2, 0.2),
-                               expand_points=(1.02, 1.02),
-                               expand_text=(1.02, 1.02),
-                               ensure_inside_axes=True,
-                               ax=ax)
+                    try:
+                        adjust_text(texts,
+                                   x=[x for _, x, _ in genes_to_label],
+                                   y=[y for _, _, y in genes_to_label],
+                                   arrowprops=None,  # Disable arrows to avoid FancyArrowPatch issues
+                                   autoalign='xy',
+                                   force_points=(0.4, 0.6),  # Stronger repulsion from points
+                                   force_text=(0.8, 1.0),
+                                   expand_points=(2.0, 2.5),  # More expansion around points
+                                   expand_text=(1.5, 2.0),
+                                   ensure_inside_axes=True,
+                                   only_move={'points':'', 'text':'xy'},
+                                   iter_lim=800,
+                                   ax=ax)
+                        
+                        # After adjustment, manually add simple lines
+                        for i, ((gene, x, y), text) in enumerate(zip(genes_to_label, texts)):
+                            text_x, text_y = text.get_position()
+                            # Only draw line if text is far enough from point
+                            dist = np.sqrt((text_x - x)**2 + (text_y - y)**2)
+                            if dist > 0.02 * (max(y_weights) - min(y_weights)):
+                                ax.plot([x, text_x], [y, text_y], 
+                                       color='gray', lw=0.2, alpha=0.5, zorder=1)
+                    except Exception as e:
+                        logger.warning(f"adjust_text failed for {species}: {e}")
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
@@ -2302,27 +2339,35 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
         
         # Adjust text positions to avoid overlaps
         try:
+            # Use adjust_text without arrows to avoid FancyArrowPatch issues
             adjust_text(texts, 
                        x=mean_activities_1[significant_mask].values, 
                        y=mean_activities_2[significant_mask].values,
-                       arrowprops=dict(arrowstyle='->', 
-                                     connectionstyle='arc3,rad=0.2',
-                                     color='gray', 
-                                     lw=0.5, 
-                                     alpha=0.5,
-                                     shrinkA=5,  # Shrink from text box
-                                     shrinkB=3),  # Shrink from point
+                       arrowprops=None,  # Disable arrows to avoid compatibility issues
                        autoalign='xy',
                        ha='center',
                        va='center',
-                       force_points=(0.3, 0.3),
-                       force_text=(0.8, 0.8),
-                       expand_points=(1.2, 1.2),
-                       expand_text=(1.3, 1.5),
+                       force_points=(0.5, 0.5),  # Stronger repulsion from points
+                       force_text=(1.0, 1.0),
+                       expand_points=(2.0, 2.0),  # More expansion around points
+                       expand_text=(1.5, 1.5),
                        ensure_inside_axes=True,
                        only_move={'points':'', 'text':'xy'},
-                       iter_lim=300,
+                       iter_lim=500,
                        ax=ax)
+            
+            # After adjustment, manually draw simple lines from text to points
+            for i, (comp, text) in enumerate(zip(significant_components, texts)):
+                x_val = mean_activities_1[comp]
+                y_val = mean_activities_2[comp]
+                text_x, text_y = text.get_position()
+                
+                # Only draw line if text is far enough from point
+                dist = np.sqrt((text_x - x_val)**2 + (text_y - y_val)**2)
+                if dist > 0.05 * (max_val - min_val):  # 5% of axis range
+                    ax.plot([x_val, text_x], [y_val, text_y], 
+                           color='gray', lw=0.5, alpha=0.5, zorder=1)
+                           
         except Exception as e:
             logger.warning(f"adjust_text optimization failed: {e}. Using initial positions.")
     
@@ -2636,3 +2681,17 @@ def show_gene_iModulon_correlation(multimodulon, gene: str, component: str,
         plt.close()
     else:
         plt.show()
+    
+    # Check if any species don't have this gene and print message
+    all_species = set(multimodulon._species_data.keys())
+    species_without_gene = all_species - set(species_with_gene)
+    
+    if species_without_gene:
+        missing_species_list = sorted(list(species_without_gene))
+        print(f"\nNote: Gene '{gene}' was not found in the following species: {', '.join(missing_species_list)}")
+        
+    # Also check for species that have the gene but not the component
+    species_with_gene_but_no_component = set(species_with_gene) - set(valid_species)
+    if species_with_gene_but_no_component:
+        missing_component_list = sorted(list(species_with_gene_but_no_component))
+        print(f"Note: The following species have gene '{gene}' but lack component '{component}': {', '.join(missing_component_list)}")
