@@ -203,10 +203,11 @@ Understanding the Output
    - Gene labels shown if show_gene_names=True (no limit for species-specific genes)
    - When show_gene_names=True, only species-specific genes are labeled
    - Shared genes across all species are printed to console instead
-   - Enhanced text positioning with 5% initial offset and density-aware spacing
-   - Much stronger repulsion parameters (0.8-1.0 for points, 1.5-2.0 for text)
-   - Sophisticated binning fallback that groups genes by position to prevent overlap
-   - Adaptive offset increases in crowded regions
+   - Layer-based positioning system distributes labels across 4 vertical layers
+   - Each layer is 12% of y-range away from points
+   - Genes sorted by x-position for systematic placement
+   - Alternates labels above and below to maximize space usage
+   - No automatic repositioning ensures labels stay in readable positions
 
 Batch Processing Core Components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -601,11 +602,11 @@ Understanding the Plot
 * **Grey dots**: Components with minimal change between conditions
 * **Light blue dots**: Components with significant change (absolute difference > scaled threshold)
 * **Labels**: Component names shown for significant changes
-  - Text positioned with initial offset (8% of axis range) from dots using golden angle distribution
+  - Smart initial positioning that checks distance to ALL points before placing labels
+  - Minimum safe distance of 10% of axis range from any point
   - White background boxes with light gray borders for readability
   - Simple gray lines connect labels to their corresponding points
-  - Uses ALL points (not just significant ones) to avoid placing labels on other dots
-  - Fallback spiral positioning with increasing radius if optimization fails
+  - No automatic repositioning to prevent labels from moving onto dots
 * **Dotted lines**: Three reference lines at y=x (diagonal), x=0 (vertical), and y=0 (horizontal)
 
 Note: The threshold is automatically scaled based on the range of activities to handle negative ICA values appropriately.
