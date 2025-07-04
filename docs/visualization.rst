@@ -6,12 +6,13 @@ This section covers the visualization functions for exploring iModulon gene weig
 Overview
 --------
 
-MultiModulon provides four main visualization functions:
+MultiModulon provides five main visualization functions:
 
 1. **view_iModulon_weights** - Visualize gene weights within a component for a single species
 2. **view_core_iModulon_weights** - Visualize a core iModulon component across all species
 3. **view_iModulon_activities** - Visualize component activities across samples
 4. **compare_core_iModulon_activity** - Compare core iModulon activities across multiple species for specific conditions
+5. **show_iModulon_activity_change** - Visualize activity changes between two conditions
 
 All functions support customization of appearance, highlighting, and export options.
 
@@ -505,6 +506,105 @@ Use Cases
        species_in_comparison=['E_coli', 'S_enterica', 'K_pneumoniae'],
        condition_list=stress_conditions,
        save_path='stress_response_comparison.svg'
+   )
+
+Visualizing Activity Changes Between Conditions
+-----------------------------------------------
+
+.. py:method:: MultiModulon.show_iModulon_activity_change(species, condition_1, condition_2, save_path=None, fig_size=(5, 5), font_path=None, threshold=1.5)
+
+   Visualize iModulon activity changes between two conditions as a scatter plot.
+   
+   Creates a scatter plot with condition_1 activities on x-axis and condition_2 on y-axis.
+   Components with significant changes are highlighted in light blue and labeled.
+   Activities are calculated by averaging all biological replicates for each condition.
+   
+   :param str species: Species/strain name
+   :param str condition_1: First condition in format "condition_name:project_name" (x-axis)
+   :param str condition_2: Second condition in format "condition_name:project_name" (y-axis)
+   :param str save_path: Path to save the plot (optional)
+   :param tuple fig_size: Figure size (default: (5, 5))
+   :param str font_path: Path to custom font file (optional)
+   :param float threshold: Fold change threshold for significance (default: 1.5)
+
+Basic Usage
+~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Compare activities between two conditions
+   multiModulon.show_iModulon_activity_change(
+       species='E_coli',
+       condition_1='glucose:carbon_source_study',
+       condition_2='lactose:carbon_source_study',
+       save_path='glucose_vs_lactose_changes.svg'
+   )
+   
+   # Compare conditions from different projects
+   multiModulon.show_iModulon_activity_change(
+       species='E_coli',
+       condition_1='control:experiment_1',
+       condition_2='stress:experiment_2',
+       save_path='cross_project_comparison.svg'
+   )
+
+Understanding the Plot
+~~~~~~~~~~~~~~~~~~~~~~
+
+* **Grey dots**: Components with minimal change between conditions
+* **Light blue dots**: Components with significant change (|log2 fold change| > log2(threshold))
+* **Labels**: Component names shown for significant changes
+* **Dotted lines**: Three reference lines at y=x (diagonal), x=0 (vertical), and y=0 (horizontal)
+
+Customizing the Threshold
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Use stricter threshold for significance
+   multiModulon.show_iModulon_activity_change(
+       species='E_coli',
+       condition_1='control:stress_study',
+       condition_2='heat_shock:stress_study',
+       threshold=2.0,  # Require 2-fold change
+       save_path='stress_response_strict.svg'
+   )
+   
+   # Use more lenient threshold
+   multiModulon.show_iModulon_activity_change(
+       species='E_coli',
+       condition_1='early_log:growth_curve',
+       condition_2='late_log:growth_curve',
+       threshold=1.3,  # 1.3-fold change
+       save_path='growth_phase_changes.svg'
+   )
+
+Use Cases
+~~~~~~~~~
+
+1. **Metabolic Shifts**: Identify iModulons responding to carbon source changes
+2. **Stress Response**: Find iModulons activated under stress conditions
+3. **Growth Phase**: Compare exponential vs stationary phase activities
+4. **Treatment Effects**: Analyze drug or environmental perturbations
+
+.. code-block:: python
+
+   # Example: Analyzing antibiotic response
+   multiModulon.show_iModulon_activity_change(
+       species='E_coli',
+       condition_1='untreated:antibiotic_study',
+       condition_2='ampicillin:antibiotic_study',
+       threshold=1.5,
+       save_path='ampicillin_response.svg'
+   )
+   
+   # Example: Growth phase comparison
+   multiModulon.show_iModulon_activity_change(
+       species='S_enterica',
+       condition_1='exponential:growth_phases',
+       condition_2='stationary:growth_phases',
+       font_path='/path/to/Arial.ttf',
+       save_path='growth_phase_comparison.pdf'
    )
 
 Best Practices

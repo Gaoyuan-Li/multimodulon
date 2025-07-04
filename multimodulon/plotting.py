@@ -1881,3 +1881,188 @@ def compare_core_iModulon_activity(multimodulon, component: str, species_in_comp
         logger.info(f"Activity comparison plot saved to {save_file}")
     else:
         plt.show()
+
+
+def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, condition_2: str,
+                                 save_path: Optional[str] = None, fig_size: Tuple[float, float] = (5, 5),
+                                 font_path: Optional[str] = None, threshold: float = 1.5):
+    """
+    Visualize iModulon activity changes between two conditions.
+    
+    Creates a scatter plot showing activities in condition_1 (x-axis) vs condition_2 (y-axis).
+    Components with significant changes are highlighted and labeled.
+    
+    Parameters
+    ----------
+    multimodulon : MultiModulon
+        MultiModulon instance containing the data
+    species : str
+        Species/strain name
+    condition_1 : str
+        First condition in format "condition_name:project_name" (x-axis)
+    condition_2 : str
+        Second condition in format "condition_name:project_name" (y-axis)
+    save_path : str, optional
+        Path to save the plot. If None, displays plot without saving
+    fig_size : tuple, optional
+        Figure size as (width, height). Default: (5, 5)
+    font_path : str, optional
+        Path to font file for custom font rendering
+    threshold : float, optional
+        Threshold for significant change (fold change). Default: 1.5
+        Components with |log2(condition2/condition1)| > log2(threshold) are highlighted
+        
+    Raises
+    ------
+    ValueError
+        If species not found, conditions not found, or A matrix not available
+    """
+    # Validate species
+    if species not in multimodulon._species_data:
+        raise ValueError(f"Species '{species}' not found in loaded data")
+    
+    species_data = multimodulon._species_data[species]
+    
+    # Check if A matrix exists
+    if species_data.A is None:
+        raise ValueError(f"A matrix not found for {species}. Please run ICA first.")
+    
+    # Check if sample sheet exists
+    if species_data.sample_sheet is None:
+        raise ValueError(f"Sample sheet not found for {species}")
+    
+    sample_sheet = species_data.sample_sheet
+    
+    # Check if condition column exists
+    if 'condition' not in sample_sheet.columns:
+        raise ValueError(f"'condition' column not found in sample sheet for {species}")
+    
+    # Parse condition:project format
+    if ':' not in condition_1:
+        raise ValueError(f"condition_1 must be in format 'condition:project', got '{condition_1}'")
+    if ':' not in condition_2:
+        raise ValueError(f"condition_2 must be in format 'condition:project', got '{condition_2}'")
+    
+    cond1_name, proj1_name = condition_1.split(':', 1)
+    cond2_name, proj2_name = condition_2.split(':', 1)
+    
+    # Check if project column exists
+    if 'project' not in sample_sheet.columns:
+        raise ValueError(f"'project' column not found in sample sheet for {species}")
+    
+    # Find samples for each condition
+    samples_cond1 = sample_sheet[(sample_sheet['condition'] == cond1_name) & 
+                                (sample_sheet['project'] == proj1_name)].index.tolist()
+    samples_cond2 = sample_sheet[(sample_sheet['condition'] == cond2_name) & 
+                                (sample_sheet['project'] == proj2_name)].index.tolist()
+    
+    if not samples_cond1:
+        raise ValueError(f"No samples found for condition '{cond1_name}' in project '{proj1_name}' for {species}")
+    if not samples_cond2:
+        raise ValueError(f"No samples found for condition '{cond2_name}' in project '{proj2_name}' for {species}")
+    
+    # Get activities
+    activities = species_data.A
+    
+    # Filter to samples that exist in A matrix
+    samples_cond1 = [s for s in samples_cond1 if s in activities.columns]
+    samples_cond2 = [s for s in samples_cond2 if s in activities.columns]
+    
+    if not samples_cond1 or not samples_cond2:
+        raise ValueError(f"No samples found in A matrix for one or both conditions")
+    
+    # Calculate mean activities for each component
+    mean_activities_1 = activities[samples_cond1].mean(axis=1)
+    mean_activities_2 = activities[samples_cond2].mean(axis=1)
+    
+    # Calculate fold change (avoid division by zero)
+    epsilon = 1e-10
+    fold_change = np.abs(np.log2((mean_activities_2 + epsilon) / (mean_activities_1 + epsilon)))
+    
+    # Determine which components have significant changes
+    significant_mask = fold_change > np.log2(threshold)
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=fig_size)
+    
+    # Set font properties if provided
+    font_prop = None
+    if font_path and os.path.exists(font_path):
+        font_prop = fm.FontProperties(fname=font_path)
+    
+    # Plot non-significant components in grey
+    non_sig_components = mean_activities_1[~significant_mask]
+    if len(non_sig_components) > 0:
+        ax.scatter(mean_activities_1[~significant_mask], 
+                  mean_activities_2[~significant_mask],
+                  color='grey', alpha=0.5, s=50)
+    
+    # Plot significant components in light blue
+    sig_components = mean_activities_1[significant_mask]
+    if len(sig_components) > 0:
+        ax.scatter(mean_activities_1[significant_mask], 
+                  mean_activities_2[significant_mask],
+                  color='lightblue', edgecolor='black', linewidth=0.5, 
+                  s=100, zorder=10)
+    
+    # Add component labels for significant changes
+    for component in activities.index[significant_mask]:
+        x_val = mean_activities_1[component]
+        y_val = mean_activities_2[component]
+        ax.annotate(component, (x_val, y_val), 
+                   xytext=(5, 5), textcoords='offset points',
+                   fontsize=8, ha='left')
+    
+    # Add reference lines
+    # Get axis limits for reference lines
+    min_val = min(mean_activities_1.min(), mean_activities_2.min())
+    max_val = max(mean_activities_1.max(), mean_activities_2.max())
+    
+    # Add diagonal line (y=x)
+    ax.plot([min_val, max_val], [min_val, max_val], 'k:', alpha=0.5, linewidth=1)
+    
+    # Add horizontal line at y=0
+    ax.axhline(y=0, color='k', linestyle=':', alpha=0.5, linewidth=1)
+    
+    # Add vertical line at x=0
+    ax.axvline(x=0, color='k', linestyle=':', alpha=0.5, linewidth=1)
+    
+    # Set labels and title (use only condition names, not the full condition:project)
+    ax.set_xlabel(f'Activity in {cond1_name}', fontsize=12)
+    ax.set_ylabel(f'Activity in {cond2_name}', fontsize=12)
+    ax.set_title(f'iModulon Activity Changes in {species}\n{cond1_name} vs {cond2_name}', fontsize=14)
+    
+    # Make axes equal
+    ax.set_aspect('equal', adjustable='box')
+    
+    # Apply font to all text elements if font provided
+    if font_path and os.path.exists(font_path):
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
+        ax.xaxis.label.set_fontproperties(font_prop)
+        ax.yaxis.label.set_fontproperties(font_prop)
+        ax.title.set_fontproperties(font_prop)
+        legend = ax.get_legend()
+        if legend:
+            for text in legend.get_texts():
+                text.set_fontproperties(font_prop)
+        # Apply font to annotations
+        for text in ax.texts:
+            text.set_fontproperties(font_prop)
+    
+    # Tight layout
+    plt.tight_layout()
+    
+    # Save or show
+    if save_path:
+        save_path = Path(save_path)
+        if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg']:
+            save_file = save_path
+        else:
+            save_path.mkdir(parents=True, exist_ok=True)
+            save_file = save_path / f'{species}_{condition_1}_vs_{condition_2}_activity_change.svg'
+        
+        plt.savefig(save_file, dpi=300, bbox_inches='tight')
+        logger.info(f"Activity change plot saved to {save_file}")
+    else:
+        plt.show()
