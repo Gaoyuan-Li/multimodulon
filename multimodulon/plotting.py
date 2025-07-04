@@ -1146,16 +1146,25 @@ def view_iModulon_genes(multimodulon, species: str, component: str) -> pd.DataFr
         if 'start' in gene_subset.columns:
             gene_subset = gene_subset.sort_values('start')
         
-        # Move Preferred_name to first column if it exists
-        if 'Preferred_name' in gene_subset.columns:
-            # Get all columns
-            cols = gene_subset.columns.tolist()
-            # Remove Preferred_name from its current position
+        # Reorder columns: Preferred_name first, gene_name second
+        cols = gene_subset.columns.tolist()
+        new_order = []
+        
+        # Add Preferred_name first if it exists
+        if 'Preferred_name' in cols:
+            new_order.append('Preferred_name')
             cols.remove('Preferred_name')
-            # Insert at the beginning
-            cols = ['Preferred_name'] + cols
-            # Reorder the dataframe
-            gene_subset = gene_subset[cols]
+        
+        # Add gene_name second if it exists
+        if 'gene_name' in cols:
+            new_order.append('gene_name')
+            cols.remove('gene_name')
+        
+        # Add all remaining columns
+        new_order.extend(cols)
+        
+        # Reorder the dataframe
+        gene_subset = gene_subset[new_order]
             
         logger.info(f"Found {len(gene_subset)} genes in component '{component}' for species '{species}'")
         return gene_subset
@@ -1509,10 +1518,12 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         if ADJUSTTEXT_AVAILABLE:
-                            # Use golden angle spiral with much larger radius for better initial distribution
+                            # Use golden angle spiral with very large radius for better initial distribution
                             angle = (i * 137.5) % 360  # Golden angle
-                            # Much larger initial radius to start labels further from points
-                            radius = 0.15 * (max(y_weights) - min(y_weights))
+                            # Very large initial radius to start labels far from points
+                            radius = 0.25 * (max(y_weights) - min(y_weights))
+                            # Add some randomness to prevent initial overlaps
+                            radius += np.random.uniform(-0.02, 0.02) * (max(y_weights) - min(y_weights))
                             x_offset = radius * np.cos(np.radians(angle))
                             y_offset = radius * np.sin(np.radians(angle))
                             
@@ -1521,7 +1532,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                          bbox=dict(boxstyle='round,pad=0.3', 
                                                  facecolor='white', 
                                                  edgecolor='none',
-                                                 alpha=0.8))
+                                                 alpha=0.85))
                             texts.append(text)
                         else:
                             ax.annotate(gene_name, (x, y), xytext=(1, 1), textcoords='offset points',
@@ -1530,7 +1541,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 # Adjust text positions if adjustText is available
                 if ADJUSTTEXT_AVAILABLE and texts:
                     try:
-                        # Use extremely aggressive parameters to prevent any overlapping
+                        # Use maximum aggressive parameters to prevent any overlapping
                         adjust_text(texts,
                                    x=[x for _, x, _ in genes_to_label],
                                    y=[y for _, _, y in genes_to_label],
@@ -1538,14 +1549,15 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                    autoalign='xy',
                                    ha='center',
                                    va='center',
-                                   force_points=(3.0, 3.5),    # Extremely strong repulsion from points
-                                   force_text=(5.0, 5.5),      # Maximum text-text repulsion
-                                   expand_points=(7.0, 8.0),   # Very large expansion around points
-                                   expand_text=(6.0, 7.0),     # Very large text expansion
+                                   force_points=(5.0, 6.0),      # Maximum repulsion from points
+                                   force_text=(8.0, 9.0),        # Ultra-strong text-text repulsion
+                                   expand_points=(10.0, 12.0),   # Huge expansion around points
+                                   expand_text=(8.0, 10.0),      # Huge text expansion
                                    ensure_inside_axes=True,
                                    only_move={'points':'', 'text':'xy'},
-                                   iter_lim=10000,  # Double the iterations for better convergence
-                                   time_lim=30,     # Allow up to 30 seconds for adjustment
+                                   iter_lim=20000,  # Many more iterations for convergence
+                                   lim=500,         # Maximum adjustments per iteration
+                                   precision=0.001,  # Higher precision for final positioning
                                    ax=ax)
                         
                         # After adjustment, manually add simple lines
