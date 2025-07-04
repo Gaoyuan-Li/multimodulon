@@ -525,7 +525,7 @@ Visualizing Activity Changes Between Conditions
    :param str save_path: Path to save the plot (optional)
    :param tuple fig_size: Figure size (default: (5, 5))
    :param str font_path: Path to custom font file (optional)
-   :param float threshold: Fold change threshold for significance (default: 1.5)
+   :param float threshold: Threshold for significant change (default: 1.5). Scaled based on activity range
 
 Basic Usage
 ~~~~~~~~~~~
@@ -552,9 +552,11 @@ Understanding the Plot
 ~~~~~~~~~~~~~~~~~~~~~~
 
 * **Grey dots**: Components with minimal change between conditions
-* **Light blue dots**: Components with significant change (|log2 fold change| > log2(threshold))
+* **Light blue dots**: Components with significant change (absolute difference > scaled threshold)
 * **Labels**: Component names shown for significant changes
 * **Dotted lines**: Three reference lines at y=x (diagonal), x=0 (vertical), and y=0 (horizontal)
+
+Note: The threshold is automatically scaled based on the range of activities to handle negative ICA values appropriately.
 
 Customizing the Threshold
 ~~~~~~~~~~~~~~~~~~~~~~~~~

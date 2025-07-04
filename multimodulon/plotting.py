@@ -1909,8 +1909,9 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
     font_path : str, optional
         Path to font file for custom font rendering
     threshold : float, optional
-        Threshold for significant change (fold change). Default: 1.5
-        Components with |log2(condition2/condition1)| > log2(threshold) are highlighted
+        Threshold for significant change. Default: 1.5
+        Components with activity difference greater than a scaled threshold are highlighted.
+        The threshold is scaled based on the activity range to handle negative ICA values
         
     Raises
     ------
@@ -1975,12 +1976,18 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
     mean_activities_1 = activities[samples_cond1].mean(axis=1)
     mean_activities_2 = activities[samples_cond2].mean(axis=1)
     
-    # Calculate fold change (avoid division by zero)
-    epsilon = 1e-10
-    fold_change = np.abs(np.log2((mean_activities_2 + epsilon) / (mean_activities_1 + epsilon)))
+    # Calculate fold change using absolute difference approach for ICA activities
+    # Since ICA activities can be negative, we use absolute difference instead of ratio
+    activity_diff = np.abs(mean_activities_2 - mean_activities_1)
+    
+    # For threshold comparison, use a scaled threshold based on the data range
+    # This is more appropriate for ICA activities which center around 0
+    activity_range = max(mean_activities_1.max() - mean_activities_1.min(),
+                        mean_activities_2.max() - mean_activities_2.min())
+    scaled_threshold = activity_range * (threshold - 1) / 4  # Scale threshold to activity range
     
     # Determine which components have significant changes
-    significant_mask = fold_change > np.log2(threshold)
+    significant_mask = activity_diff > scaled_threshold
     
     # Create figure
     fig, ax = plt.subplots(figsize=fig_size)
