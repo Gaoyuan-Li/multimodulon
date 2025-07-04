@@ -1620,18 +1620,35 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             legend_elements = [Patch(facecolor=all_unique_colors[cat], label=cat) 
                              for cat in sorted_categories]
             
+            # Calculate space needed for legend based on number of rows
+            n_legend_items = len(sorted_categories)
+            n_cols_legend = 3
+            n_rows_legend = (n_legend_items + n_cols_legend - 1) // n_cols_legend
+            
+            # Adjust legend position based on number of rows
+            # More rows need more space, so move legend further down
+            if n_rows_legend <= 4:
+                legend_y_pos = -0.03
+                bottom_margin = 0.08
+            elif n_rows_legend <= 5:
+                legend_y_pos = -0.05
+                bottom_margin = 0.12
+            else:  # 6 or more rows
+                legend_y_pos = -0.08
+                bottom_margin = 0.16
+            
             # Add legend at bottom
             if font_path and os.path.exists(font_path):
                 legend = fig.legend(handles=legend_elements, loc='lower center', 
-                                  bbox_to_anchor=(0.5, -0.03), ncol=3, frameon=True, fontsize=10)
+                                  bbox_to_anchor=(0.5, legend_y_pos), ncol=3, frameon=True, fontsize=10)
                 for text in legend.get_texts():
                     text.set_fontproperties(font_prop)
             else:
                 fig.legend(handles=legend_elements, loc='lower center', 
-                         bbox_to_anchor=(0.5, -0.03), ncol=3, frameon=True, fontsize=10)
+                         bbox_to_anchor=(0.5, legend_y_pos), ncol=3, frameon=True, fontsize=10)
         
-        # Adjust layout with reduced top margin
-        plt.tight_layout(rect=[0, 0.08, 1, 0.97])
+        # Adjust layout with appropriate bottom margin for legend
+        plt.tight_layout(rect=[0, bottom_margin, 1, 0.97])
         
         # Save or show
         if save_path:
@@ -2744,8 +2761,13 @@ def show_gene_iModulon_correlation(multimodulon, gene: str, component: str,
         gene_expr_values = gene_expression.loc[common_samples].values
         activity_values = component_activity.loc[common_samples].values
         
-        # Create scatter plot
-        ax.scatter(activity_values, gene_expr_values, alpha=0.6, s=30)
+        # Create scatter plot with species color
+        species_color = 'blue'  # Default color
+        if hasattr(multimodulon, 'species_palette') and species in multimodulon.species_palette:
+            species_color = multimodulon.species_palette[species]
+        
+        # Use half transparency (alpha=0.5) for scatter points
+        ax.scatter(activity_values, gene_expr_values, alpha=0.5, s=30, color=species_color)
         
         # Calculate correlation
         r, p_value = stats.pearsonr(activity_values, gene_expr_values)
@@ -2754,7 +2776,7 @@ def show_gene_iModulon_correlation(multimodulon, gene: str, component: str,
         z = np.polyfit(activity_values, gene_expr_values, 1)
         p = np.poly1d(z)
         x_line = np.linspace(activity_values.min(), activity_values.max(), 100)
-        ax.plot(x_line, p(x_line), "r-", alpha=0.8, linewidth=2)
+        ax.plot(x_line, p(x_line), color='grey', linestyle='--', alpha=0.8, linewidth=2)
         
         # Add correlation value in top left
         ax.text(0.05, 0.95, f'r = {r:.2f}', transform=ax.transAxes,
