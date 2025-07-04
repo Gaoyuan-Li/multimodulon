@@ -167,9 +167,9 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         _, ax = plt.subplots(figsize=fig_size)
     
     # Set font properties if provided
+    font_prop = None
     if font_path and os.path.exists(font_path):
         font_prop = fm.FontProperties(fname=font_path)
-        plt.rcParams['font.family'] = font_prop.get_name()
     
     # Create scatter plot with color coding
     if show_COG and 'COG_category' in gene_table.columns and 'Description' in gene_table.columns:
@@ -691,9 +691,9 @@ def view_iModulon_activities(multimodulon, species: str, component: str, save_pa
     _, ax = plt.subplots(figsize=fig_size)
     
     # Set font properties if provided
+    font_prop = None
     if font_path and os.path.exists(font_path):
         font_prop = fm.FontProperties(fname=font_path)
-        plt.rcParams['font.family'] = font_prop.get_name()
     
     # Create bar plot
     if condition_mode:
@@ -955,6 +955,17 @@ def view_iModulon_genes(multimodulon, species: str, component: str) -> pd.DataFr
         # Sort by start position if the column exists
         if 'start' in gene_subset.columns:
             gene_subset = gene_subset.sort_values('start')
+        
+        # Move Preferred_name to first column if it exists
+        if 'Preferred_name' in gene_subset.columns:
+            # Get all columns
+            cols = gene_subset.columns.tolist()
+            # Remove Preferred_name from its current position
+            cols.remove('Preferred_name')
+            # Insert at the beginning
+            cols = ['Preferred_name'] + cols
+            # Reorder the dataframe
+            gene_subset = gene_subset[cols]
             
         logger.info(f"Found {len(gene_subset)} genes in component '{component}' for species '{species}'")
         return gene_subset
@@ -1068,9 +1079,9 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             axes = axes.reshape(-1, 1)
         
         # Set font properties if provided
+        font_prop = None
         if font_path and os.path.exists(font_path):
             font_prop = fm.FontProperties(fname=font_path)
-            plt.rcParams['font.family'] = font_prop.get_name()
         
         # Track all unique COG categories across all species
         all_unique_colors = {}
@@ -1380,9 +1391,9 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         species_with_component = ordered_species + remaining_species
     
     # Set font properties if provided
+    font_prop = None
     if font_path and os.path.exists(font_path):
         font_prop = fm.FontProperties(fname=font_path)
-        plt.rcParams['font.family'] = font_prop.get_name()
     
     # Collect all unique genes across species for this component
     all_genes = set()
