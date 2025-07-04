@@ -1626,16 +1626,13 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             n_rows_legend = (n_legend_items + n_cols_legend - 1) // n_cols_legend
             
             # Adjust legend position based on number of rows
-            # More rows need more space, so move legend further down
-            if n_rows_legend <= 4:
+            # Keep original settings for n_rows <= 5, add small adjustment for 6+
+            if n_rows_legend <= 5:
                 legend_y_pos = -0.03
                 bottom_margin = 0.08
-            elif n_rows_legend <= 5:
-                legend_y_pos = -0.05
-                bottom_margin = 0.12
             else:  # 6 or more rows
-                legend_y_pos = -0.08
-                bottom_margin = 0.16
+                legend_y_pos = -0.04  # Only 0.01 lower than original
+                bottom_margin = 0.09  # Only 0.01 more than original
             
             # Add legend at bottom
             if font_path and os.path.exists(font_path):
