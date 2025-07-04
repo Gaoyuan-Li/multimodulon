@@ -1718,10 +1718,6 @@ def compare_core_iModulon_activity(multimodulon, component: str, species_in_comp
     ...     condition_list=['glucose:project1', 'lactose:project1', 'arabinose:project2']
     ... )
     """
-    import matplotlib.pyplot as plt
-    import matplotlib.font_manager as fm
-    import numpy as np
-    from pathlib import Path
     
     # Validate component exists in all species
     for species in species_in_comparison:
@@ -1784,13 +1780,13 @@ def compare_core_iModulon_activity(multimodulon, component: str, species_in_comp
                 'activities': activities[valid_samples].tolist()
             }
     
-    # Set font properties if provided
-    if font_path and os.path.exists(font_path):
-        font_prop = fm.FontProperties(fname=font_path)
-        plt.rcParams['font.family'] = font_prop.get_name()
-    
     # Create figure
     fig, ax = plt.subplots(figsize=fig_size)
+    
+    # Set font properties if provided
+    font_prop = None
+    if font_path and os.path.exists(font_path):
+        font_prop = fm.FontProperties(fname=font_path)
     
     # Setup bar positions
     n_conditions = len(condition_list)
