@@ -30,7 +30,8 @@ Visualizing Gene Weights
    :param tuple fig_size: Figure size as (width, height) (default: (6, 4))
    :param str font_path: Path to custom font file (optional)
    :param bool show_COG: Color genes by COG category (default: False)
-   :param bool show_gene_names: Show gene names on plot. If None, auto-set based on component size (default: None)
+   :param bool show_gene_names: Show gene names on plot. If None, auto-set based on component size (default: None).
+                               Maximum 60 gene labels will be shown (top genes by weight magnitude)
 
 Basic Usage
 ~~~~~~~~~~~
@@ -75,10 +76,13 @@ Understanding the Plot
 * **Y-axis**: Gene weights (coefficients from M matrix)
 * **Dotted lines**: Threshold (if optimized)
 * **Colors**: COG categories (if show_COG=True) or light blue/grey based on threshold
-* **Labels**: Gene names displayed on plot when show_gene_names=True (max 30 genes)
+* **Labels**: Gene names displayed on plot when show_gene_names=True (max 60 genes)
   - Automatically shown for small components (<10 genes above threshold)
   - Uses Preferred_name if available, otherwise uses standard gene names
-  - Positioned to minimize overlap using adjustText library
+  - Text has white background boxes for better readability
+  - Positioned with initial offset from dots to avoid overlap
+  - Uses adjustText library for optimized positioning when available
+  - Simple lines connect labels to their corresponding points
 
 COG Categories
 ~~~~~~~~~~~~~~
@@ -134,7 +138,8 @@ Visualizing Core iModulons Across Species
    :param str font_path: Path to custom font file (optional)
    :param bool show_COG: Color genes by COG category (default: False)
    :param list reference_order: Custom species order for subplot arrangement (optional)
-   :param bool show_gene_names: Show gene names on plots. If None, auto-set based on component size (default: None)
+   :param bool show_gene_names: Show gene names on plots. If None, auto-set based on component size (default: None).
+                               When True for view_core_iModulon_weights, only species-specific genes are labeled (no limit)
 
 Basic Usage
 ~~~~~~~~~~~
@@ -154,12 +159,16 @@ Basic Usage
        save_path='core1_all_species_COG.svg'
    )
    
-   # With gene labeling for all species
+   # With gene labeling - shows only species-specific genes
    multiModulon.view_core_iModulon_weights(
        component='Core_1',
        show_gene_names=True,
        save_path='core1_labeled.svg'
    )
+   # This will:
+   # - Label only genes NOT shared across all species
+   # - Print list of shared genes to console
+   # - Show all species-specific gene labels (no limit)
 
 Custom Species Order
 ~~~~~~~~~~~~~~~~~~~~
@@ -190,7 +199,9 @@ Understanding the Output
    - Shared COG category legend at bottom
    - Genes colored by functional category
    - Grey dots indicate genes below threshold
-   - Gene labels shown if show_gene_names=True (max 30 per species)
+   - Gene labels shown if show_gene_names=True (no limit for species-specific genes)
+   - When show_gene_names=True, only species-specific genes are labeled
+   - Shared genes across all species are printed to console instead
 
 Batch Processing Core Components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -585,6 +596,10 @@ Understanding the Plot
 * **Grey dots**: Components with minimal change between conditions
 * **Light blue dots**: Components with significant change (absolute difference > scaled threshold)
 * **Labels**: Component names shown for significant changes
+  - Text positioned with initial offset (5% of axis range) from dots using golden angle distribution
+  - White background boxes with light gray borders for readability
+  - Simple gray lines connect labels to their points when distance > 8% of axis range
+  - Special handling for points near the diagonal line to avoid overlap
 * **Dotted lines**: Three reference lines at y=x (diagonal), x=0 (vertical), and y=0 (horizontal)
 
 Note: The threshold is automatically scaled based on the range of activities to handle negative ICA values appropriately.

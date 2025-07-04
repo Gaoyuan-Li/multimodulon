@@ -57,7 +57,7 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
     show_gene_names : bool, optional
         If True, show gene names for genes above threshold. If None (default), 
         automatically set to True if component has <10 genes, False otherwise.
-        Maximum 50 gene labels will be shown (top genes by weight magnitude).
+        Maximum 60 gene labels will be shown (top genes by weight magnitude).
         
     Raises
     ------
@@ -325,11 +325,11 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         else:
             genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
         
-        # Sort by absolute weight and limit to top 50
+        # Sort by absolute weight and limit to top 60
         genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
-        if len(genes_to_label) > 50:
-            print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 50 genes will have labels printed.")
-            genes_to_label = genes_to_label[:50]
+        if len(genes_to_label) > 60:
+            print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 60 genes will have labels printed.")
+            genes_to_label = genes_to_label[:60]
         
         # Further sort genes_to_label by x position for better label arrangement
         genes_to_label_by_pos = sorted(genes_to_label, key=lambda x: x[1])
@@ -1199,7 +1199,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
     show_gene_names : bool, optional
         If True, show gene names for genes above threshold. If None (default), 
         automatically set to True if component has <10 genes, False otherwise.
-        Maximum 50 gene labels will be shown per species (top genes by weight magnitude).
+        When True, only species-specific genes are labeled (no limit).
         
     Raises
     ------
@@ -1280,6 +1280,34 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
         
         # Track all unique COG categories across all species
         all_unique_colors = {}
+        
+        # If show_gene_names is True, first identify genes shared across all species
+        shared_genes_across_all = set()
+        species_specific_genes = {}
+        
+        if show_gene_names:
+            # Collect genes above threshold for each species
+            genes_per_species = {}
+            for species in species_with_component:
+                species_data = multimodulon._species_data[species]
+                if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
+                    if component in species_data._presence_matrix.columns:
+                        # Get genes in this component (leftmost names)
+                        genes_in_component = species_data._presence_matrix[
+                            species_data._presence_matrix[component] == 1
+                        ].index.tolist()
+                        genes_per_species[species] = set(genes_in_component)
+            
+            # Find genes shared across all species
+            if genes_per_species:
+                shared_genes_across_all = set.intersection(*genes_per_species.values())
+                
+                # Find species-specific genes
+                for species, genes in genes_per_species.items():
+                    species_specific_genes[species] = genes - shared_genes_across_all
+                
+                logger.info(f"Component {component}: {len(shared_genes_across_all)} shared genes, "
+                          f"{sum(len(genes) for genes in species_specific_genes.values())} species-specific genes")
         
         # Plot each species
         for idx, species in enumerate(species_with_component):
@@ -1444,11 +1472,36 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 else:
                     genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
                 
-                # Sort by absolute weight and limit to top 50
+                # FILTER: Only keep species-specific genes (not shared across all)
+                if shared_genes_across_all:
+                    # We need to map species genes back to leftmost genes to check membership
+                    genes_to_label_filtered = []
+                    for gene, x, y in genes_to_label:
+                        # Find the leftmost gene for this species gene
+                        leftmost_gene = None
+                        if multimodulon.combined_gene_db is not None:
+                            for idx, row in multimodulon.combined_gene_db.iterrows():
+                                if species in multimodulon.combined_gene_db.columns and row[species] == gene:
+                                    # Find leftmost gene in this row
+                                    for col in multimodulon.combined_gene_db.columns:
+                                        val = row[col]
+                                        if pd.notna(val) and val != "None" and val is not None:
+                                            leftmost_gene = val
+                                            break
+                                    break
+                        
+                        # If we couldn't find in combined_gene_db, the gene itself might be the leftmost
+                        if leftmost_gene is None:
+                            leftmost_gene = gene
+                        
+                        # Only include if NOT in shared genes
+                        if leftmost_gene not in shared_genes_across_all:
+                            genes_to_label_filtered.append((gene, x, y))
+                    
+                    genes_to_label = genes_to_label_filtered
+                
+                # Sort by absolute weight - no limit since we're only showing species-specific genes
                 genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
-                if len(genes_to_label) > 50:
-                    print(f"Component {component} in {species} has {len(genes_to_label)} genes above threshold. Only the top 50 genes will have labels printed.")
-                    genes_to_label = genes_to_label[:50]
                 
                 # Add labels with initial offset to avoid dots
                 texts = []
@@ -1606,6 +1659,48 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 logger.warning(f"Failed to generate plot for {species}: {str(e)}")
     
     logger.info(f"Completed generating plots for core component '{component}'")
+    
+    # Print shared genes information if show_gene_names was True
+    if show_gene_names and shared_genes_across_all:
+        print(f"\n{component} - Genes shared across all species ({len(shared_genes_across_all)} genes):")
+        
+        # Get gene names for shared genes using the first species that has them
+        shared_gene_names = []
+        first_species = species_with_component[0]
+        species_data = multimodulon._species_data[first_species]
+        
+        if multimodulon.combined_gene_db is not None:
+            for leftmost_gene in sorted(shared_genes_across_all):
+                # Find the row with this leftmost gene
+                for idx, row in multimodulon.combined_gene_db.iterrows():
+                    found = False
+                    for col in multimodulon.combined_gene_db.columns:
+                        val = row[col]
+                        if pd.notna(val) and val != "None" and val is not None and val == leftmost_gene:
+                            # Get the species-specific gene name
+                            species_gene = row[first_species]
+                            if pd.notna(species_gene) and species_gene in species_data.gene_table.index:
+                                # Get gene name
+                                gene_info = species_data.gene_table.loc[species_gene]
+                                if 'gene_name' in gene_info and pd.notna(gene_info['gene_name']) and str(gene_info['gene_name']).strip():
+                                    shared_gene_names.append(str(gene_info['gene_name']))
+                                elif 'Preferred_name' in gene_info and pd.notna(gene_info['Preferred_name']) and str(gene_info['Preferred_name']).strip():
+                                    shared_gene_names.append(str(gene_info['Preferred_name']))
+                                else:
+                                    shared_gene_names.append(species_gene)
+                            else:
+                                shared_gene_names.append(leftmost_gene)
+                            found = True
+                            break
+                    if found:
+                        break
+        else:
+            shared_gene_names = sorted(shared_genes_across_all)
+        
+        # Print in columns for readability
+        n_cols = 6  # Number of columns
+        for i in range(0, len(shared_gene_names), n_cols):
+            print("  " + "  ".join(f"{gene:<12}" for gene in shared_gene_names[i:i+n_cols]))
 
 
 def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species', 
@@ -2318,18 +2413,39 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
             x_val = mean_activities_1[component]
             y_val = mean_activities_2[component]
             
-            # Add small initial offset to prevent text from being directly on points
-            # Alternate offsets to reduce initial clustering
+            # Add larger initial offset to prevent text from being directly on points
+            # Use a combination of radial and position-based offset
             offset_angle = (i * 137.5) % 360  # Golden angle for better distribution
-            x_offset = 0.02 * (max_val - min_val) * np.cos(np.radians(offset_angle))
-            y_offset = 0.02 * (max_val - min_val) * np.sin(np.radians(offset_angle))
+            
+            # Base offset proportional to axis range
+            axis_range = max_val - min_val
+            base_offset = 0.05 * axis_range  # 5% of axis range
+            
+            # Additional offset based on point position to avoid clustering
+            position_factor = 1.0
+            if abs(x_val) > 0.7 * max(abs(mean_activities_1.max()), abs(mean_activities_1.min())):
+                position_factor = 1.5  # Push text further for extreme points
+            
+            x_offset = base_offset * position_factor * np.cos(np.radians(offset_angle))
+            y_offset = base_offset * position_factor * np.sin(np.radians(offset_angle))
+            
+            # For points near the diagonal, adjust offset to avoid the line
+            if abs(x_val - y_val) < 0.1 * axis_range:
+                # Near diagonal, push text perpendicular to diagonal
+                if x_val > y_val:
+                    x_offset = abs(x_offset) * 1.5
+                    y_offset = -abs(y_offset) * 1.5
+                else:
+                    x_offset = -abs(x_offset) * 1.5
+                    y_offset = abs(y_offset) * 1.5
             
             text = ax.text(x_val + x_offset, y_val + y_offset, component, 
                           fontsize=8, ha='center', va='center',
                           bbox=dict(boxstyle='round,pad=0.3', 
                                    facecolor='white', 
-                                   edgecolor='none',
-                                   alpha=0.8),
+                                   edgecolor='lightgray',
+                                   linewidth=0.5,
+                                   alpha=0.9),
                           zorder=20)  # Ensure text is on top
             texts.append(text)
             
@@ -2347,13 +2463,13 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                        autoalign='xy',
                        ha='center',
                        va='center',
-                       force_points=(0.5, 0.5),  # Stronger repulsion from points
-                       force_text=(1.0, 1.0),
-                       expand_points=(2.0, 2.0),  # More expansion around points
-                       expand_text=(1.5, 1.5),
+                       force_points=(1.0, 1.0),  # Much stronger repulsion from points
+                       force_text=(1.5, 1.5),
+                       expand_points=(3.0, 3.0),  # Much more expansion around points
+                       expand_text=(2.0, 2.0),
                        ensure_inside_axes=True,
                        only_move={'points':'', 'text':'xy'},
-                       iter_lim=500,
+                       iter_lim=1000,  # More iterations for better convergence
                        ax=ax)
             
             # After adjustment, manually draw simple lines from text to points
@@ -2364,9 +2480,25 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                 
                 # Only draw line if text is far enough from point
                 dist = np.sqrt((text_x - x_val)**2 + (text_y - y_val)**2)
-                if dist > 0.05 * (max_val - min_val):  # 5% of axis range
-                    ax.plot([x_val, text_x], [y_val, text_y], 
-                           color='gray', lw=0.5, alpha=0.5, zorder=1)
+                if dist > 0.08 * (max_val - min_val):  # 8% of axis range
+                    # Draw line from edge of text box to point
+                    # Calculate direction vector
+                    dx = x_val - text_x
+                    dy = y_val - text_y
+                    length = np.sqrt(dx**2 + dy**2)
+                    dx_norm = dx / length
+                    dy_norm = dy / length
+                    
+                    # Start line slightly away from text box center
+                    line_start_x = text_x + dx_norm * 0.02 * (max_val - min_val)
+                    line_start_y = text_y + dy_norm * 0.02 * (max_val - min_val)
+                    
+                    # End line slightly away from point center
+                    line_end_x = x_val - dx_norm * 0.015 * (max_val - min_val)
+                    line_end_y = y_val - dy_norm * 0.015 * (max_val - min_val)
+                    
+                    ax.plot([line_end_x, line_start_x], [line_end_y, line_start_y], 
+                           color='gray', lw=0.4, alpha=0.4, zorder=1)
                            
         except Exception as e:
             logger.warning(f"adjust_text optimization failed: {e}. Using initial positions.")
