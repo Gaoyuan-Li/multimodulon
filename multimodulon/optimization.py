@@ -191,13 +191,16 @@ def run_nre_optimization(
     effect_size_threshold: float = 5,
     num_top_gene: int = 20,
     fig_size: Tuple[float, float] = (5, 3),
-    font_path: Optional[str] = None
+    font_path: Optional[str] = None,
+    robust_runs: Optional[int] = None
 ) -> Tuple[int, Dict[int, float], Dict[int, List], Dict[int, List], plt.Figure]:
     """
     Optimization using NRE or Cohen's d metric.
     
     Args:
         metric: 'nre' for Normalized Reconstruction Error, 'effect_size' for Cohen's d effect size
+        robust_runs: Number of ICA runs for robust clustering (only for effect_size metric).
+                    If provided, uses robust clustering to count components.
     """
     
     # Sort species list for consistent ordering across runs
@@ -288,49 +291,137 @@ def run_nre_optimization(
                 score = calculate_nre_proper(test_sources, k)
                 
             else:  # effect_size
-                # For Cohen's d, we need the M matrices (unmixing matrices)
-                from .multiview_ica import run_multiview_ica
-                
-                # For effect_size metric, use square ICA (a=c=k)
-                a_values = {species: k for species in species_list}
-                
-                # Use full dataset for effect_size calculation
-                M_matrices = run_multiview_ica(
-                    species_X_matrices,  # Use the full dataset directly
-                    a_values,
-                    k,  # c = k (number of core components, square ICA)
-                    mode=mode,
-                    seed=seed  # Use exact same seed for reproducibility
-                )
-                
-                # Calculate mean effect sizes ONLY for the first k (core) components
-                core_avg_effect_sizes = []
-                for comp_idx in range(k):  # Only first k components are core
-                    component_effect_sizes = []
-                    for species in species_list:
-                        M_matrix = M_matrices[species]
-                        weight_vector = M_matrix.iloc[:, comp_idx].values
-                        effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
-                        component_effect_sizes.append(effect_size)
-                    # Mean across species
-                    mean_effect_size = np.mean(component_effect_sizes)
-                    core_avg_effect_sizes.append(mean_effect_size)
-                
-                # Store individual component effect sizes for threshold analysis
-                if component_effect_sizes_per_k is not None:
-                    component_effect_sizes_per_k[k].append(core_avg_effect_sizes)
-                
-                # Count CORE components above effect_size_threshold
-                num_above_threshold = sum(1 for effect_size in core_avg_effect_sizes if effect_size > effect_size_threshold)
-                
-                # Store the count for this k
-                if num_above_threshold_per_k is not None:
-                    if k not in num_above_threshold_per_k:
-                        num_above_threshold_per_k[k] = []
-                    num_above_threshold_per_k[k].append(num_above_threshold)
-                
-                # Use number of components above threshold as the metric
-                score = num_above_threshold
+                if robust_runs is not None and robust_runs > 1:
+                    # Use robust clustering approach
+                    from .multiview_ica import run_multiview_ica
+                    from sklearn.cluster import HDBSCAN
+                    
+                    # For effect_size metric, use square ICA (a=c=k)
+                    a_values = {species: k for species in species_list}
+                    
+                    # Collect core components from multiple runs
+                    core_components = {species: [] for species in species_list}
+                    
+                    for robust_run in range(robust_runs):
+                        # Run multi-view ICA with different seed
+                        M_matrices = run_multiview_ica(
+                            species_X_matrices,
+                            a_values,
+                            k,  # c = k (square ICA)
+                            mode=mode,
+                            seed=seed + robust_run + run * robust_runs  # Different seed for each robust run
+                        )
+                        
+                        # Process core components for each species
+                        for species in species_list:
+                            M = M_matrices[species]
+                            for comp_idx in range(k):
+                                weight_vector = M.iloc[:, comp_idx].values
+                                effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
+                                
+                                if effect_size >= effect_size_threshold:
+                                    # Apply sign convention
+                                    component = weight_vector.copy()
+                                    max_idx = np.argmax(np.abs(component))
+                                    if component[max_idx] < 0:
+                                        component *= -1
+                                    core_components[species].append(component)
+                    
+                    # Cluster core components across all species
+                    # Calculate scaled parameters
+                    base_per_dataset = 50
+                    base_runs = 100
+                    runs_scaling_factor = robust_runs / base_runs
+                    core_min_cluster_size = max(2, int(base_per_dataset * n_species * runs_scaling_factor))
+                    core_min_samples = max(2, int(base_per_dataset * n_species * runs_scaling_factor))
+                    core_min_per_dataset_count = max(1, int(base_per_dataset * runs_scaling_factor))
+                    
+                    # Prepare data matrix and dataset labels
+                    X_list, dataset_labels = [], []
+                    for dataset_idx, species in enumerate(species_list):
+                        if not core_components[species]:
+                            continue
+                        X = np.unique(np.array(core_components[species]), axis=0)
+                        X_list.append(X)
+                        dataset_labels.append(np.full(X.shape[0], dataset_idx))
+                    
+                    if X_list:
+                        X = np.vstack(X_list)
+                        dataset_labels = np.concatenate(dataset_labels)
+                        
+                        # Cluster components
+                        clusterer = HDBSCAN(
+                            min_cluster_size=core_min_cluster_size,
+                            min_samples=core_min_samples,
+                            cluster_selection_epsilon=0.0,
+                            metric='euclidean',
+                            n_jobs=-1
+                        )
+                        labels = clusterer.fit_predict(X)
+                        
+                        # Count valid clusters
+                        num_above_threshold = 0
+                        for label in np.unique(labels):
+                            if label == -1:
+                                continue
+                            
+                            mask = labels == label
+                            cluster_size = mask.sum()
+                            cluster_datasets = dataset_labels[mask]
+                            dataset_counts = np.bincount(cluster_datasets, minlength=len(species_list))
+                            
+                            # Check if cluster meets requirements
+                            if cluster_size >= core_min_cluster_size and np.all(dataset_counts >= core_min_per_dataset_count):
+                                num_above_threshold += 1
+                    else:
+                        num_above_threshold = 0
+                    
+                    score = num_above_threshold
+                    
+                else:
+                    # Original single-run approach
+                    from .multiview_ica import run_multiview_ica
+                    
+                    # For effect_size metric, use square ICA (a=c=k)
+                    a_values = {species: k for species in species_list}
+                    
+                    # Use full dataset for effect_size calculation
+                    M_matrices = run_multiview_ica(
+                        species_X_matrices,  # Use the full dataset directly
+                        a_values,
+                        k,  # c = k (number of core components, square ICA)
+                        mode=mode,
+                        seed=seed  # Use exact same seed for reproducibility
+                    )
+                    
+                    # Calculate mean effect sizes ONLY for the first k (core) components
+                    core_avg_effect_sizes = []
+                    for comp_idx in range(k):  # Only first k components are core
+                        component_effect_sizes = []
+                        for species in species_list:
+                            M_matrix = M_matrices[species]
+                            weight_vector = M_matrix.iloc[:, comp_idx].values
+                            effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
+                            component_effect_sizes.append(effect_size)
+                        # Mean across species
+                        mean_effect_size = np.mean(component_effect_sizes)
+                        core_avg_effect_sizes.append(mean_effect_size)
+                    
+                    # Store individual component effect sizes for threshold analysis
+                    if component_effect_sizes_per_k is not None:
+                        component_effect_sizes_per_k[k].append(core_avg_effect_sizes)
+                    
+                    # Count CORE components above effect_size_threshold
+                    num_above_threshold = sum(1 for effect_size in core_avg_effect_sizes if effect_size > effect_size_threshold)
+                    
+                    # Store the count for this k
+                    if num_above_threshold_per_k is not None:
+                        if k not in num_above_threshold_per_k:
+                            num_above_threshold_per_k[k] = []
+                        num_above_threshold_per_k[k].append(num_above_threshold)
+                    
+                    # Use number of components above threshold as the metric
+                    score = num_above_threshold
             
             all_metric_per_k[k].append(score)
             
@@ -412,7 +503,10 @@ def run_nre_optimization(
     if metric == 'nre':
         print(f"\nOptimal k = {optimal_num_core_components} (NRE = {mean_metric_per_k[optimal_num_core_components]:.6f})")
     else:
-        print(f"\nOptimal k = {optimal_num_core_components} (Number of components above threshold = {mean_metric_per_k[optimal_num_core_components]:.1f})")
+        if robust_runs is not None and robust_runs > 1:
+            print(f"\nOptimal k = {optimal_num_core_components} (Number of robust components above threshold = {mean_metric_per_k[optimal_num_core_components]:.1f})")
+        else:
+            print(f"\nOptimal k = {optimal_num_core_components} (Number of components above threshold = {mean_metric_per_k[optimal_num_core_components]:.1f})")
     
     # Threshold analysis for effect_size metric
     if metric == 'effect_size' and threshold is not None and component_effect_sizes_per_k is not None:
@@ -490,9 +584,14 @@ def run_nre_optimization(
             ax.scatter([optimal_num_core_components], [mean_metric_per_k[optimal_num_core_components]], color='red', s=120, zorder=5,
                       edgecolors='darkred', linewidth=2)
             
-            ax.set_ylabel('Number of QC-passed components', fontsize=12)
-            ax.set_title('Optimization of Core components', 
-                        fontsize=14, fontweight='bold')
+            if robust_runs is not None and robust_runs > 1:
+                ax.set_ylabel('Number of robust QC-passed components', fontsize=12)
+                ax.set_title('Optimization of Core components (Robust clustering)', 
+                            fontsize=14, fontweight='bold')
+            else:
+                ax.set_ylabel('Number of QC-passed components', fontsize=12)
+                ax.set_title('Optimization of Core components', 
+                            fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
         ax.legend()
@@ -520,7 +619,10 @@ def run_nre_optimization(
         if metric == 'nre':
             label_text = f'Optimal k = {optimal_num_core_components}\nNRE = {mean_metric_per_k[optimal_num_core_components]:.6f}'
         else:
-            label_text = f'Optimal k = {optimal_num_core_components}\n{int(mean_metric_per_k[optimal_num_core_components])} components above threshold'
+            if robust_runs is not None and robust_runs > 1:
+                label_text = f'Optimal k = {optimal_num_core_components}\n{int(mean_metric_per_k[optimal_num_core_components])} robust components above threshold'
+            else:
+                label_text = f'Optimal k = {optimal_num_core_components}\n{int(mean_metric_per_k[optimal_num_core_components])} components above threshold'
         
         text_obj = ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
@@ -584,7 +686,8 @@ def optimize_number_of_core_components(
     train_frac : float, default=0.75
         Fraction of data to use for training
     num_runs : int, default=1
-        Number of cross-validation runs
+        Number of runs for optimization. For 'effect_size' metric, this controls
+        the number of ICA runs used for robust clustering to identify components
     mode : str, default='gpu'
         'gpu' or 'cpu' mode
     seed : int, default=42
@@ -689,7 +792,8 @@ def optimize_number_of_core_components(
         effect_size_threshold=effect_size_threshold,
         num_top_gene=num_top_gene,
         fig_size=fig_size,
-        font_path=font_path
+        font_path=font_path,
+        robust_runs=num_runs if metric == 'effect_size' else None
     )
     
     # Handle save_plot (deprecated) and save_path
@@ -730,7 +834,8 @@ def optimize_number_of_unique_components(
     num_top_gene: int = 20,
     save_path: Optional[str] = None,
     fig_size: Tuple[float, float] = (7, 5),
-    font_path: Optional[str] = None
+    font_path: Optional[str] = None,
+    num_runs: int = 1
 ) -> Tuple[Dict[str, int], Dict[str, int]]:
     """
     Optimize the number of unique components for each species.
@@ -765,6 +870,8 @@ def optimize_number_of_unique_components(
     font_path : str, optional
         Path to font file (e.g., '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf')
         If provided, uses this font for all text elements
+    num_runs : int, default=1
+        Number of ICA runs for robust clustering to identify consistent components
         
     Returns
     -------
@@ -825,52 +932,129 @@ def optimize_number_of_unique_components(
         
         # Test each a value
         for a_test in tqdm(a_candidates, desc=f"Testing a values for {target_species}"):
-            # Set up a_values: a_test for target species, optimal_num_core_components for others
-            a_values = {}
-            for species in species_list:
-                if species == target_species:
-                    a_values[species] = a_test
-                else:
-                    a_values[species] = optimal_num_core_components
-            
-            # Run ICA
-            from .multiview_ica import run_multiview_ica
-            M_matrices = run_multiview_ica(
-                species_X_matrices,
-                a_values,
-                optimal_num_core_components,  # c = optimal_num_core_components
-                mode=mode,
-                seed=seed
-            )
-            
-            # Generate A matrix for target species
-            M = M_matrices[target_species]
-            X = species_X_matrices[target_species]
-            A = M.T @ X
-            A.index = M.columns
-            A.columns = X.columns
-            
-            # Get sample sheet
-            sample_sheet = multimodulon._species_data[target_species].sample_sheet
-            
-            # Count consistent unique components
-            consistent_unique = 0
-            
-            for comp in A.index:
-                if comp.startswith("Unique"):
-                    # Get component index (Unique components start after core components)
-                    comp_idx = int(comp.split('_')[1]) - 1 + optimal_num_core_components
+            if num_runs > 1:
+                # Use robust clustering approach
+                from sklearn.cluster import HDBSCAN
+                
+                # Set up a_values: a_test for target species, optimal_num_core_components for others
+                a_values = {}
+                for species in species_list:
+                    if species == target_species:
+                        a_values[species] = a_test
+                    else:
+                        a_values[species] = optimal_num_core_components
+                
+                # Collect unique components from multiple runs
+                unique_components_runs = []
+                
+                for run_idx in range(num_runs):
+                    # Run ICA
+                    from .multiview_ica import run_multiview_ica
+                    M_matrices = run_multiview_ica(
+                        species_X_matrices,
+                        a_values,
+                        optimal_num_core_components,  # c = optimal_num_core_components
+                        mode=mode,
+                        seed=seed + run_idx  # Different seed for each run
+                    )
                     
-                    # Check Cohen's d threshold
-                    weight_vector = M.iloc[:, comp_idx].values
-                    effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
+                    # Extract unique components for target species
+                    M = M_matrices[target_species]
+                    for comp_idx in range(optimal_num_core_components, a_test):
+                        weight_vector = M.iloc[:, comp_idx].values
+                        effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
+                        
+                        if effect_size >= effect_size_threshold:
+                            # Apply sign convention
+                            component = weight_vector.copy()
+                            max_idx = np.argmax(np.abs(component))
+                            if component[max_idx] < 0:
+                                component *= -1
+                            unique_components_runs.append(component)
+                
+                # Cluster unique components
+                if unique_components_runs:
+                    X = np.unique(np.array(unique_components_runs), axis=0)
                     
-                    if effect_size >= effect_size_threshold:
-                        # Check consistency
-                        if _check_component_consistency(multimodulon, A, sample_sheet, comp):
+                    # Calculate scaled parameters
+                    base_unique_min = 50
+                    base_runs = 100
+                    runs_scaling_factor = num_runs / base_runs
+                    unique_min_cluster_size = max(2, int(base_unique_min * runs_scaling_factor))
+                    unique_min_samples = max(2, int(base_unique_min * runs_scaling_factor))
+                    
+                    # Cluster components
+                    clusterer = HDBSCAN(
+                        min_cluster_size=unique_min_cluster_size,
+                        min_samples=unique_min_samples,
+                        cluster_selection_epsilon=0.0,
+                        metric='euclidean',
+                        n_jobs=-1
+                    )
+                    labels = clusterer.fit_predict(X)
+                    
+                    # Count valid clusters
+                    consistent_unique = 0
+                    for label in np.unique(labels):
+                        if label == -1:
+                            continue
+                        mask = labels == label
+                        cluster_size = mask.sum()
+                        if cluster_size >= unique_min_cluster_size:
                             consistent_unique += 1
-            
-            consistent_counts[a_test] = consistent_unique
+                else:
+                    consistent_unique = 0
+                
+                consistent_counts[a_test] = consistent_unique
+                
+            else:
+                # Original single-run approach
+                # Set up a_values: a_test for target species, optimal_num_core_components for others
+                a_values = {}
+                for species in species_list:
+                    if species == target_species:
+                        a_values[species] = a_test
+                    else:
+                        a_values[species] = optimal_num_core_components
+                
+                # Run ICA
+                from .multiview_ica import run_multiview_ica
+                M_matrices = run_multiview_ica(
+                    species_X_matrices,
+                    a_values,
+                    optimal_num_core_components,  # c = optimal_num_core_components
+                    mode=mode,
+                    seed=seed
+                )
+                
+                # Generate A matrix for target species
+                M = M_matrices[target_species]
+                X = species_X_matrices[target_species]
+                A = M.T @ X
+                A.index = M.columns
+                A.columns = X.columns
+                
+                # Get sample sheet
+                sample_sheet = multimodulon._species_data[target_species].sample_sheet
+                
+                # Count consistent unique components
+                consistent_unique = 0
+                
+                for comp in A.index:
+                    if comp.startswith("Unique"):
+                        # Get component index (Unique components start after core components)
+                        comp_idx = int(comp.split('_')[1]) - 1 + optimal_num_core_components
+                        
+                        # Check Cohen's d threshold
+                        weight_vector = M.iloc[:, comp_idx].values
+                        effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
+                        
+                        if effect_size >= effect_size_threshold:
+                            # Check consistency
+                            if _check_component_consistency(multimodulon, A, sample_sheet, comp):
+                                consistent_unique += 1
+                
+                consistent_counts[a_test] = consistent_unique
         
         # Find optimal a using 90% growth method
         a_sorted = sorted(consistent_counts.keys())
@@ -917,8 +1101,12 @@ def optimize_number_of_unique_components(
                   edgecolors='darkred', linewidth=2)
         
         ax.set_xlabel('Number of Total Components (a)', fontsize=12)
-        ax.set_ylabel('Number of QC-passed components', fontsize=12)
-        ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
+        if num_runs > 1:
+            ax.set_ylabel('Number of robust QC-passed components', fontsize=12)
+            ax.set_title(f'Optimization of Unique Components for {target_species} (Robust clustering)', fontsize=14, fontweight='bold')
+        else:
+            ax.set_ylabel('Number of QC-passed components', fontsize=12)
+            ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
         ax.legend()
         
         # Set font for tick labels if font_path provided
@@ -936,7 +1124,10 @@ def optimize_number_of_unique_components(
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
         # Add text box with result
-        label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} consistent unique components'
+        if num_runs > 1:
+            label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} robust unique components'
+        else:
+            label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} consistent unique components'
         text_obj = ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
@@ -965,7 +1156,10 @@ def optimize_number_of_unique_components(
         else:
             plt.show()
         
-        print(f"\nOptimal a for {target_species}: {optimal_a} ({consistent_counts[optimal_a]} consistent unique components)")
+        if num_runs > 1:
+            print(f"\nOptimal a for {target_species}: {optimal_a} ({consistent_counts[optimal_a]} robust unique components)")
+        else:
+            print(f"\nOptimal a for {target_species}: {optimal_a} ({consistent_counts[optimal_a]} consistent unique components)")
     
     # Create optimal total components dictionary
     optimal_num_total_components = {}
