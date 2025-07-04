@@ -57,7 +57,7 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
     show_gene_names : bool, optional
         If True, show gene names for genes above threshold. If None (default), 
         automatically set to True if component has <10 genes, False otherwise.
-        Maximum 30 gene labels will be shown (top genes by weight magnitude).
+        Maximum 50 gene labels will be shown (top genes by weight magnitude).
         
     Raises
     ------
@@ -325,11 +325,11 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         else:
             genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
         
-        # Sort by absolute weight and limit to top 30
+        # Sort by absolute weight and limit to top 50
         genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
-        if len(genes_to_label) > 30:
-            print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 30 genes will have labels printed.")
-            genes_to_label = genes_to_label[:30]
+        if len(genes_to_label) > 50:
+            print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 50 genes will have labels printed.")
+            genes_to_label = genes_to_label[:50]
         
         # Further sort genes_to_label by x position for better label arrangement
         genes_to_label_by_pos = sorted(genes_to_label, key=lambda x: x[1])
@@ -354,26 +354,32 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                     text.set_fontproperties(font_prop)
             
             try:
-                # Use simple line style to avoid FancyArrowPatch issues
+                # Try to use adjust_text with compatible parameters
+                # Use None for arrowprops to avoid FancyArrowPatch issues
                 adjust_text(texts,
                            x=[x for _, x, _ in genes_to_label],
                            y=[y for _, _, y in genes_to_label],
-                           arrowprops=dict(arrowstyle='->',
-                                         connectionstyle='arc3,rad=0',
-                                         color='gray', 
-                                         lw=0.5, 
-                                         alpha=0.5),
+                           arrowprops=None,  # Disable arrows to avoid compatibility issues
                            autoalign='xy',
                            ha='center',
                            va='center',
-                           force_points=(0.3, 0.5),
-                           force_text=(0.8, 1.0),
-                           expand_points=(1.5, 2.0),
-                           expand_text=(1.5, 2.5),
+                           force_points=(0.4, 0.6),
+                           force_text=(1.0, 1.2),
+                           expand_points=(1.8, 2.2),
+                           expand_text=(2.0, 2.5),
                            ensure_inside_axes=True,
                            only_move={'points':'', 'text':'xy'},
-                           iter_lim=500,
+                           iter_lim=1000,  # More iterations for 50 labels
                            ax=ax)
+                
+                # After adjustment, manually add simple lines from text to points
+                for i, ((gene, x, y), text) in enumerate(zip(genes_to_label, texts)):
+                    # Get text position
+                    text_x, text_y = text.get_position()
+                    # Draw simple line from text to point
+                    ax.plot([x, text_x], [y, text_y], 
+                           color='gray', lw=0.3, alpha=0.5, zorder=1)
+                           
             except Exception as e:
                 # If adjust_text fails, use custom smart positioning
                 logger.warning(f"adjust_text encountered an issue: {e}. Using custom text positioning.")
@@ -385,12 +391,16 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                 
                 # Group genes by position bins to avoid overlap
                 x_range = max([x for _, x, _ in genes_to_label]) - min([x for _, x, _ in genes_to_label])
-                bin_width = x_range / 10 if x_range > 0 else 1
+                # Use more bins for 50 labels
+                n_bins = min(15, max(10, len(genes_to_label) // 3))
+                bin_width = x_range / n_bins if x_range > 0 else 1
                 
                 # Create position bins
                 gene_bins = {}
                 for gene, x, y in genes_to_label_by_pos:
-                    bin_idx = int(x / bin_width) if bin_width > 0 else 0
+                    bin_idx = int((x - min([x for _, x, _ in genes_to_label])) / bin_width) if bin_width > 0 else 0
+                    # Ensure bin_idx is within bounds
+                    bin_idx = min(bin_idx, n_bins - 1)
                     if bin_idx not in gene_bins:
                         gene_bins[bin_idx] = []
                     gene_bins[bin_idx].append((gene, x, y))
@@ -407,16 +417,24 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                             # Calculate offset based on position in bin
                             n_in_bin = len(bin_genes)
                             if n_in_bin == 1:
-                                y_offset = 8 if y > 0 else -8
+                                y_offset = 10 if y > 0 else -10
                                 x_offset = 0
                             else:
-                                # Distribute labels vertically
+                                # Distribute labels vertically with more spacing
                                 offset_factor = (i - n_in_bin/2) / max(n_in_bin/2, 1)
-                                y_offset = 8 + abs(offset_factor) * 5
+                                # Increase base offset and scaling for 50 labels
+                                y_offset = 12 + abs(offset_factor) * 8
                                 if y < 0:
                                     y_offset = -y_offset
-                                # Add slight x offset for crowded regions
-                                x_offset = offset_factor * 3
+                                # Add x offset for crowded regions
+                                x_offset = offset_factor * 5
+                                
+                                # For very crowded bins, use alternating sides
+                                if n_in_bin > 5:
+                                    if i % 2 == 0:
+                                        x_offset = abs(x_offset) + 5
+                                    else:
+                                        x_offset = -abs(x_offset) - 5
                             
                             # Create annotation
                             ann = ax.annotate(gene_name, (x, y), 
