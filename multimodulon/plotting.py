@@ -13,6 +13,11 @@ import matplotlib.font_manager as fm
 from matplotlib.patches import Patch
 import matplotlib.patches as patches
 import os
+try:
+    from adjustText import adjust_text
+    ADJUSTTEXT_AVAILABLE = True
+except ImportError:
+    ADJUSTTEXT_AVAILABLE = False
 
 # Import COG constants from core_io
 from .core_io import COG_COLORS, COG_LETTER_CODES
@@ -22,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def view_iModulon_weights(multimodulon, species: str, component: str, save_path: Optional[str] = None, 
                   fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
-                  show_COG: bool = False):
+                  show_COG: bool = False, show_gene_names: Optional[bool] = None):
     """
     Visualize gene weights for a specific iModulon component in a species.
     
@@ -48,6 +53,10 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         If provided, uses this font for all text elements
     show_COG : bool, optional
         If True, color genes above threshold by their COG category. Default: False
+    show_gene_names : bool, optional
+        If True, show gene names for genes above threshold. If None (default), 
+        automatically set to True if component has <10 genes, False otherwise.
+        Maximum 30 gene labels will be shown (top genes by weight magnitude).
         
     Raises
     ------
@@ -154,6 +163,18 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
     if hasattr(species_data, '_M_thresholds') and species_data._M_thresholds is not None:
         if component in species_data._M_thresholds.index:
             threshold = species_data._M_thresholds.loc[component, 'M_threshold']
+    
+    # Determine show_gene_names setting if not explicitly provided
+    if show_gene_names is None:
+        # Check presence matrix to count genes in component
+        if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
+            if component in species_data._presence_matrix.columns:
+                n_genes_in_component = species_data._presence_matrix[component].sum()
+                show_gene_names = n_genes_in_component < 10
+            else:
+                show_gene_names = False
+        else:
+            show_gene_names = False
     
     # Create figure - the given fig_size is for the plot area only
     # If showing COG, we need extra space for the legend
@@ -282,6 +303,59 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         # No threshold available, use default plotting
         ax.scatter(x_positions, y_weights, alpha=0.6, s=20)
     
+    # Add gene labels if requested
+    if show_gene_names:
+        # Helper function to get gene name
+        def get_gene_name(gene_idx, gene_table_row):
+            # Try gene_name first
+            if 'gene_name' in gene_table_row and pd.notna(gene_table_row['gene_name']) and str(gene_table_row['gene_name']).strip():
+                return str(gene_table_row['gene_name'])
+            # Try Preferred_name
+            elif 'Preferred_name' in gene_table_row and pd.notna(gene_table_row['Preferred_name']) and str(gene_table_row['Preferred_name']).strip():
+                return str(gene_table_row['Preferred_name'])
+            # Use index
+            else:
+                return str(gene_idx)
+        
+        # Get genes above threshold
+        if threshold is not None:
+            genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
+                             if abs(y) > threshold]
+        else:
+            genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
+        
+        # Sort by absolute weight and limit to top 30
+        genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
+        if len(genes_to_label) > 30:
+            print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 30 genes will have labels printed.")
+            genes_to_label = genes_to_label[:30]
+        
+        # Add labels
+        texts = []
+        for gene, x, y in genes_to_label:
+            if gene in gene_table.index:
+                gene_name = get_gene_name(gene, gene_table.loc[gene])
+                if ADJUSTTEXT_AVAILABLE:
+                    text = ax.text(x, y, gene_name, fontsize=6, ha='center', va='center')
+                    texts.append(text)
+                else:
+                    ax.annotate(gene_name, (x, y), xytext=(2, 2), textcoords='offset points',
+                               fontsize=6, ha='left', va='bottom')
+        
+        # Adjust text positions if adjustText is available
+        if ADJUSTTEXT_AVAILABLE and texts:
+            adjust_text(texts,
+                       x=[x for _, x, _ in genes_to_label],
+                       y=[y for _, _, y in genes_to_label],
+                       arrowprops=dict(arrowstyle='-', color='gray', lw=0.3, alpha=0.5),
+                       autoalign=True,
+                       force_points=(0.1, 0.1),
+                       force_text=(0.3, 0.3),
+                       expand_points=(1.05, 1.05),
+                       expand_text=(1.05, 1.05),
+                       ensure_inside_axes=True,
+                       ax=ax)
+    
     # Set labels and title
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
     ax.set_ylabel('Gene Weight', fontsize=12)
@@ -294,6 +368,10 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         ax.xaxis.label.set_fontproperties(font_prop)
         ax.yaxis.label.set_fontproperties(font_prop)
         ax.title.set_fontproperties(font_prop)
+        # Apply font to gene labels
+        if show_gene_names:
+            for text in ax.texts:
+                text.set_fontproperties(font_prop)
     
     # Tight layout - only apply if not showing COG (manual layout for COG)
     if not (show_COG and 'COG_category' in gene_table.columns):
@@ -976,7 +1054,8 @@ def view_iModulon_genes(multimodulon, species: str, component: str) -> pd.DataFr
 
 def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional[str] = None,
                        fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
-                       show_COG: bool = False, reference_order: Optional[List[str]] = None):
+                       show_COG: bool = False, reference_order: Optional[List[str]] = None,
+                       show_gene_names: Optional[bool] = None):
     """
     Visualize a core iModulon component across all species.
     
@@ -1005,6 +1084,10 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
         First 3 species will be placed in the first row, remaining in the second row.
         Example: ['MG1655', 'BL21', 'C', 'Crooks', 'W', 'W3110']
         If not provided, species are plotted in their default order.
+    show_gene_names : bool, optional
+        If True, show gene names for genes above threshold. If None (default), 
+        automatically set to True if component has <10 genes, False otherwise.
+        Maximum 30 gene labels will be shown per species (top genes by weight magnitude).
         
     Raises
     ------
@@ -1214,6 +1297,73 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 ax.axhline(y=threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
                 ax.axhline(y=-threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
             
+            # Determine show_gene_names setting if not explicitly provided
+            if show_gene_names is None:
+                # Check presence matrix to count genes in component
+                if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
+                    if component in species_data._presence_matrix.columns:
+                        n_genes_in_component = species_data._presence_matrix[component].sum()
+                        show_gene_names_local = n_genes_in_component < 10
+                    else:
+                        show_gene_names_local = False
+                else:
+                    show_gene_names_local = False
+            else:
+                show_gene_names_local = show_gene_names
+            
+            # Add gene labels if requested
+            if show_gene_names_local:
+                # Helper function to get gene name
+                def get_gene_name(gene_idx, gene_table_row):
+                    # Try gene_name first
+                    if 'gene_name' in gene_table_row and pd.notna(gene_table_row['gene_name']) and str(gene_table_row['gene_name']).strip():
+                        return str(gene_table_row['gene_name'])
+                    # Try Preferred_name
+                    elif 'Preferred_name' in gene_table_row and pd.notna(gene_table_row['Preferred_name']) and str(gene_table_row['Preferred_name']).strip():
+                        return str(gene_table_row['Preferred_name'])
+                    # Use index
+                    else:
+                        return str(gene_idx)
+                
+                # Get genes above threshold
+                if threshold is not None:
+                    genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
+                                     if abs(y) > threshold]
+                else:
+                    genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
+                
+                # Sort by absolute weight and limit to top 30
+                genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
+                if len(genes_to_label) > 30:
+                    print(f"Component {component} in {species} has {len(genes_to_label)} genes above threshold. Only the top 30 genes will have labels printed.")
+                    genes_to_label = genes_to_label[:30]
+                
+                # Add labels
+                texts = []
+                for gene, x, y in genes_to_label:
+                    if gene in gene_table.index:
+                        gene_name = get_gene_name(gene, gene_table.loc[gene])
+                        if ADJUSTTEXT_AVAILABLE:
+                            text = ax.text(x, y, gene_name, fontsize=5, ha='center', va='center')
+                            texts.append(text)
+                        else:
+                            ax.annotate(gene_name, (x, y), xytext=(1, 1), textcoords='offset points',
+                                       fontsize=5, ha='left', va='bottom')
+                
+                # Adjust text positions if adjustText is available
+                if ADJUSTTEXT_AVAILABLE and texts:
+                    adjust_text(texts,
+                               x=[x for _, x, _ in genes_to_label],
+                               y=[y for _, _, y in genes_to_label],
+                               arrowprops=dict(arrowstyle='-', color='gray', lw=0.2, alpha=0.5),
+                               autoalign=True,
+                               force_points=(0.05, 0.05),
+                               force_text=(0.2, 0.2),
+                               expand_points=(1.02, 1.02),
+                               expand_text=(1.02, 1.02),
+                               ensure_inside_axes=True,
+                               ax=ax)
+            
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
             ax.set_ylabel('Gene Weight', fontsize=10)
@@ -1226,6 +1376,10 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 ax.xaxis.label.set_fontproperties(font_prop)
                 ax.yaxis.label.set_fontproperties(font_prop)
                 ax.title.set_fontproperties(font_prop)
+                # Apply font to gene labels
+                if show_gene_names_local:
+                    for text in ax.texts:
+                        text.set_fontproperties(font_prop)
         
         # Hide empty subplots
         for idx in range(n_species, n_rows * n_cols):
@@ -1307,7 +1461,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     save_path=save_path,
                     fig_size=fig_size,
                     font_path=font_path,
-                    show_COG=show_COG
+                    show_COG=show_COG,
+                    show_gene_names=show_gene_names
                 )
                 logger.info(f"✓ Generated plot for {species}")
             except Exception as e:
@@ -2013,12 +2168,41 @@ def show_iModulon_activity_change(multimodulon, species: str, condition_1: str, 
                   s=100, zorder=10)
     
     # Add component labels for significant changes
+    texts = []
     for component in activities.index[significant_mask]:
         x_val = mean_activities_1[component]
         y_val = mean_activities_2[component]
-        ax.annotate(component, (x_val, y_val), 
-                   xytext=(5, 5), textcoords='offset points',
-                   fontsize=8, ha='left')
+        if ADJUSTTEXT_AVAILABLE:
+            # Create text object for adjust_text
+            text = ax.text(x_val, y_val, component, fontsize=8, ha='center', va='center')
+            texts.append(text)
+        else:
+            # Fallback to regular annotation if adjustText not available
+            ax.annotate(component, (x_val, y_val), 
+                       xytext=(5, 5), textcoords='offset points',
+                       fontsize=8, ha='left')
+    
+    # Show warning if adjustText not available and there are overlapping labels
+    if not ADJUSTTEXT_AVAILABLE and len(texts) == 0 and significant_mask.sum() > 0:
+        logger.warning("adjustText not installed. Labels may overlap. Install with: pip install adjustText")
+    
+    # Adjust text positions to avoid overlaps if adjustText is available
+    if ADJUSTTEXT_AVAILABLE and texts:
+        # Get current axis limits to ensure labels stay within plot
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        
+        adjust_text(texts, 
+                   x=mean_activities_1[significant_mask].values, 
+                   y=mean_activities_2[significant_mask].values,
+                   arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, alpha=0.5),
+                   autoalign=True,
+                   force_points=(0.2, 0.2),
+                   force_text=(0.5, 0.5),
+                   expand_points=(1.1, 1.1),
+                   expand_text=(1.1, 1.1),
+                   ensure_inside_axes=True,
+                   ax=ax)
     
     # Add reference lines
     # Get axis limits for reference lines

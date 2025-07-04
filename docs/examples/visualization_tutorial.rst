@@ -17,6 +17,33 @@ Start by loading a previously saved MultiModulon object:
    # Load saved MultiModulon object
    multiModulon = MultiModulon.load_json_multimodulon("multiModulon_results.json.gz")
 
+Renaming iModulons
+------------------
+
+You can rename iModulons to more meaningful names based on their function or content:
+
+.. code-block:: python
+
+   # Rename a core iModulon (will rename across all species)
+   multiModulon.rename_iModulon('Core_1', 'ArginineBiosynthesis')
+   
+   # Rename a unique iModulon (species parameter required!)
+   multiModulon.rename_iModulon('Unique_1', 'StressResponse', species='MG1655')
+   
+   # If you forget the species parameter for unique iModulons, you'll get an error
+   # multiModulon.rename_iModulon('Unique_2', 'NewName')  # This will raise an error!
+   
+   # View the renamed components
+   print(multiModulon['MG1655'].M.columns)
+
+Important notes about renaming:
+
+* Core iModulons are renamed across all species where they exist
+* Unique iModulons require the ``species`` parameter to specify which species to rename in
+* The method validates that the new name doesn't already exist
+* All related dataframes (M, A, M_thresholds, presence_matrix) are updated
+* If you try to rename a unique iModulon without specifying the species, you'll get a helpful error message
+
 Visualizing Individual Components
 ---------------------------------
 

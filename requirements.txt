@@ -9,6 +9,7 @@ tqdm>=4.65.0,<5.0.0
 scipy>=1.10.0
 matplotlib>=3.5.0
 scikit-learn>=1.0.0
+adjustText>=0.8.0
 
 # PyTorch and related dependencies for multi-view ICA
 torch==2.6.0

@@ -32,6 +32,7 @@ dependencies = [
     "scipy>=1.10.0",
     "matplotlib>=3.5.0",
     "scikit-learn>=1.0.0",
+    "adjustText>=0.8.0",
     "torch==2.6.0",
     "torchvision==0.21.0",
     "torchaudio==2.6.0",

@@ -19,7 +19,7 @@ All functions support customization of appearance, highlighting, and export opti
 Visualizing Gene Weights
 ------------------------
 
-.. py:method:: MultiModulon.view_iModulon_weights(species, component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False)
+.. py:method:: MultiModulon.view_iModulon_weights(species, component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, show_gene_names=None)
 
    Create a bar plot showing gene weights for a specific iModulon component.
 
@@ -29,6 +29,7 @@ Visualizing Gene Weights
    :param tuple fig_size: Figure size as (width, height) (default: (6, 4))
    :param str font_path: Path to custom font file (optional)
    :param bool show_COG: Color genes by COG category (default: False)
+   :param bool show_gene_names: Show gene names on plot. If None, auto-set based on component size (default: None)
 
 Basic Usage
 ~~~~~~~~~~~
@@ -49,15 +50,34 @@ Basic Usage
        show_COG=True,
        save_path='core1_weights_COG.svg'
    )
+   
+   # With gene names labeled
+   multiModulon.view_iModulon_weights(
+       species='Species1',
+       component='Core_1',
+       show_gene_names=True,
+       save_path='core1_weights_labeled.svg'
+   )
+   
+   # Auto-labeling for small components (default behavior)
+   # If component has <10 genes above threshold, labels are shown automatically
+   multiModulon.view_iModulon_weights(
+       species='Species1',
+       component='Small_Component_1',  # Has only 7 genes
+       save_path='small_component_auto_labeled.svg'
+   )
 
 Understanding the Plot
 ~~~~~~~~~~~~~~~~~~~~~~
 
-* **X-axis**: Genes sorted by weight magnitude
+* **X-axis**: Gene positions along genome (Mb)
 * **Y-axis**: Gene weights (coefficients from M matrix)
-* **Red line**: Threshold (if optimized)
-* **Colors**: COG categories (if show_COG=True)
-* **Labels**: Top genes shown on right side
+* **Dotted lines**: Threshold (if optimized)
+* **Colors**: COG categories (if show_COG=True) or light blue/grey based on threshold
+* **Labels**: Gene names displayed on plot when show_gene_names=True (max 30 genes)
+  - Automatically shown for small components (<10 genes above threshold)
+  - Uses Preferred_name if available, otherwise uses standard gene names
+  - Positioned to minimize overlap using adjustText library
 
 COG Categories
 ~~~~~~~~~~~~~~
@@ -102,7 +122,7 @@ Customizing Appearance
 Visualizing Core iModulons Across Species
 -----------------------------------------
 
-.. py:method:: MultiModulon.view_core_iModulon_weights(component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, reference_order=None)
+.. py:method:: MultiModulon.view_core_iModulon_weights(component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, reference_order=None, show_gene_names=None)
 
    Visualize a core iModulon component across all species. Creates individual plots for each species
    showing the same core component, or a combined plot with subplots when COG coloring is enabled.
@@ -113,6 +133,7 @@ Visualizing Core iModulons Across Species
    :param str font_path: Path to custom font file (optional)
    :param bool show_COG: Color genes by COG category (default: False)
    :param list reference_order: Custom species order for subplot arrangement (optional)
+   :param bool show_gene_names: Show gene names on plots. If None, auto-set based on component size (default: None)
 
 Basic Usage
 ~~~~~~~~~~~
@@ -130,6 +151,13 @@ Basic Usage
        component='Core_1',
        show_COG=True,
        save_path='core1_all_species_COG.svg'
+   )
+   
+   # With gene labeling for all species
+   multiModulon.view_core_iModulon_weights(
+       component='Core_1',
+       show_gene_names=True,
+       save_path='core1_labeled.svg'
    )
 
 Custom Species Order
@@ -154,12 +182,14 @@ Understanding the Output
    - Each plot saved as '{species}_{component}_iModulon.svg'
    - Shows gene weights on genomic coordinates
    - Includes threshold lines if available
+   - Gene labels shown if show_gene_names=True or component has <10 genes
 
 **With COG coloring**: Creates a single combined plot
    - All species shown as subplots
    - Shared COG category legend at bottom
    - Genes colored by functional category
    - Grey dots indicate genes below threshold
+   - Gene labels shown if show_gene_names=True (max 30 per species)
 
 Batch Processing Core Components
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
