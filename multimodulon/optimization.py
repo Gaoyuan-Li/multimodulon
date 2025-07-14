@@ -769,7 +769,7 @@ def optimize_number_of_core_components(
         print(f"Auto-determined max_k = {max_k} based on minimum samples ({min_samples})")
     
     # Generate k candidates
-    k_candidates = list(range(step, min(max_k + 1, 100), step))
+    k_candidates = list(range(step, max_k + 1, step))
     if not k_candidates:
         raise ValueError(f"No valid k candidates with step={step} and max_k={max_k}")
     
