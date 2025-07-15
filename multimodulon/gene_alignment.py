@@ -211,10 +211,6 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
     
-    bbh_dir = Path(input_bbh_dir)
-    if not bbh_dir.exists():
-        raise FileNotFoundError(f"BBH directory not found: {input_bbh_dir}")
-    
     # Get list of strains
     if reference_order:
         # Validate that all strains in reference_order exist in species_data
@@ -226,6 +222,57 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
     else:
         strains = list(multimodulon._species_data.keys())
     logger.info(f"Aligning genes for strains: {strains}")
+    
+    # Check if all species have the same row indexes
+    all_same_indexes = True
+    reference_index = None
+    
+    for strain in strains:
+        species_data = multimodulon._species_data[strain]
+        current_index = species_data.log_tpm.index
+        
+        if reference_index is None:
+            reference_index = current_index
+        else:
+            # Check if indexes are identical
+            if not (len(current_index) == len(reference_index) and 
+                    all(current_index == reference_index)):
+                all_same_indexes = False
+                break
+    
+    # If all species have the same row indexes, use simplified approach
+    if all_same_indexes:
+        logger.info("All species have identical row indexes. Using simplified alignment approach.")
+        
+        # Create combined_gene_db with identical columns for each species and row_label
+        rows = []
+        for gene_id in reference_index:
+            row = {strain: gene_id for strain in strains}
+            row['row_label'] = gene_id  # Add row_label column
+            rows.append(row)
+        
+        df = pd.DataFrame(rows)
+        
+        # Reorder columns to have row_label first
+        column_order = ['row_label'] + strains
+        df = df[column_order]
+        
+        # Save the combined gene database
+        output_file = output_path / "combined_gene_db.csv"
+        df.to_csv(output_file, index=False)
+        
+        # Store the combined gene database
+        multimodulon._combined_gene_db = df
+        
+        logger.info(f"Gene alignment completed (identical indexes). Combined gene database saved to {output_file}")
+        logger.info(f"Total gene groups: {len(df)}")
+        
+        return df
+    
+    # Otherwise, proceed with BBH-based alignment
+    bbh_dir = Path(input_bbh_dir)
+    if not bbh_dir.exists():
+        raise FileNotFoundError(f"BBH directory not found: {input_bbh_dir}")
     
     # Step 1: Collect all genes from each strain's self-comparison file
     strain_genes = {strain: set() for strain in strains}
