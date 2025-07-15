@@ -44,6 +44,11 @@ class SpeciesData:
             self._load_log_tpm()
         return self._log_tpm
     
+    @log_tpm.setter
+    def log_tpm(self, value: pd.DataFrame):
+        """Set log TPM expression matrix."""
+        self._log_tpm = value
+    
     @property
     def log_tpm_norm(self) -> pd.DataFrame:
         """Get normalized log TPM expression matrix."""
@@ -51,12 +56,22 @@ class SpeciesData:
             self._load_log_tpm_norm()
         return self._log_tpm_norm
     
+    @log_tpm_norm.setter
+    def log_tpm_norm(self, value: pd.DataFrame):
+        """Set normalized log TPM expression matrix."""
+        self._log_tpm_norm = value
+    
     @property
     def X(self) -> pd.DataFrame:
         """Get aligned expression matrix. Defaults to log_tpm_norm if not set."""
         if self._X is None:
             return self.log_tpm_norm
         return self._X
+    
+    @X.setter
+    def X(self, value: pd.DataFrame):
+        """Set aligned expression matrix."""
+        self._X = value
     
     @property
     def M(self) -> pd.DataFrame:
@@ -89,12 +104,22 @@ class SpeciesData:
             self._load_sample_sheet()
         return self._sample_sheet
     
+    @sample_sheet.setter
+    def sample_sheet(self, value: pd.DataFrame):
+        """Set sample metadata."""
+        self._sample_sheet = value
+    
     @property
     def gene_table(self) -> pd.DataFrame:
         """Get gene annotation table."""
         if self._gene_table is None:
             self._load_gene_table()
         return self._gene_table
+    
+    @gene_table.setter
+    def gene_table(self, value: pd.DataFrame):
+        """Set gene annotation table."""
+        self._gene_table = value
     
     @property
     def M_thresholds(self) -> pd.DataFrame:
