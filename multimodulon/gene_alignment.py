@@ -244,18 +244,13 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
     if all_same_indexes:
         logger.info("All species have identical row indexes. Using simplified alignment approach.")
         
-        # Create combined_gene_db with identical columns for each species and row_label
+        # Create combined_gene_db with identical columns for each species
         rows = []
         for gene_id in reference_index:
             row = {strain: gene_id for strain in strains}
-            row['row_label'] = gene_id  # Add row_label column
             rows.append(row)
         
         df = pd.DataFrame(rows)
-        
-        # Reorder columns to have row_label first
-        column_order = ['row_label'] + strains
-        df = df[column_order]
         
         # Save the combined gene database
         output_file = output_path / "combined_gene_db.csv"
@@ -266,6 +261,9 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
         
         logger.info(f"Gene alignment completed (identical indexes). Combined gene database saved to {output_file}")
         logger.info(f"Total gene groups: {len(df)}")
+        
+        # Call _create_aligned_expression_matrices to handle X generation consistently
+        _create_aligned_expression_matrices(multimodulon, df, strains)
         
         return df
     
