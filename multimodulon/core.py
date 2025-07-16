@@ -1200,6 +1200,62 @@ class MultiModulon:
         
         print("\nThreshold optimization completed!")
     
+    def update_M_threshold(self, component: str, species: str, new_threshold: float):
+        """
+        Update the M threshold for a specific component in a specific species.
+        
+        This method updates both the M_thresholds and presence_matrix for the
+        specified component using the new threshold value.
+        
+        Parameters
+        ----------
+        component : str
+            Name of the component to update
+        species : str
+            Name of the species to update
+        new_threshold : float
+            New threshold value to apply
+            
+        Raises
+        ------
+        ValueError
+            If species not found, component not found, or M/M_thresholds not available
+        """
+        # Validate species
+        if species not in self.species_data:
+            raise ValueError(f"Species '{species}' not found in MultiModulon object")
+        
+        species_data = self.species_data[species]
+        
+        # Check if M matrix is available
+        if not hasattr(species_data, '_M') or species_data._M is None:
+            raise ValueError(f"M matrix not available for species '{species}'. Run compute_M() first.")
+        
+        # Check if M_thresholds is available
+        if not hasattr(species_data, '_M_thresholds') or species_data._M_thresholds is None:
+            raise ValueError(f"M_thresholds not available for species '{species}'. Run optimize_M_thresholds() first.")
+        
+        # Check if component exists
+        M = species_data.M
+        if component not in M.columns:
+            raise ValueError(f"Component '{component}' not found in M matrix for species '{species}'")
+        
+        # Update M_thresholds
+        species_data._M_thresholds.loc[component, 'M_threshold'] = new_threshold
+        
+        # Update presence_matrix
+        if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
+            # Recalculate presence for this component using the new threshold
+            species_data._presence_matrix[component] = (M[component].abs() > new_threshold).astype(int)
+            
+            # Report the change
+            n_genes = species_data._presence_matrix[component].sum()
+            print(f"Updated threshold for component '{component}' in species '{species}':")
+            print(f"  New threshold: {new_threshold:.4f}")
+            print(f"  Number of genes above threshold: {n_genes}")
+        else:
+            print(f"Warning: presence_matrix not found for species '{species}'. Only M_thresholds updated.")
+    
     def _quantile_otsu_threshold(self, multiModulon_M: pd.DataFrame, component_name: str, quantile_threshold: float = 90) -> float:
         """
         Calculate Otsu threshold using quantile-based pre-filtering.
