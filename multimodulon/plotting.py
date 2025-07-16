@@ -1816,7 +1816,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
 
 def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species', 
                           save_path: Optional[str] = None, fig_size: Tuple[float, float] = (12, 8),
-                          font_path: Optional[str] = None, reference_order: Optional[List[str]] = None) -> Dict[str, List[str]]:
+                          font_path: Optional[str] = None, reference_order: Optional[List[str]] = None) -> pd.DataFrame:
     """
     Compare a core iModulon component across species with a dual-layer heatmap.
     
@@ -1850,8 +1850,10 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         
     Returns
     -------
-    Dict[str, List[str]]
-        Dictionary with species names as keys and lists of gene names (M matrix indices) as values
+    pd.DataFrame
+        DataFrame with genes as columns and species as rows (index).
+        Values are: 1 for "In iModulon & genome", 0 for "In genome, not in iModulon", 
+        -1 for "Not in genome"
         
     Raises
     ------
@@ -1936,10 +1938,13 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         else:
             genes_not_in_all.append(gene)
     
-    # Combine with gap
-    gap_width = 1
+    # Check if we need right section
+    has_right_section = len(genes_not_in_all) > 0
+    
+    # Combine with gap (only if we have right section)
+    gap_width = 1 if has_right_section else 0
     ordered_genes = genes_in_all + genes_not_in_all
-    gap_position = len(genes_in_all) if genes_in_all else -1
+    gap_position = len(genes_in_all) if (genes_in_all and has_right_section) else -1
     
     # Create figure
     fig, ax = plt.subplots(figsize=fig_size)
@@ -2136,9 +2141,9 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     # Add legend
     from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor='#CCE5FF', edgecolor='black', linewidth=1, label='Present in iModulon'),
-        Patch(facecolor='#F0F0F0', edgecolor='black', linewidth=1, label='Absent from iModulon'),
-        Patch(facecolor='white', edgecolor='black', linewidth=1, label=f'Absent from {y_label.lower()}')
+        Patch(facecolor='#CCE5FF', edgecolor='black', linewidth=1, label='In iModulon & genome'),
+        Patch(facecolor='#F0F0F0', edgecolor='black', linewidth=1, label='In genome, not in iModulon'),
+        Patch(facecolor='white', edgecolor='black', linewidth=1, label='Not in genome')
     ]
     
     # Position legend to the right with same gap as between heatmaps
@@ -2181,7 +2186,26 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     # Always show the plot (useful for Jupyter notebooks)
     plt.show()
     
-    return result_dict
+    # Create DataFrame for return
+    # Initialize with -1 (not in genome)
+    result_df = pd.DataFrame(-1, index=species_with_component, columns=ordered_genes)
+    
+    # Fill in values based on gene presence and component membership
+    for species in species_with_component:
+        for gene in ordered_genes:
+            # Check if gene exists in this species
+            if species in gene_species_presence.get(gene, set()):
+                # Gene exists - check if in component
+                if gene in result_dict.get(species, []):
+                    result_df.loc[species, gene] = 1  # In iModulon & genome
+                else:
+                    result_df.loc[species, gene] = 0  # In genome, not in iModulon
+            # else: stays -1 (not in genome)
+    
+    # Use gene names as column names (same as x-axis labels)
+    result_df.columns = x_labels
+    
+    return result_df
 
 
 def compare_core_iModulon_activity(multimodulon, component: str, species_in_comparison: List[str], 
