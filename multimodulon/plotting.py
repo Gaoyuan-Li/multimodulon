@@ -1142,20 +1142,64 @@ def view_iModulon_genes(multimodulon, species: str, component: str) -> pd.DataFr
     if genes_in_table:
         gene_subset = species_data.gene_table.loc[genes_in_table].copy()
         
+        # Add M_weight column if M matrix is available
+        if species_data._M is not None and component in species_data._M.columns:
+            # Get weights from M matrix for these genes
+            m_weights = []
+            for gene in genes_in_table:
+                if gene in species_data._M.index:
+                    m_weights.append(species_data._M.loc[gene, component])
+                else:
+                    # Try to find the gene in component_genes (original presence matrix genes)
+                    # This handles cases where gene names might differ between gene_table and M matrix
+                    original_gene = None
+                    for comp_gene in component_genes:
+                        if comp_gene in species_data._M.index:
+                            # Check if this maps to our current gene
+                            if multimodulon.combined_gene_db is not None and species in multimodulon.combined_gene_db.columns:
+                                # Find row where species column equals our gene
+                                matching_rows = multimodulon.combined_gene_db[
+                                    multimodulon.combined_gene_db[species] == gene
+                                ]
+                                if not matching_rows.empty:
+                                    # Get the leftmost gene for this row
+                                    for col in multimodulon.combined_gene_db.columns:
+                                        val = matching_rows.iloc[0][col]
+                                        if pd.notna(val) and val != "None" and val is not None:
+                                            if val == comp_gene:
+                                                original_gene = comp_gene
+                                                break
+                                            break
+                            elif gene == comp_gene:
+                                original_gene = comp_gene
+                                break
+                    
+                    if original_gene and original_gene in species_data._M.index:
+                        m_weights.append(species_data._M.loc[original_gene, component])
+                    else:
+                        m_weights.append(float('nan'))
+            
+            gene_subset['M_weight'] = m_weights
+        
         # Sort by start position if the column exists
         if 'start' in gene_subset.columns:
             gene_subset = gene_subset.sort_values('start')
         
-        # Reorder columns: Preferred_name first, gene_name second
+        # Reorder columns: M_weight first, Preferred_name second, gene_name third
         cols = gene_subset.columns.tolist()
         new_order = []
         
-        # Add Preferred_name first if it exists
+        # Add M_weight first if it exists
+        if 'M_weight' in cols:
+            new_order.append('M_weight')
+            cols.remove('M_weight')
+        
+        # Add Preferred_name second if it exists
         if 'Preferred_name' in cols:
             new_order.append('Preferred_name')
             cols.remove('Preferred_name')
         
-        # Add gene_name second if it exists
+        # Add gene_name third if it exists
         if 'gene_name' in cols:
             new_order.append('gene_name')
             cols.remove('gene_name')
