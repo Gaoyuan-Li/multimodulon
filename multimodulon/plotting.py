@@ -1853,7 +1853,7 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         - First color: "In iModulon & genome"
         - Second color: "In genome, not in iModulon"
         - Third color: "Not in genome"
-        Default: ['#A2AADB', '#FFF2E0', '#FFFFFF']
+        Default: ['#C1C6E8', '#F0DDD2', '#FFFFFF']
         
     Returns
     -------
@@ -1899,7 +1899,7 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     
     # Set default color palette if not provided
     if heatmap_palette is None:
-        heatmap_palette = ['#A2AADB', '#FFF2E0', '#FFFFFF']
+        heatmap_palette = ['#C1C6E8', '#F0DDD2', '#FFFFFF']
     elif len(heatmap_palette) != 3:
         raise ValueError("heatmap_palette must contain exactly 3 colors")
     
