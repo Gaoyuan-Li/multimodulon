@@ -1222,10 +1222,10 @@ class MultiModulon:
             If species not found, component not found, or M/M_thresholds not available
         """
         # Validate species
-        if species not in self.species_data:
+        if species not in self._species_data:
             raise ValueError(f"Species '{species}' not found in MultiModulon object")
         
-        species_data = self.species_data[species]
+        species_data = self._species_data[species]
         
         # Check if M matrix is available
         if not hasattr(species_data, '_M') or species_data._M is None:
