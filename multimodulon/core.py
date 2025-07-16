@@ -581,7 +581,7 @@ class MultiModulon:
         num_runs: int = 100,
         mode: str = 'gpu',
         seed: int = 42,
-        effect_size_threshold: Optional[float] = 5,
+        effect_size_threshold: Optional[float] = 1,
         effect_size_threshold_core: Optional[float] = None,
         effect_size_threshold_unique: Optional[float] = None,
         num_top_gene: int = 20
@@ -606,7 +606,7 @@ class MultiModulon:
             'gpu' or 'cpu' mode for computation
         seed : int, default=42
             Random seed for reproducibility
-        effect_size_threshold : float, optional, default=5
+        effect_size_threshold : float, optional, default=1
             Cohen's d threshold for both core and unique components.
             Only used if specific thresholds are not provided.
         effect_size_threshold_core : float, optional
@@ -635,7 +635,7 @@ class MultiModulon:
         ...     a=a_values,
         ...     c=30,
         ...     num_runs=100,
-        ...     effect_size_threshold=5
+        ...     effect_size_threshold=1
         ... )
         
         >>> # Use different thresholds for core and unique components
@@ -652,9 +652,9 @@ class MultiModulon:
         """
         # Set effect size thresholds
         if effect_size_threshold_core is None:
-            effect_size_threshold_core = effect_size_threshold if effect_size_threshold is not None else 5
+            effect_size_threshold_core = effect_size_threshold if effect_size_threshold is not None else 1
         if effect_size_threshold_unique is None:
-            effect_size_threshold_unique = effect_size_threshold if effect_size_threshold is not None else 5
+            effect_size_threshold_unique = effect_size_threshold if effect_size_threshold is not None else 1
             
         species_list = list(self._species_data.keys())
         n_species = len(species_list)
