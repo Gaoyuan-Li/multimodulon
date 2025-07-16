@@ -1816,7 +1816,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
 
 def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species', 
                           save_path: Optional[str] = None, fig_size: Tuple[float, float] = (12, 8),
-                          font_path: Optional[str] = None, reference_order: Optional[List[str]] = None) -> pd.DataFrame:
+                          font_path: Optional[str] = None, reference_order: Optional[List[str]] = None,
+                          heatmap_palette: Optional[List[str]] = None) -> pd.DataFrame:
     """
     Compare a core iModulon component across species with a dual-layer heatmap.
     
@@ -1847,6 +1848,12 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         Custom order for species on y-axis (top to bottom).
         Example: ['MG1655', 'W', 'W3110', 'BL21', 'C', 'Crooks']
         If not provided, species are displayed in their default order.
+    heatmap_palette : list of str, optional
+        List of three colors for the heatmap:
+        - First color: "In iModulon & genome"
+        - Second color: "In genome, not in iModulon"
+        - Third color: "Not in genome"
+        Default: ['#A2AADB', '#FFF2E0', '#FFFFFF']
         
     Returns
     -------
@@ -1889,6 +1896,12 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         # Add any remaining species not in reference_order
         remaining_species = [sp for sp in species_with_component if sp not in ordered_species]
         species_with_component = ordered_species + remaining_species
+    
+    # Set default color palette if not provided
+    if heatmap_palette is None:
+        heatmap_palette = ['#A2AADB', '#FFF2E0', '#FFFFFF']
+    elif len(heatmap_palette) != 3:
+        raise ValueError("heatmap_palette must contain exactly 3 colors")
     
     # Set font properties if provided
     font_prop = None
@@ -1970,9 +1983,9 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
                 height = i - start_i
                 y_pos = len(species_list) - i  # Flip to have first species at top
                 
-                # White rectangle for non-existent genes
+                # Rectangle for non-existent genes - use third color from palette
                 rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
-                                       edgecolor='none', facecolor='white')
+                                       edgecolor='none', facecolor=heatmap_palette[2])
                 rectangles.append(rect)
             elif not exists_flags[i]:
                 # Left section - skip non-existent genes
@@ -1993,13 +2006,13 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
                 y_pos = len(species_list) - i  # Flip to have first species at top
                 
                 if start_in_component:
-                    # In component - filled light blue, no edge
+                    # In component - use first color from palette
                     rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
-                                           edgecolor='none', facecolor='#CCE5FF')  # Light blue (slightly deeper)
+                                           edgecolor='none', facecolor=heatmap_palette[0])
                 else:
-                    # Not in component but exists - very light grey fill, no edge
+                    # Not in component but exists - use second color from palette
                     rect = patches.Rectangle((x_pos, y_pos), 1, height, linewidth=0,
-                                           edgecolor='none', facecolor='#F0F0F0')  # Very light grey
+                                           edgecolor='none', facecolor=heatmap_palette[1])
                 rectangles.append(rect)
         
         return rectangles
@@ -2141,9 +2154,9 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     # Add legend
     from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor='#CCE5FF', edgecolor='black', linewidth=1, label='In iModulon & genome'),
-        Patch(facecolor='#F0F0F0', edgecolor='black', linewidth=1, label='In genome, not in iModulon'),
-        Patch(facecolor='white', edgecolor='black', linewidth=1, label='Not in genome')
+        Patch(facecolor=heatmap_palette[0], edgecolor='black', linewidth=1, label='In iModulon & genome'),
+        Patch(facecolor=heatmap_palette[1], edgecolor='black', linewidth=1, label='In genome, not in iModulon'),
+        Patch(facecolor=heatmap_palette[2], edgecolor='black', linewidth=1, label='Not in genome')
     ]
     
     # Position legend to the right with same gap as between heatmaps

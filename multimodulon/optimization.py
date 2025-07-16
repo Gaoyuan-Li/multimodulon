@@ -188,7 +188,7 @@ def run_nre_optimization(
     seed: int = 42,
     metric: str = 'nre',
     threshold: Optional[float] = None,
-    effect_size_threshold: float = 5,
+    effect_size_threshold: float = 1,
     num_top_gene: int = 20,
     fig_size: Tuple[float, float] = (5, 3),
     font_path: Optional[str] = None,
@@ -655,7 +655,7 @@ def optimize_number_of_core_components(
     save_plot: Optional[str] = None,
     metric: str = 'effect_size',
     threshold: Optional[float] = None,
-    effect_size_threshold: float = 5,
+    effect_size_threshold: float = 1,
     num_top_gene: int = 20,
     save_path: Optional[str] = None,
     fig_size: Tuple[float, float] = (7, 5),
@@ -699,7 +699,7 @@ def optimize_number_of_core_components(
         Optimization metric: 'nre' or 'effect_size' (Cohen's d effect size)
     threshold : float, optional
         For effect_size metric: Cohen's d threshold for effect size analysis and visualization
-    effect_size_threshold : float, default=5
+    effect_size_threshold : float, default=1
         Minimum Cohen's d effect size threshold for counting components.
         Only components with effect size above this threshold are counted as "effective".
     num_top_gene : int, default=20
@@ -834,7 +834,7 @@ def optimize_number_of_unique_components(
     mode: str = 'gpu',
     seed: int = 42,
     save_plots: Optional[str] = None,
-    effect_size_threshold: float = 5,
+    effect_size_threshold: float = 1,
     num_top_gene: int = 20,
     save_path: Optional[str] = None,
     fig_size: Tuple[float, float] = (7, 5),
@@ -862,7 +862,7 @@ def optimize_number_of_unique_components(
         Random seed for reproducibility
     save_plots : str, optional
         Directory to save plots. If None, displays the plots
-    effect_size_threshold : float, default=5
+    effect_size_threshold : float, default=1
         Minimum Cohen's d effect size threshold for counting components
     num_top_gene : int, default=20
         Number of top genes to use when calculating Cohen's d effect size
