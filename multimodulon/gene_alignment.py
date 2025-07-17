@@ -343,25 +343,80 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
     
     # Step 6: Create the final DataFrame
     rows = []
+    processed_genes = {strain: set() for strain in strains}
     
     # Add all connected components (including singletons)
     for comp in components.values():
         # Skip empty components
         if all(len(genes) == 0 for genes in comp.values()):
             continue
+        
+        # Check if this component has multiple genes from any species
+        has_multiple = any(len(genes) > 1 for genes in comp.values())
+        
+        if has_multiple:
+            # Handle components with multiple genes from same species
+            # This can happen with paralogs or gene families
+            # Create separate rows for each unique gene combination
             
-        row = {}
-        for strain in strains:
-            genes = comp[strain]
-            if len(genes) == 1:
-                row[strain] = genes[0]
-            elif len(genes) > 1:
-                # Handle unexpected duplicates: take the first occurrence
-                logger.warning(f"Multiple genes in same component for {strain}: {genes}")
-                row[strain] = genes[0]
-            else:
-                row[strain] = None
-        rows.append(row)
+            # Find the maximum number of genes from any species in this component
+            max_genes = max(len(genes) for genes in comp.values())
+            
+            # Log the situation
+            for strain in strains:
+                if len(comp[strain]) > 1:
+                    logger.warning(f"Multiple genes in same component for {strain}: {comp[strain]}")
+            
+            # Create rows for each gene, trying to maintain relationships where possible
+            # First, collect all genes that need to be placed
+            all_genes_in_comp = []
+            for strain in strains:
+                for gene in comp[strain]:
+                    if gene not in processed_genes[strain]:
+                        all_genes_in_comp.append((strain, gene))
+            
+            # Create rows for these genes
+            while all_genes_in_comp:
+                row = {strain: None for strain in strains}
+                genes_to_remove = []
+                
+                # Try to fill one gene per species for this row
+                for strain in strains:
+                    # Find an unprocessed gene for this strain
+                    for i, (s, g) in enumerate(all_genes_in_comp):
+                        if s == strain and g not in processed_genes[strain]:
+                            row[strain] = g
+                            processed_genes[strain].add(g)
+                            genes_to_remove.append(i)
+                            break
+                
+                # Remove processed genes
+                for i in sorted(genes_to_remove, reverse=True):
+                    all_genes_in_comp.pop(i)
+                
+                # Only add row if it has at least one gene
+                if any(row[strain] is not None for strain in strains):
+                    rows.append(row)
+        else:
+            # Simple case: at most one gene per species
+            row = {}
+            for strain in strains:
+                genes = comp[strain]
+                if len(genes) == 1:
+                    gene = genes[0]
+                    row[strain] = gene
+                    processed_genes[strain].add(gene)
+                else:
+                    row[strain] = None
+            rows.append(row)
+    
+    # Step 7: Add any remaining unprocessed genes as singleton rows
+    for strain in strains:
+        unprocessed = strain_genes[strain] - processed_genes[strain]
+        for gene in unprocessed:
+            row = {s: None for s in strains}
+            row[strain] = gene
+            rows.append(row)
     
     # Create DataFrame and sort by leftmost non-None value
     df = pd.DataFrame(rows)
@@ -390,12 +445,23 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
     logger.info(f"Total gene groups: {len(df)}")
     
     # Log gene counts for each species
+    print("\nGene counts in combined_gene_db:")
+    all_complete = True
     for strain in strains:
         non_null_count = df[strain].notna().sum()
         expected_count = len(strain_genes[strain])
-        logger.info(f"{strain}: {non_null_count} genes in combined_gene_db (expected: {expected_count})")
-        if non_null_count != expected_count:
-            logger.warning(f"{strain}: Missing {expected_count - non_null_count} genes in combined_gene_db!")
+        if non_null_count == expected_count:
+            logger.info(f"{strain}: {non_null_count} genes in combined_gene_db (expected: {expected_count}) ✓")
+            print(f"  ✓ {strain}: {non_null_count} genes (complete)")
+        else:
+            logger.warning(f"{strain}: {non_null_count} genes in combined_gene_db (expected: {expected_count}) - Missing {expected_count - non_null_count} genes!")
+            print(f"  ✗ {strain}: {non_null_count} genes (expected: {expected_count}, missing: {expected_count - non_null_count})")
+            all_complete = False
+    
+    if all_complete:
+        print("\n✓ All species have complete gene sets in combined_gene_db!")
+    else:
+        print("\n✗ Some species are missing genes - check logs for details")
     
     # Create aligned expression matrices
     _create_aligned_expression_matrices(multimodulon, df, strains)
