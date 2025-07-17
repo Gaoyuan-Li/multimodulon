@@ -1203,20 +1203,41 @@ class MultiModulon:
                         if gene in species_data.gene_table.index:
                             gene_mapping[gene] = gene
             
-            # Create presence matrix with species-specific gene indexes
-            presence_matrix = pd.DataFrame(
-                index=list(gene_mapping.values()),
-                columns=M.columns,
-                dtype=int
-            )
-            
-            # Binarize based on thresholds using the mapping
-            for component in M.columns:
-                threshold = thresholds[component]
-                # Map and binarize
-                for leftmost_gene, species_gene in gene_mapping.items():
-                    if leftmost_gene in M.index:
-                        presence_matrix.loc[species_gene, component] = int(abs(M.loc[leftmost_gene, component]) > threshold)
+            # Create presence matrix with ALL genes from gene_table
+            if species_data.gene_table is not None:
+                # Initialize presence matrix with all genes from gene_table, all values as 0
+                presence_matrix = pd.DataFrame(
+                    0,  # Initialize all values to 0
+                    index=species_data.gene_table.index,
+                    columns=M.columns,
+                    dtype=int
+                )
+                
+                # Binarize based on thresholds using the mapping
+                for component in M.columns:
+                    threshold = thresholds[component]
+                    # Map and binarize only for genes that have mapping
+                    for leftmost_gene, species_gene in gene_mapping.items():
+                        if leftmost_gene in M.index and species_gene in presence_matrix.index:
+                            presence_matrix.loc[species_gene, component] = int(abs(M.loc[leftmost_gene, component]) > threshold)
+                
+                # Report statistics
+                n_mapped_genes = len(gene_mapping)
+                n_total_genes = len(presence_matrix)
+                print(f"  Gene mapping: {n_mapped_genes}/{n_total_genes} genes have expression data")
+            else:
+                # Fallback to original behavior if no gene_table
+                presence_matrix = pd.DataFrame(
+                    index=list(gene_mapping.values()),
+                    columns=M.columns,
+                    dtype=int
+                )
+                
+                for component in M.columns:
+                    threshold = thresholds[component]
+                    for leftmost_gene, species_gene in gene_mapping.items():
+                        if leftmost_gene in M.index:
+                            presence_matrix.loc[species_gene, component] = int(abs(M.loc[leftmost_gene, component]) > threshold)
             
             # Store results
             species_data._M_thresholds = M_thresholds_df
@@ -1303,9 +1324,12 @@ class MultiModulon:
                         if gene in species_data.gene_table.index:
                             gene_mapping[gene] = gene
             
-            # Recalculate presence for this component using the new threshold and mapping
+            # First reset all values to 0 for this component
+            species_data._presence_matrix[component] = 0
+            
+            # Then set to 1 for genes above threshold using the mapping
             for leftmost_gene, species_gene in gene_mapping.items():
-                if species_gene in species_data._presence_matrix.index:
+                if species_gene in species_data._presence_matrix.index and leftmost_gene in M.index:
                     species_data._presence_matrix.loc[species_gene, component] = int(abs(M.loc[leftmost_gene, component]) > new_threshold)
             
             # Report the change

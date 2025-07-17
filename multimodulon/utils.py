@@ -317,10 +317,28 @@ def create_gene_table(multimodulon: 'MultiModulon') -> None:
             existing_cols = [col for col in keep_cols if col in df_annot.columns]
             df_annot = df_annot[existing_cols]
             
+            # Filter to only keep genes that are in log_tpm matrices
+            if species_data.log_tpm is not None:
+                # Get genes that are in log_tpm (rows)
+                tpm_genes = species_data.log_tpm.index.tolist()
+                # Filter gene table to only include these genes
+                genes_in_both = [g for g in tpm_genes if g in df_annot.index]
+                df_annot = df_annot.loc[genes_in_both]
+                
+                # Report any genes in log_tpm but not in annotation
+                missing_in_annot = set(tpm_genes) - set(df_annot.index)
+                if missing_in_annot:
+                    logger.warning(f"{species_name}: {len(missing_in_annot)} genes in log_tpm not found in GFF annotation")
+                    
+                print(f"  ✓ Created gene table with {len(df_annot)} genes (filtered to match log_tpm)")
+            else:
+                # If no log_tpm data, keep all genes but warn
+                logger.warning(f"{species_name}: No log_tpm data found, keeping all {len(df_annot)} genes from GFF")
+                print(f"  ✓ Created gene table with {len(df_annot)} genes (no filtering applied)")
+            
             # Store in species data
             species_data._gene_table = df_annot
             
-            print(f"  ✓ Created gene table with {len(df_annot)} genes")
             logger.info(f"Gene table for {species_name}: {df_annot.shape}")
             
         except Exception as e:
