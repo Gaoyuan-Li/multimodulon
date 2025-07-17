@@ -362,10 +362,10 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
             # Find the maximum number of genes from any species in this component
             max_genes = max(len(genes) for genes in comp.values())
             
-            # Log the situation
+            # Log the situation (changed to info since this is expected for paralogs/gene families)
             for strain in strains:
                 if len(comp[strain]) > 1:
-                    logger.warning(f"Multiple genes in same component for {strain}: {comp[strain]}")
+                    logger.info(f"Multiple genes in same component for {strain}: {comp[strain]}")
             
             # Create rows for each gene, trying to maintain relationships where possible
             # First, collect all genes that need to be placed
@@ -462,6 +462,9 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
         print("\n✓ All species have complete gene sets in combined_gene_db!")
     else:
         print("\n✗ Some species are missing genes - check logs for details")
+    
+    print(f"\nCombined gene database shape: {df.shape}")
+    print(f"Number of gene groups: {len(df)}")
     
     # Create aligned expression matrices
     _create_aligned_expression_matrices(multimodulon, df, strains)
