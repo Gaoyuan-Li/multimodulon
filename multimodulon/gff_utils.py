@@ -41,19 +41,23 @@ def _get_attr(attr_string: str, attr_id: str, ignore: bool = False) -> Optional[
         return attributes[attr_id]
     
     # Special handling for locus_tag - try to extract from Note field
-    if attr_id == 'locus_tag' and 'Note' in attributes:
-        note_value = attributes['Note']
-        # Parse "ECK0001:JW4367:b0001" format
-        if ':' in note_value:
-            parts = note_value.split(':')
-            # Look for JW-number first (preferred for W3110)
-            for part in parts:
-                if part.startswith('JW') and len(part) > 2:
-                    return part
-            # If no JW-number found, fall back to b-number
-            for part in reversed(parts):
-                if part.startswith('b') and len(part) > 1:
-                    return part
+    if attr_id == 'locus_tag':
+        if 'Note' in attributes:
+            note_value = attributes['Note']
+            # Parse "ECK0001:JW4367:b0001" format
+            if ':' in note_value:
+                parts = note_value.split(':')
+                # Look for JW-number first (preferred for W3110)
+                for part in parts:
+                    if part.startswith('JW') and len(part) > 2:
+                        return part
+                # If no JW-number found, fall back to b-number
+                for part in reversed(parts):
+                    if part.startswith('b') and len(part) > 1:
+                        return part
+        # For gene entries without Note field (W3110 case), use gene name as placeholder
+        elif 'gene' in attributes:
+            return attributes['gene']
     
     if ignore:
         return None
