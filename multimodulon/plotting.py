@@ -1782,7 +1782,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
 def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species', 
                           save_path: Optional[str] = None, fig_size: Tuple[float, float] = (12, 8),
                           font_path: Optional[str] = None, reference_order: Optional[List[str]] = None,
-                          heatmap_palette: Optional[List[str]] = None) -> pd.DataFrame:
+                          heatmap_palette: Optional[List[str]] = None, show_gene_names: bool = False) -> pd.DataFrame:
     """
     Compare a core iModulon component across species with a dual-layer heatmap.
     
@@ -1819,6 +1819,10 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         - Second color: "In genome, not in iModulon"
         - Third color: "Not in genome"
         Default: ['#C1C6E8', '#F0DDD2', '#FFFFFF']
+    show_gene_names : bool, optional
+        If True, maps locus tags to gene names from the species' gene_table.
+        The leftmost locus tag is used to identify which species' gene_table to use.
+        Default: False
         
     Returns
     -------
@@ -2072,6 +2076,40 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     
     # Use leftmost gene names directly as x-axis labels
     x_labels = ordered_genes
+    
+    # If show_gene_names is True, map locus tags to gene names
+    if show_gene_names:
+        x_labels_mapped = []
+        for gene in ordered_genes:
+            gene_name = gene  # Default to locus tag
+            
+            # Find which species this leftmost locus tag belongs to
+            if multimodulon.combined_gene_db is not None:
+                for _, row in multimodulon.combined_gene_db.iterrows():
+                    # Find leftmost gene in this row
+                    leftmost_gene = None
+                    leftmost_species = None
+                    for col in multimodulon.combined_gene_db.columns:
+                        val = row[col]
+                        if pd.notna(val) and val != "None" and val is not None:
+                            leftmost_gene = val
+                            leftmost_species = col
+                            break
+                    
+                    # If this is our gene
+                    if leftmost_gene == gene and leftmost_species:
+                        # Get the gene_table from the leftmost species
+                        if leftmost_species in multimodulon._species_data:
+                            species_data = multimodulon._species_data[leftmost_species]
+                            if species_data.gene_table is not None and gene in species_data.gene_table.index:
+                                if 'gene_name' in species_data.gene_table.columns:
+                                    name = species_data.gene_table.loc[gene, 'gene_name']
+                                    if pd.notna(name) and name != '' and name != 'None':
+                                        gene_name = name
+                        break
+            
+            x_labels_mapped.append(gene_name)
+        x_labels = x_labels_mapped
     
     ax.set_xticklabels(x_labels, rotation=45, ha='right')
     # Reverse y-axis labels to match top-to-bottom order
