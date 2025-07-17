@@ -170,7 +170,7 @@ def gff2pandas(gff_file: Union[str, List[str]], feature: Union[str, List[str]] =
         DF_cds = DF_cds.sort_values("start")
 
         # Extract attribute information
-        DF_cds["locus_tag"] = DF_cds.attributes.apply(_get_attr, attr_id="locus_tag")
+        DF_cds["locus_tag"] = DF_cds.attributes.apply(_get_attr, attr_id="locus_tag", ignore=True)
 
         DF_cds["gene_name"] = DF_cds.attributes.apply(
             _get_attr, attr_id="gene", ignore=True
