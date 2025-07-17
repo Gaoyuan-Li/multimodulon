@@ -113,15 +113,31 @@ def gff2pandas(gff_file: Union[str, List[str]], feature: Union[str, List[str]] =
         # Filter for CDSs
         DF_cds = DF_gff[DF_gff.feature.isin(feature)]
 
-        # Also filter for genes to get old_locus_tag
+        # For W3110 edge case: gene entries don't have locus_tag, so we get it from CDS
+        # First try to get locus_tag from genes normally
         DF_gene = DF_gff[DF_gff.feature == "gene"].reset_index()
         DF_gene["locus_tag"] = DF_gene.attributes.apply(
-            _get_attr, attr_id="locus_tag", ignore=False
+            _get_attr, attr_id="locus_tag", ignore=True
         )
         DF_gene["old_locus_tag"] = DF_gene.attributes.apply(
             _get_attr, attr_id="old_locus_tag", ignore=True
         )
-        DF_gene = DF_gene[["locus_tag", "old_locus_tag"]]
+        
+        # If no locus tags found in genes (W3110 case), extract from CDS entries
+        if DF_gene["locus_tag"].isna().all():
+            logger.debug("No locus_tag found in gene entries, extracting from CDS entries")
+            # Get CDS entries and extract locus_tag from Note field
+            DF_cds_for_gene = DF_gff[DF_gff.feature == "CDS"][["start", "attributes"]]
+            DF_cds_for_gene["locus_tag"] = DF_cds_for_gene.attributes.apply(
+                _get_attr, attr_id="locus_tag", ignore=True
+            )
+            # Match genes to CDS by start position
+            DF_gene = pd.merge(DF_gene, DF_cds_for_gene[["start", "locus_tag"]], 
+                               on="start", how="left", suffixes=("_gene", ""))
+            DF_gene = DF_gene[["locus_tag", "old_locus_tag"]]
+        else:
+            DF_gene = DF_gene[["locus_tag", "old_locus_tag"]]
+        
         DF_gene = DF_gene[DF_gene.locus_tag.notnull()]
 
         # Sort by start position
