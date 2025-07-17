@@ -307,7 +307,8 @@ def create_gene_table(multimodulon: 'MultiModulon') -> None:
         
         # Parse GFF file using the enhanced parser
         try:
-            df_annot = gff2pandas(str(gff_file), index='locus_tag')
+            # Read all feature types from GFF file
+            df_annot = gff2pandas(str(gff_file), feature=["CDS", "gene", "rRNA", "tRNA", "ncRNA", "pseudogene"], index='locus_tag')
             
             # Keep only the specified columns
             keep_cols = ['accession', 'start', 'end', 'strand', 'gene_name', 
