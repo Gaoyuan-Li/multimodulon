@@ -116,7 +116,7 @@ def gff2pandas(gff_file: Union[str, List[str]], feature: Union[str, List[str]] =
         # Also filter for genes to get old_locus_tag
         DF_gene = DF_gff[DF_gff.feature == "gene"].reset_index()
         DF_gene["locus_tag"] = DF_gene.attributes.apply(
-            _get_attr, attr_id="locus_tag", ignore=True
+            _get_attr, attr_id="locus_tag", ignore=False
         )
         DF_gene["old_locus_tag"] = DF_gene.attributes.apply(
             _get_attr, attr_id="old_locus_tag", ignore=True
@@ -128,7 +128,7 @@ def gff2pandas(gff_file: Union[str, List[str]], feature: Union[str, List[str]] =
         DF_cds = DF_cds.sort_values("start")
 
         # Extract attribute information
-        DF_cds["locus_tag"] = DF_cds.attributes.apply(_get_attr, attr_id="locus_tag")
+        DF_cds["locus_tag"] = DF_cds.attributes.apply(_get_attr, attr_id="locus_tag", ignore=True)
 
         DF_cds["gene_name"] = DF_cds.attributes.apply(
             _get_attr, attr_id="gene", ignore=True
