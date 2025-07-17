@@ -672,7 +672,6 @@ class MultiModulon:
         print(f"Species: {species_list}")
         print(f"Total components (a): {a}")
         print(f"Core components (c): {c}")
-        print(f"Effect size thresholds - Core: {effect_size_threshold_core}, Unique: {effect_size_threshold_unique}")
         
         # Check if all species have X matrices
         for species in species_list:
