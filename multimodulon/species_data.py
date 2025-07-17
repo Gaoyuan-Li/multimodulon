@@ -6,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 import logging
 
-from .utils import parse_gff
+from .gff_utils import gff2pandas
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +181,7 @@ class SpeciesData:
         if not gff_file.exists():
             raise FileNotFoundError(f"genomic.gff not found for {self.species_name}")
         
-        self._gene_table = parse_gff(gff_file)
+        self._gene_table = gff2pandas(str(gff_file), index='locus_tag')
         logger.info(f"Loaded gene_table for {self.species_name}: {self._gene_table.shape}")
     
     def validate_data(self):

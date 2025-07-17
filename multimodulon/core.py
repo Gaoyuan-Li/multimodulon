@@ -14,7 +14,8 @@ from typing import Dict, Optional, Tuple, List, Union
 from .species_data import SpeciesData
 from .gene_alignment import generate_BBH, align_genes
 from .optimization import optimize_number_of_core_components, optimize_number_of_unique_components, calculate_cohens_d_effect_size
-from .utils import BBHAnalyzer, extract_protein_sequences, gff2pandas, create_gene_table
+from .utils import BBHAnalyzer
+from .gff_utils import gff2pandas, create_gene_table, extract_protein_sequences
 from .multiview_ica import run_multiview_ica
 from .core_io import save_bbh, load_bbh, get_orthologs, save_to_json_multimodulon, load_json_multimodulon
 from .plotting import view_iModulon_weights, view_iModulon_activities, view_iModulon_genes, view_core_iModulon_weights, compare_core_iModulon, compare_core_iModulon_activity, show_iModulon_activity_change, show_gene_iModulon_correlation

@@ -6,6 +6,9 @@ import pandas as pd
 from pathlib import Path
 from typing import List, Optional, Union, TYPE_CHECKING
 import logging
+from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 if TYPE_CHECKING:
     from .core import MultiModulon
@@ -94,12 +97,6 @@ def gff2pandas(gff_file: Union[str, List[str]], feature: Union[str, List[str]] =
     result = []
 
     for gff in gff_file:
-        with open(gff, "r") as f:
-            lines = f.readlines()
-
-        # Get lines to skip
-        skiprow = sum([line.startswith("#") for line in lines])
-
         # Read GFF
         names = [
             "accession",
@@ -112,7 +109,8 @@ def gff2pandas(gff_file: Union[str, List[str]], feature: Union[str, List[str]] =
             "phase",
             "attributes",
         ]
-        DF_gff = pd.read_csv(gff, sep="\t", skiprows=skiprow, names=names, header=None)
+        # Use comment='#' to skip all comment lines automatically
+        DF_gff = pd.read_csv(gff, sep="\t", names=names, header=None, comment='#')
 
         # Filter for CDSs
         DF_cds = DF_gff[DF_gff.feature.isin(feature)]
@@ -240,3 +238,97 @@ def create_gene_table(multimodulon: 'MultiModulon') -> None:
         for (sp1, sp2), bbh_df in list(multimodulon._bbh.items())[:3]:
             if not bbh_df.empty:
                 print(f"  - {sp1} vs {sp2}: {len(bbh_df)} orthologs")
+
+
+def extract_protein_sequences(genome_fasta: Union[str, Path], gff_file: Union[str, Path], 
+                            output_fasta: Union[str, Path]) -> Path:
+    """
+    Extract protein sequences from a genome using GFF annotations.
+    
+    Parameters
+    ----------
+    genome_fasta : str or Path
+        Path to genome FASTA file
+    gff_file : str or Path
+        Path to GFF annotation file
+    output_fasta : str or Path
+        Path for output protein FASTA file
+        
+    Returns
+    -------
+    Path
+        Path to the created protein FASTA file
+    """
+    # Convert to Path objects
+    genome_fasta = Path(genome_fasta)
+    gff_file = Path(gff_file)
+    output_fasta = Path(output_fasta)
+    
+    # Parse GFF to get CDS features
+    gff_df = gff2pandas(str(gff_file), feature="CDS")
+    
+    # Load genome sequences
+    genome_dict = {}
+    for record in SeqIO.parse(genome_fasta, "fasta"):
+        genome_dict[record.id] = record
+    
+    # Extract protein sequences
+    protein_records = []
+    
+    for idx, row in gff_df.iterrows():
+        if pd.isna(row.get('locus_tag')):
+            continue
+            
+        locus_tag = row['locus_tag']
+        accession = row['accession']
+        start = int(row['start']) - 1  # Convert to 0-based
+        end = int(row['end'])
+        strand = row['strand']
+        
+        if accession in genome_dict:
+            # Extract DNA sequence
+            dna_seq = genome_dict[accession].seq[start:end]
+            
+            # Reverse complement if on negative strand
+            if strand == '-':
+                dna_seq = dna_seq.reverse_complement()
+            
+            # Translate to protein
+            try:
+                protein_seq = dna_seq.translate(table=11, to_stop=True)
+                
+                # Skip if protein is too short
+                if len(protein_seq) < 10:
+                    continue
+                
+                # Create protein record
+                gene_name = row.get('gene_name', '')
+                product = row.get('gene_product', '')
+                protein_id = row.get('ncbi_protein', '')
+                
+                # Build description
+                desc_parts = []
+                if gene_name:
+                    desc_parts.append(gene_name)
+                if product:
+                    desc_parts.append(product)
+                
+                record = SeqRecord(
+                    protein_seq,
+                    id=locus_tag,
+                    description=" ".join(desc_parts) if desc_parts else locus_tag
+                )
+                protein_records.append(record)
+                
+            except Exception as e:
+                logger.warning(f"Failed to translate {locus_tag}: {e}")
+                continue
+    
+    # Write protein sequences
+    if protein_records:
+        SeqIO.write(protein_records, output_fasta, "fasta")
+        logger.info(f"Wrote {len(protein_records)} protein sequences to {output_fasta}")
+    else:
+        logger.warning(f"No protein sequences extracted for {gff_file}")
+    
+    return output_fasta
