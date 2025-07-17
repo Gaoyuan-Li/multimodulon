@@ -272,23 +272,16 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
     if not bbh_dir.exists():
         raise FileNotFoundError(f"BBH directory not found: {input_bbh_dir}")
     
-    # Step 1: Collect all genes from each strain's self-comparison file
+    # Step 1: Collect all genes from each strain's expression data (log_tpm)
+    # This ensures all genes are included, even if they don't have BBH relationships
     strain_genes = {strain: set() for strain in strains}
     
     for strain in strains:
-        self_file = bbh_dir / f'{strain}_vs_{strain}.csv'
-        if self_file.exists():
-            df = pd.read_csv(self_file)
-            if 'gene' in df.columns:
-                genes = df['gene'].unique()
-                strain_genes[strain].update(genes)
-                logger.info(f"Found {len(genes)} genes for {strain}")
-        else:
-            # If self-comparison file doesn't exist, get genes from expression data
-            species_data = multimodulon._species_data[strain]
-            genes = species_data.log_tpm.index.tolist()
-            strain_genes[strain].update(genes)
-            logger.info(f"Using {len(genes)} genes from expression data for {strain}")
+        # Always get genes from expression data to ensure completeness
+        species_data = multimodulon._species_data[strain]
+        genes = species_data.log_tpm.index.tolist()
+        strain_genes[strain].update(genes)
+        logger.info(f"Found {len(genes)} genes from expression data for {strain}")
     
     # Step 2: Initialize Union-Find structure
     uf = UnionFind()
@@ -332,17 +325,31 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
             except Exception as e:
                 logger.warning(f"Failed to process {filename}: {str(e)}")
     
-    # Step 4: Group all genes into their connected components
+    # Step 4: First, ensure all genes are in the Union-Find structure
+    # This ensures even singleton genes (with no BBH relationships) are included
+    for strain in strains:
+        for gene in strain_genes[strain]:
+            node = (strain, gene)
+            uf.find(node)  # This will create the node if it doesn't exist
+    
+    # Step 5: Group all genes into their connected components
     components = defaultdict(lambda: {strain: [] for strain in strains})
+    
     for strain in strains:
         for gene in strain_genes[strain]:
             node = (strain, gene)
             root = uf.find(node)
             components[root][strain].append(gene)
     
-    # Step 5: Create the final DataFrame
+    # Step 6: Create the final DataFrame
     rows = []
+    
+    # Add all connected components (including singletons)
     for comp in components.values():
+        # Skip empty components
+        if all(len(genes) == 0 for genes in comp.values()):
+            continue
+            
         row = {}
         for strain in strains:
             genes = comp[strain]
@@ -350,6 +357,7 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
                 row[strain] = genes[0]
             elif len(genes) > 1:
                 # Handle unexpected duplicates: take the first occurrence
+                logger.warning(f"Multiple genes in same component for {strain}: {genes}")
                 row[strain] = genes[0]
             else:
                 row[strain] = None
@@ -380,6 +388,14 @@ def align_genes(multimodulon: 'MultiModulon', input_bbh_dir: str = "Output_BBH",
     
     logger.info(f"Gene alignment completed. Combined gene database saved to {output_file}")
     logger.info(f"Total gene groups: {len(df)}")
+    
+    # Log gene counts for each species
+    for strain in strains:
+        non_null_count = df[strain].notna().sum()
+        expected_count = len(strain_genes[strain])
+        logger.info(f"{strain}: {non_null_count} genes in combined_gene_db (expected: {expected_count})")
+        if non_null_count != expected_count:
+            logger.warning(f"{strain}: Missing {expected_count - non_null_count} genes in combined_gene_db!")
     
     # Create aligned expression matrices
     _create_aligned_expression_matrices(multimodulon, df, strains)

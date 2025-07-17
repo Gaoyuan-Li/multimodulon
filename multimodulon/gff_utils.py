@@ -217,6 +217,14 @@ def create_gene_table(multimodulon: 'MultiModulon') -> None:
             existing_cols = [col for col in keep_cols if col in df_annot.columns]
             df_annot = df_annot[existing_cols]
             
+            # Filter to only keep genes that are in log_tpm matrices
+            if species_data.log_tpm is not None:
+                # Get genes that are in log_tpm (rows)
+                tpm_genes = species_data.log_tpm.index.tolist()
+                # Filter gene table to only include these genes
+                genes_in_both = [g for g in tpm_genes if g in df_annot.index]
+                df_annot = df_annot.loc[genes_in_both]
+            
             # Store in species data
             species_data._gene_table = df_annot
             
