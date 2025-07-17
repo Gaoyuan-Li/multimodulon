@@ -1873,6 +1873,41 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     if font_path and os.path.exists(font_path):
         font_prop = fm.FontProperties(fname=font_path)
     
+    # Create mapping from species-specific locus tags to leftmost gene names
+    locus_to_leftmost = {}
+    if multimodulon.combined_gene_db is not None:
+        for _, row in multimodulon.combined_gene_db.iterrows():
+            # Find leftmost (first non-null) gene name
+            leftmost_gene = None
+            for col in multimodulon.combined_gene_db.columns:
+                val = row[col]
+                if pd.notna(val) and val != "None" and val is not None:
+                    leftmost_gene = val
+                    break
+            
+            if leftmost_gene:
+                # Map all species-specific locus tags to this leftmost gene
+                for species in species_with_component:
+                    if species in multimodulon.combined_gene_db.columns:
+                        locus_tag = row[species]
+                        if pd.notna(locus_tag) and locus_tag != "None" and locus_tag is not None:
+                            locus_to_leftmost[locus_tag] = leftmost_gene
+    
+    # Convert result_dict from locus tags to leftmost gene names
+    result_dict_mapped = {}
+    for species, locus_tags in result_dict.items():
+        mapped_genes = []
+        for locus_tag in locus_tags:
+            if locus_tag in locus_to_leftmost:
+                mapped_genes.append(locus_to_leftmost[locus_tag])
+            else:
+                # If no mapping found, keep original (shouldn't happen with proper combined_gene_db)
+                mapped_genes.append(locus_tag)
+        result_dict_mapped[species] = mapped_genes
+    
+    # Update result_dict to use mapped genes
+    result_dict = result_dict_mapped
+    
     # Collect all unique genes across species for this component
     all_genes = set()
     for species in species_with_component:
@@ -1896,7 +1931,7 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
                         leftmost_gene = val
                         break
                 
-                # If this row contains our gene
+                # If this row contains our gene (leftmost gene name)
                 if leftmost_gene == gene:
                     # Check which species have this gene
                     for species in species_with_component:
@@ -2035,44 +2070,8 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     ax.set_xticks(x_positions)
     ax.set_yticks(np.arange(n_species) + 0.5)
     
-    # Get gene names for x-axis labels
-    x_labels = []
-    for gene in ordered_genes:
-        # Try to get gene_name from gene_table
-        gene_name = gene  # Default to using the index
-        for species in species_with_component:
-            species_data = multimodulon._species_data[species]
-            if species_data.gene_table is not None:
-                # Map from M matrix index to species gene
-                if multimodulon.combined_gene_db is not None and species in multimodulon.combined_gene_db.columns:
-                    # Find the species-specific gene name
-                    for _, row in multimodulon.combined_gene_db.iterrows():
-                        leftmost_gene = None
-                        for col in multimodulon.combined_gene_db.columns:
-                            val = row[col]
-                            if pd.notna(val) and val != "None" and val is not None:
-                                leftmost_gene = val
-                                break
-                        
-                        if leftmost_gene == gene:
-                            species_gene = row[species]
-                            if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
-                                if species_gene in species_data.gene_table.index:
-                                    if 'gene_name' in species_data.gene_table.columns:
-                                        name = species_data.gene_table.loc[species_gene, 'gene_name']
-                                        if pd.notna(name) and name != '':
-                                            gene_name = name
-                                            break
-                
-                # Also check if gene exists directly in gene_table
-                elif gene in species_data.gene_table.index:
-                    if 'gene_name' in species_data.gene_table.columns:
-                        name = species_data.gene_table.loc[gene, 'gene_name']
-                        if pd.notna(name) and name != '':
-                            gene_name = name
-                            break
-        
-        x_labels.append(gene_name)
+    # Use leftmost gene names directly as x-axis labels
+    x_labels = ordered_genes
     
     ax.set_xticklabels(x_labels, rotation=45, ha='right')
     # Reverse y-axis labels to match top-to-bottom order
