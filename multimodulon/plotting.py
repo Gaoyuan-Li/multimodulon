@@ -1098,6 +1098,7 @@ def view_iModulon_genes(multimodulon, species: str, component: str) -> pd.DataFr
                        f"Available components: {list(species_data._presence_matrix.columns)}")
     
     # Get genes in this component from presence_matrix
+    # Since presence_matrix now has species-specific gene indexes, we can use them directly
     component_genes = species_data._presence_matrix[
         species_data._presence_matrix[component] == 1
     ].index.tolist()
@@ -1106,78 +1107,42 @@ def view_iModulon_genes(multimodulon, species: str, component: str) -> pd.DataFr
         logger.warning(f"No genes found in component '{component}' for species '{species}'")
         return pd.DataFrame()
     
-    # Map component genes to gene_table
-    # First check if we need to map through combined_gene_db
-    genes_in_table = []
-    
-    if multimodulon.combined_gene_db is not None and species in multimodulon.combined_gene_db.columns:
-        # Map from leftmost genes to species-specific genes
-        for gene in component_genes:
-            # Check if gene exists directly in gene_table first
-            if gene in species_data.gene_table.index:
-                genes_in_table.append(gene)
-            else:
-                # Try to map through combined_gene_db
-                for _, row in multimodulon.combined_gene_db.iterrows():
-                    # Find leftmost gene
-                    leftmost_gene = None
-                    for col in multimodulon.combined_gene_db.columns:
-                        val = row[col]
-                        if pd.notna(val) and val != "None" and val is not None:
-                            leftmost_gene = val
-                            break
-                    
-                    # If this is our gene, get the species-specific name
-                    if leftmost_gene == gene:
-                        species_gene = row[species]
-                        if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
-                            if species_gene in species_data.gene_table.index:
-                                genes_in_table.append(species_gene)
-                                break
-    else:
-        # No combined_gene_db, just check directly
-        genes_in_table = [g for g in component_genes if g in species_data.gene_table.index]
-    
     # Get subset of gene_table
-    if genes_in_table:
-        gene_subset = species_data.gene_table.loc[genes_in_table].copy()
+    # Since presence_matrix indexes are already mapped to species-specific genes,
+    # all genes should exist in gene_table
+    if component_genes:
+        gene_subset = species_data.gene_table.loc[component_genes].copy()
         
         # Add M_weight column if M matrix is available
         if species_data._M is not None and component in species_data._M.columns:
             # Get weights from M matrix for these genes
             m_weights = []
-            for gene in genes_in_table:
-                if gene in species_data._M.index:
-                    m_weights.append(species_data._M.loc[gene, component])
-                else:
-                    # Try to find the gene in component_genes (original presence matrix genes)
-                    # This handles cases where gene names might differ between gene_table and M matrix
-                    original_gene = None
-                    for comp_gene in component_genes:
-                        if comp_gene in species_data._M.index:
-                            # Check if this maps to our current gene
-                            if multimodulon.combined_gene_db is not None and species in multimodulon.combined_gene_db.columns:
-                                # Find row where species column equals our gene
-                                matching_rows = multimodulon.combined_gene_db[
-                                    multimodulon.combined_gene_db[species] == gene
-                                ]
-                                if not matching_rows.empty:
-                                    # Get the leftmost gene for this row
-                                    for col in multimodulon.combined_gene_db.columns:
-                                        val = matching_rows.iloc[0][col]
-                                        if pd.notna(val) and val != "None" and val is not None:
-                                            if val == comp_gene:
-                                                original_gene = comp_gene
-                                                break
-                                            break
-                            elif gene == comp_gene:
-                                original_gene = comp_gene
+            
+            for gene in component_genes:
+                # Need to find the corresponding leftmost gene in M matrix
+                leftmost_gene = None
+                
+                if multimodulon.combined_gene_db is not None and species in multimodulon.combined_gene_db.columns:
+                    # Find row where species column equals our gene
+                    matching_rows = multimodulon.combined_gene_db[
+                        multimodulon.combined_gene_db[species] == gene
+                    ]
+                    if not matching_rows.empty:
+                        # Get the leftmost gene for this row
+                        for col in multimodulon.combined_gene_db.columns:
+                            val = matching_rows.iloc[0][col]
+                            if pd.notna(val) and val != "None" and val is not None:
+                                leftmost_gene = val
                                 break
-                    
-                    if original_gene and original_gene in species_data._M.index:
-                        m_weights.append(species_data._M.loc[original_gene, component])
-                    else:
-                        m_weights.append(float('nan'))
+                else:
+                    # No combined_gene_db, assume gene names match
+                    leftmost_gene = gene
+                
+                # Get weight from M matrix
+                if leftmost_gene and leftmost_gene in species_data._M.index:
+                    m_weights.append(species_data._M.loc[leftmost_gene, component])
+                else:
+                    m_weights.append(float('nan'))
             
             gene_subset['M_weight'] = m_weights
         

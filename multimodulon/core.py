@@ -1175,18 +1175,48 @@ class MultiModulon:
                 columns=['M_threshold']
             )
             
-            # Create presence matrix
+            # Create presence matrix with mapped indexes
+            # First, create a mapping from M matrix indexes (leftmost genes) to species-specific genes
+            gene_mapping = {}
+            
+            if self.combined_gene_db is not None and species_name in self.combined_gene_db.columns:
+                for _, row in self.combined_gene_db.iterrows():
+                    # Find leftmost gene
+                    leftmost_gene = None
+                    for col in self.combined_gene_db.columns:
+                        val = row[col]
+                        if pd.notna(val) and val != "None" and val is not None:
+                            leftmost_gene = val
+                            break
+                    
+                    # Get species-specific gene
+                    if leftmost_gene and leftmost_gene in M.index:
+                        species_gene = row[species_name]
+                        if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                            # Only include if gene exists in gene_table
+                            if species_data.gene_table is not None and species_gene in species_data.gene_table.index:
+                                gene_mapping[leftmost_gene] = species_gene
+            else:
+                # No combined_gene_db, use genes directly if they exist in gene_table
+                if species_data.gene_table is not None:
+                    for gene in M.index:
+                        if gene in species_data.gene_table.index:
+                            gene_mapping[gene] = gene
+            
+            # Create presence matrix with species-specific gene indexes
             presence_matrix = pd.DataFrame(
-                index=M.index,
+                index=list(gene_mapping.values()),
                 columns=M.columns,
                 dtype=int
             )
             
-            # Binarize based on thresholds
+            # Binarize based on thresholds using the mapping
             for component in M.columns:
                 threshold = thresholds[component]
-                # Set to 1 if absolute value is above threshold, 0 otherwise
-                presence_matrix[component] = (M[component].abs() > threshold).astype(int)
+                # Map and binarize
+                for leftmost_gene, species_gene in gene_mapping.items():
+                    if leftmost_gene in M.index:
+                        presence_matrix.loc[species_gene, component] = int(abs(M.loc[leftmost_gene, component]) > threshold)
             
             # Store results
             species_data._M_thresholds = M_thresholds_df
@@ -1245,8 +1275,38 @@ class MultiModulon:
         
         # Update presence_matrix
         if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
-            # Recalculate presence for this component using the new threshold
-            species_data._presence_matrix[component] = (M[component].abs() > new_threshold).astype(int)
+            # Need to use the same gene mapping as in optimize_M_thresholds
+            # Create mapping from M matrix indexes (leftmost genes) to species-specific genes
+            gene_mapping = {}
+            
+            if self.combined_gene_db is not None and species in self.combined_gene_db.columns:
+                for _, row in self.combined_gene_db.iterrows():
+                    # Find leftmost gene
+                    leftmost_gene = None
+                    for col in self.combined_gene_db.columns:
+                        val = row[col]
+                        if pd.notna(val) and val != "None" and val is not None:
+                            leftmost_gene = val
+                            break
+                    
+                    # Get species-specific gene
+                    if leftmost_gene and leftmost_gene in M.index:
+                        species_gene = row[species]
+                        if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                            # Only include if gene exists in gene_table
+                            if species_data.gene_table is not None and species_gene in species_data.gene_table.index:
+                                gene_mapping[leftmost_gene] = species_gene
+            else:
+                # No combined_gene_db, use genes directly if they exist in gene_table
+                if species_data.gene_table is not None:
+                    for gene in M.index:
+                        if gene in species_data.gene_table.index:
+                            gene_mapping[gene] = gene
+            
+            # Recalculate presence for this component using the new threshold and mapping
+            for leftmost_gene, species_gene in gene_mapping.items():
+                if species_gene in species_data._presence_matrix.index:
+                    species_data._presence_matrix.loc[species_gene, component] = int(abs(M.loc[leftmost_gene, component]) > new_threshold)
             
             # Report the change
             n_genes = species_data._presence_matrix[component].sum()
