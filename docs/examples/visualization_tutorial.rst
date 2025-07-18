@@ -20,29 +20,30 @@ Start by loading a previously saved MultiModulon object:
 Renaming iModulons
 ------------------
 
-You can rename iModulons to more meaningful names based on their function or content:
+You can rename iModulons to more meaningful names based on their function or content. There are now two separate functions for renaming core and unique iModulons:
 
 .. code-block:: python
 
-   # Rename a core iModulon (will rename across all species)
-   multiModulon.rename_iModulon('Core_1', 'ArginineBiosynthesis')
+   # Rename a core iModulon (affects all species)
+   multiModulon.rename_core_iModulon('Core_1', 'ArginineBiosynthesis')
    
-   # Rename a unique iModulon (species parameter required!)
-   multiModulon.rename_iModulon('Unique_1', 'StressResponse', species='MG1655')
+   # Rename a unique iModulon (species-specific)
+   multiModulon.rename_unique_iModulon('MG1655', 'Unique_1', 'StressResponse')
    
-   # If you forget the species parameter for unique iModulons, you'll get an error
-   # multiModulon.rename_iModulon('Unique_2', 'NewName')  # This will raise an error!
+   # Note the different parameter order:
+   # - rename_core_iModulon(old_name, new_name) - only 2 parameters
+   # - rename_unique_iModulon(species, old_name, new_name) - 3 parameters
    
    # View the renamed components
    print(multiModulon['MG1655'].M.columns)
 
 Important notes about renaming:
 
-* Core iModulons are renamed across all species where they exist
-* Unique iModulons require the ``species`` parameter to specify which species to rename in
-* The method validates that the new name doesn't already exist
-* All related dataframes (M, A, M_thresholds, presence_matrix) are updated
-* If you try to rename a unique iModulon without specifying the species, you'll get a helpful error message
+* **Core iModulons**: Use ``rename_core_iModulon()`` - automatically renames across all species where the component exists
+* **Unique iModulons**: Use ``rename_unique_iModulon()`` - requires species as the first parameter
+* Both methods validate that the new name doesn't already exist
+* All related dataframes (M, A, M_thresholds, presence_matrix) are updated automatically
+* The parameter order is different: core functions need only old and new names, while unique functions need species first
 
 Visualizing Individual Components
 ---------------------------------

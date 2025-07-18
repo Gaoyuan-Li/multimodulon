@@ -1536,96 +1536,115 @@ class MultiModulon:
         """Get ortholog pairs between two species."""
         return get_orthologs(self, species1, species2)
     
-    def rename_iModulon(self, current_name: str, new_name: str, species: str = None):
+    def rename_core_iModulon(self, old_name: str, new_name: str):
         """
-        Rename an iModulon across all species and related dataframes.
+        Rename a core iModulon across all species and related dataframes.
         
         Parameters
         ----------
-        current_name : str
-            Current name of the iModulon (e.g., 'Core_1', 'Unique_2')
+        old_name : str
+            Current name of the core iModulon (e.g., 'Core_1')
         new_name : str
-            New name for the iModulon
-        species : str, optional
-            Species name for renaming unique iModulons. Required if current_name starts with 'Unique_'
+            New name for the core iModulon (e.g., 'ArgR')
             
         Raises
         ------
         ValueError
-            If current_name doesn't exist, new_name already exists, or species is required but not provided
+            If old_name doesn't exist in any species or new_name already exists
         """
-        # Determine if this is a core or unique iModulon
-        is_core = current_name.startswith('Core_')
-        is_unique = current_name.startswith('Unique_')
+        # Check if the core iModulon exists in any species
+        found_in_species = []
+        for species_name in self.species:
+            species_data = self[species_name]
+            if species_data.M is not None and old_name in species_data.M.columns:
+                found_in_species.append(species_name)
         
-        # Check if species parameter is required
-        if is_unique and species is None:
-            print(f"Error: '{current_name}' is a unique iModulon. You need to specify the species parameter.")
-            print(f"Example: multiModulon.rename_iModulon('{current_name}', '{new_name}', species='MG1655')")
-            raise ValueError("Species parameter is required for renaming unique iModulons")
+        if not found_in_species:
+            raise ValueError(f"Core iModulon '{old_name}' not found in any species")
         
-        # If species is specified for a unique iModulon, validate it
-        if is_unique and species is not None:
-            if species not in self.species_names:
-                raise ValueError(f"Species '{species}' not found. Available species: {', '.join(self.species_names)}")
-        
-        # Check if the iModulon exists
-        if is_unique and species:
-            # For unique iModulons, only check in the specified species
-            species_data = self[species]
-            if species_data.M is None or current_name not in species_data.M.columns:
-                raise ValueError(f"iModulon '{current_name}' not found in species '{species}'")
-            found_in_species = [species]
-        else:
-            # For core iModulons, check all species
-            found_in_species = []
-            for species_name in self.species_names:
-                species_data = self[species_name]
-                if species_data.M is not None and current_name in species_data.M.columns:
-                    found_in_species.append(species_name)
-            
-            if not found_in_species:
-                raise ValueError(f"iModulon '{current_name}' not found in any species")
-        
-        # Check if new name already exists
-        species_to_check = [species] if (is_unique and species) else self.species_names
-        for species_name in species_to_check:
+        # Check if new name already exists in any species
+        for species_name in self.species:
             species_data = self[species_name]
             if species_data.M is not None and new_name in species_data.M.columns:
                 raise ValueError(f"iModulon '{new_name}' already exists in species '{species_name}'")
         
-        # Rename in all relevant species
-        species_to_rename = [species] if (is_unique and species) else self.species_names
-        for species_name in species_to_rename:
+        # Rename in all species
+        for species_name in self.species:
             species_data = self[species_name]
             
             # Skip if this species doesn't have the iModulon
-            if species_data.M is None or current_name not in species_data.M.columns:
-                if is_core:
-                    # Core iModulons should exist in all species
-                    print(f"Warning: Core iModulon '{current_name}' not found in species '{species_name}'")
+            if species_data.M is None or old_name not in species_data.M.columns:
+                print(f"Warning: Core iModulon '{old_name}' not found in species '{species_name}'")
                 continue
             
             # Rename in M matrix (columns)
             if species_data._M is not None:
-                species_data._M = species_data._M.rename(columns={current_name: new_name})
+                species_data._M = species_data._M.rename(columns={old_name: new_name})
             
             # Rename in A matrix (rows)
             if species_data._A is not None:
-                species_data._A = species_data._A.rename(index={current_name: new_name})
+                species_data._A = species_data._A.rename(index={old_name: new_name})
             
             # Rename in M_thresholds (index)
             if hasattr(species_data, '_M_thresholds') and species_data._M_thresholds is not None:
-                species_data._M_thresholds = species_data._M_thresholds.rename(index={current_name: new_name})
+                species_data._M_thresholds = species_data._M_thresholds.rename(index={old_name: new_name})
             
             # Rename in presence_matrix (columns)
             if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
-                species_data._presence_matrix = species_data._presence_matrix.rename(columns={current_name: new_name})
+                species_data._presence_matrix = species_data._presence_matrix.rename(columns={old_name: new_name})
         
-        if is_unique and species:
-            print(f"Successfully renamed unique iModulon '{current_name}' to '{new_name}' in species '{species}'")
-        else:
-            print(f"Successfully renamed core iModulon '{current_name}' to '{new_name}' in {len(found_in_species)} species")
+        print(f"Successfully renamed core iModulon '{old_name}' to '{new_name}' in {len(found_in_species)} species")
+    
+    def rename_unique_iModulon(self, species: str, old_name: str, new_name: str):
+        """
+        Rename a unique iModulon for a specific species.
+        
+        Parameters
+        ----------
+        species : str
+            Species name where the unique iModulon exists
+        old_name : str
+            Current name of the unique iModulon (e.g., 'Unique_1')
+        new_name : str
+            New name for the unique iModulon
+            
+        Raises
+        ------
+        ValueError
+            If species doesn't exist, old_name doesn't exist in the species, or new_name already exists
+        """
+        # Validate species
+        if species not in self.species:
+            raise ValueError(f"Species '{species}' not found. Available species: {', '.join(self.species)}")
+        
+        # Get species data
+        species_data = self[species]
+        
+        # Check if the unique iModulon exists
+        if species_data.M is None or old_name not in species_data.M.columns:
+            raise ValueError(f"iModulon '{old_name}' not found in species '{species}'")
+        
+        # Check if new name already exists
+        if species_data.M is not None and new_name in species_data.M.columns:
+            raise ValueError(f"iModulon '{new_name}' already exists in species '{species}'")
+        
+        # Rename in M matrix (columns)
+        if species_data._M is not None:
+            species_data._M = species_data._M.rename(columns={old_name: new_name})
+        
+        # Rename in A matrix (rows)
+        if species_data._A is not None:
+            species_data._A = species_data._A.rename(index={old_name: new_name})
+        
+        # Rename in M_thresholds (index)
+        if hasattr(species_data, '_M_thresholds') and species_data._M_thresholds is not None:
+            species_data._M_thresholds = species_data._M_thresholds.rename(index={old_name: new_name})
+        
+        # Rename in presence_matrix (columns)
+        if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
+            species_data._presence_matrix = species_data._presence_matrix.rename(columns={old_name: new_name})
+        
+        print(f"Successfully renamed unique iModulon '{old_name}' to '{new_name}' in species '{species}'")
     
     def save_to_json_multimodulon(self, save_path: str):
         """Save MultiModulon object to JSON format."""
