@@ -133,8 +133,7 @@ Determine the optimal number of unique (species-specific) components for each st
        optimal_num_core_components=optimal_num_core_components,
        step=5,
        save_path=output_dir,
-       fig_size=(7, 5),
-       effect_size_threshold=1
+       fig_size=(7, 5)
    )
 
 This process:
@@ -155,8 +154,6 @@ Perform robust multi-view ICA with multiple runs and clustering to identify cons
        a=optimal_total,                 # Total components per species
        c=optimal_num_core_components,   # Number of core components
        num_runs=20,                     # Number of runs for robustness
-       effect_size_threshold_core=3,    # Cohen's d threshold for core
-       effect_size_threshold_unique=1,  # Cohen's d threshold for unique
        seed=42                          # Random seed
    )
 

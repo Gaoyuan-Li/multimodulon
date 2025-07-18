@@ -19,9 +19,16 @@ https://multimodulon.readthedocs.io/en/latest/
 - Python >= 3.10
 - NCBI BLAST+ tools (required for BBH generation)
 - **PyTorch 2.6.0 with CUDA support (required for multi-view ICA)**
-- **geotorch 0.3.0**
 
 ## Installation
+
+### Create multimodulon env
+
+```bash
+# Conda
+conda create -n multimodulon python=3.11
+conda activate multimodulon
+```
 
 ### Install BLAST+ (Required for BBH generation)
 

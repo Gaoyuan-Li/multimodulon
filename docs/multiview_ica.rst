@@ -28,8 +28,6 @@ Basic Multi-view ICA
       - Dict[str, int]: Different numbers per species
    :param int c: Number of core (shared) components
    :param str mode: 'gpu' or 'cpu' (default: 'gpu')
-   :param float effect_size_threshold: Cohen's d threshold for filtering (optional)
-   :param int num_top_gene: Number of top genes for Cohen's d calculation (default: 20)
    
    :return: Dictionary mapping species to M matrices
    :rtype: Dict[str, pd.DataFrame]
@@ -53,24 +51,6 @@ Basic Usage
        mode='gpu'
    )
 
-Component Filtering
-~~~~~~~~~~~~~~~~~~~
-
-Filter components by effect size:
-
-.. code-block:: python
-
-   # Only keep components with Cohen's d > 5
-   M_matrices = multiModulon.run_multiview_ica(
-       a=60,
-       c=25,
-       effect_size_threshold=5,
-       num_top_gene=20
-   )
-   
-   # Check how many components passed the filter
-   for species, M in M_matrices.items():
-       print(f"{species}: {M.shape[1]} components retained")
 
 Robust Multi-view ICA
 ---------------------
@@ -86,10 +66,6 @@ For more reliable results, use robust ICA with multiple runs:
    :param int num_runs: Number of ICA runs (default: 100)
    :param str mode: 'gpu' or 'cpu' (default: 'gpu')
    :param int seed: Random seed (default: 42)
-   :param float effect_size_threshold: Cohen's d threshold for all components
-   :param float effect_size_threshold_core: Threshold for core components only
-   :param float effect_size_threshold_unique: Threshold for unique components only
-   :param int num_top_gene: Number of top genes for Cohen's d
    
    :return: Tuple of (M_matrices, A_matrices)
    :rtype: Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]
@@ -115,22 +91,6 @@ Robust ICA Example
    print(f"M matrix shape: {M_species1.shape}")
    print(f"A matrix shape: {A_species1.shape}")
 
-Different Thresholds
-~~~~~~~~~~~~~~~~~~~~
-
-Apply different thresholds to core and unique components:
-
-.. code-block:: python
-
-   # Stricter threshold for core, looser for unique
-   M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
-       a={'Species1': 50, 'Species2': 60},
-       c=20,
-       num_runs=100,
-       effect_size_threshold_core=7,    # Strict for core
-       effect_size_threshold_unique=3,  # Permissive for unique
-       num_top_gene=20
-   )
 
 Understanding the Results
 -------------------------

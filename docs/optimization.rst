@@ -31,8 +31,6 @@ Optimizing Core Components
    :param str mode: Computation mode 'gpu' or 'cpu' (default: 'gpu')
    :param int seed: Random seed for reproducibility (default: 42)
    :param str metric: Optimization metric 'nre' or 'effect_size' (default: 'effect_size')
-   :param float effect_size_threshold: Cohen's d threshold (default: 5)
-   :param int num_top_gene: Number of top genes for Cohen's d (default: 20)
    :param str save_path: Directory to save optimization plot
    :param tuple fig_size: Figure size as (width, height) (default: (5, 3))
    :param str font_path: Path to font file for plots
@@ -50,8 +48,6 @@ Basic Usage
        max_k=30,
        step=5,
        metric='effect_size',
-       effect_size_threshold=5,  # Minimum Cohen's d
-       num_top_gene=20,          # Top genes to consider
        save_plot="effect_size_optimization.png"
    )
 
@@ -86,8 +82,6 @@ After determining core components, optimize unique components:
    :param int step: Step size for testing unique components (default: 5)
    :param str mode: Computation mode 'gpu' or 'cpu' (default: 'gpu')
    :param int seed: Random seed (default: 42)
-   :param float effect_size_threshold: Cohen's d threshold (default: 5)
-   :param int num_top_gene: Number of top genes for Cohen's d (default: 20)
    :param str save_path: Directory to save plots for each species
    :param tuple fig_size: Figure size (default: (5, 3))
    :param str font_path: Path to font file
@@ -123,26 +117,6 @@ For each species:
 3. Calculates mean Cohen's d for unique components
 4. Selects number that maximizes interpretable components
 
-Custom Thresholds
-~~~~~~~~~~~~~~~~~
-
-Different species may need different thresholds:
-
-.. code-block:: python
-
-   # Strict threshold for well-studied species
-   optimal_unique_strict, _ = multiModulon.optimize_number_of_unique_components(
-       optimal_num_core_components=20,
-       effect_size_threshold=7,  # Higher threshold
-       save_plots="strict_optimization/"
-   )
-   
-   # Permissive threshold for novel species  
-   optimal_unique_permissive, _ = multiModulon.optimize_number_of_unique_components(
-       optimal_num_core_components=20,
-       effect_size_threshold=3,  # Lower threshold
-       save_plots="permissive_optimization/"
-   )
 
 Complete Optimization Workflow
 ------------------------------
@@ -157,7 +131,6 @@ Here's a complete optimization workflow:
        max_k=40,
        step=5,
        metric='effect_size',
-       effect_size_threshold=5,
        num_runs=3,
        save_path="optimization_results/",
        fig_size=(6, 4)
@@ -169,7 +142,6 @@ Here's a complete optimization workflow:
    optimal_unique, optimal_total = multiModulon.optimize_number_of_unique_components(
        optimal_num_core_components=optimal_core,
        step=5,
-       effect_size_threshold=5,
        save_path="optimization_results/",
        fig_size=(6, 4)
    )
