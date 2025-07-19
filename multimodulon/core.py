@@ -1291,8 +1291,8 @@ class MultiModulon:
         if component not in M.columns:
             raise ValueError(f"Component '{component}' not found in M matrix for species '{species}'")
         
-        # Update M_thresholds
-        species_data._M_thresholds.loc[component, 'M_threshold'] = new_threshold
+        # Update M_thresholds with explicit dtype casting to match DataFrame dtype
+        species_data._M_thresholds.loc[component, 'M_threshold'] = np.float32(new_threshold)
         
         # Update presence_matrix
         if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
