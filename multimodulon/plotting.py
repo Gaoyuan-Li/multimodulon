@@ -354,8 +354,8 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         for gene, x, y in genes_to_label:
             if gene in gene_table.index:
                 gene_name = get_gene_name(gene, gene_table.loc[gene])
-                text = ax.text(x, y, gene_name, fontsize=6, color='black', 
-                             clip_on=True)  # Ensure text is clipped to axes
+                text = ax.text(x, y, gene_name, fontsize=6, color='black',
+                              ha='center', va='center')
                 if font_path and os.path.exists(font_path) and font_prop:
                     text.set_fontproperties(font_prop)
                 texts.append(text)
@@ -373,11 +373,11 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             from matplotlib.patches import Circle
             point_objects = [Circle((x, y), 0.02) for x, y in zip(all_x, all_y)]  # Larger circles to avoid
             
+            # Store original positions for drawing lines later
+            original_positions = [(x, y) for _, x, y in genes_to_label]
+            
             adjust_text(texts,
-                       x=[x for _, x, _ in genes_to_label],  # Need x,y for arrows
-                       y=[y for _, _, y in genes_to_label],
                        add_objects=point_objects,  # Pass ALL points as objects to avoid
-                       arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, shrinkA=5, shrinkB=2),
                        force_text=(1.0, 1.0),
                        expand_text=(2.5, 2.5),
                        expand_objects=(3.0, 3.0),
@@ -389,6 +389,31 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                        save_steps=False,
                        ensure_inside_axes=True,
                        lim=500)  # More iterations for better convergence
+            
+            # Manually draw arrows from text edges to points
+            for (x, y), text in zip(original_positions, texts):
+                # Get the adjusted text position and bbox
+                bbox = text.get_bbox_patch()
+                if bbox is None:
+                    # Create invisible bbox to get text bounds
+                    text.set_bbox(dict(boxstyle='round,pad=0', facecolor='none', edgecolor='none', alpha=0))
+                    fig.canvas.draw()
+                    bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
+                    # Convert to data coordinates
+                    bbox_data = ax.transData.inverted().transform(bbox)
+                    text.set_bbox(None)  # Remove the invisible bbox
+                else:
+                    bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
+                    bbox_data = ax.transData.inverted().transform(bbox)
+                
+                # Calculate text center and point position
+                text_cx = (bbox_data[0][0] + bbox_data[1][0]) / 2
+                text_cy = (bbox_data[0][1] + bbox_data[1][1]) / 2
+                
+                # Draw arrow from point to text edge (not center)
+                ax.annotate('', xy=(x, y), xytext=(text_cx, text_cy),
+                           arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, 
+                                         shrinkA=5, shrinkB=2))
     
     # Set labels and title
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
@@ -1451,7 +1476,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
                         text = ax.text(x, y, gene_name, fontsize=5, color='black',
-                                     clip_on=True)  # Ensure text is clipped to axes
+                                      ha='center', va='center')
                         if font_path and os.path.exists(font_path) and font_prop:
                             text.set_fontproperties(font_prop)
                         texts.append(text)
@@ -1469,11 +1494,11 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     from matplotlib.patches import Circle
                     point_objects = [Circle((x, y), 0.02) for x, y in zip(all_x, all_y)]  # Larger circles to avoid
                     
+                    # Store original positions for drawing lines later
+                    original_positions = [(x, y) for _, x, y in genes_to_label]
+                    
                     adjust_text(texts,
-                               x=[x for _, x, _ in genes_to_label],  # Need x,y for arrows
-                               y=[y for _, _, y in genes_to_label],
                                add_objects=point_objects,  # Pass ALL points as objects to avoid
-                               arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, shrinkA=5, shrinkB=2),
                                force_text=(1.0, 1.0),
                                expand_text=(2.5, 2.5),
                                expand_objects=(3.0, 3.0),
@@ -1485,6 +1510,31 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                save_steps=False,
                                ensure_inside_axes=True,
                                lim=500)  # More iterations for better convergence
+                    
+                    # Manually draw arrows from text edges to points
+                    for (x, y), text in zip(original_positions, texts):
+                        # Get the adjusted text position and bbox
+                        bbox = text.get_bbox_patch()
+                        if bbox is None:
+                            # Create invisible bbox to get text bounds
+                            text.set_bbox(dict(boxstyle='round,pad=0', facecolor='none', edgecolor='none', alpha=0))
+                            fig.canvas.draw()
+                            bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
+                            # Convert to data coordinates
+                            bbox_data = ax.transData.inverted().transform(bbox)
+                            text.set_bbox(None)  # Remove the invisible bbox
+                        else:
+                            bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
+                            bbox_data = ax.transData.inverted().transform(bbox)
+                        
+                        # Calculate text center and point position
+                        text_cx = (bbox_data[0][0] + bbox_data[1][0]) / 2
+                        text_cy = (bbox_data[0][1] + bbox_data[1][1]) / 2
+                        
+                        # Draw arrow from point to text edge (not center)
+                        ax.annotate('', xy=(x, y), xytext=(text_cx, text_cy),
+                                   arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, 
+                                                 shrinkA=5, shrinkB=2))
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
@@ -2002,16 +2052,30 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
                         if leftmost_species in multimodulon._species_data:
                             species_data = multimodulon._species_data[leftmost_species]
                             if species_data.gene_table is not None and gene in species_data.gene_table.index:
+                                # Check if both columns exist
+                                has_gene_name = 'gene_name' in species_data.gene_table.columns
+                                has_preferred_name = 'Preferred_name' in species_data.gene_table.columns
+                                
+                                # Get values if columns exist
+                                gene_name_val = None
+                                pref_name_val = None
+                                
+                                if has_gene_name:
+                                    gene_name_val = species_data.gene_table.loc[gene, 'gene_name']
+                                if has_preferred_name:
+                                    pref_name_val = species_data.gene_table.loc[gene, 'Preferred_name']
+                                
+                                # Check if values are valid (not None, '', 'None', or '-')
+                                def is_valid_name(name):
+                                    return pd.notna(name) and str(name).strip() != '' and str(name).strip() not in ['None', '-']
+                                
                                 # Try gene_name first
-                                if 'gene_name' in species_data.gene_table.columns:
-                                    name = species_data.gene_table.loc[gene, 'gene_name']
-                                    if pd.notna(name) and name != '' and name != 'None' and name != '-':
-                                        gene_name = name
-                                # Try Preferred_name as second option
-                                elif 'Preferred_name' in species_data.gene_table.columns:
-                                    pref_name = species_data.gene_table.loc[gene, 'Preferred_name']
-                                    if pd.notna(pref_name) and pref_name != '' and pref_name != 'None' and pref_name != '-':
-                                        gene_name = pref_name
+                                if is_valid_name(gene_name_val):
+                                    gene_name = str(gene_name_val)
+                                # Try Preferred_name second
+                                elif is_valid_name(pref_name_val):
+                                    gene_name = str(pref_name_val)
+                                # Otherwise keep the locus tag (gene)
                         break
             
             x_labels_mapped.append(gene_name)
