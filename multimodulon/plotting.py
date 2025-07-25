@@ -1630,7 +1630,14 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             # Position legend with top edge at constant distance from the bottom subplot
             # Account for x-axis label height (approximately 0.05 in axes coordinates)
             x_label_height = 0.05
-            legend_spacing = 0.01  # Small gap between x-axis labels and legend top
+            
+            # Adjust spacing based on number of legend rows
+            if n_rows_legend == 1:
+                # For single row legend, use larger spacing to avoid being too close
+                legend_spacing = 0.03  # Larger gap for single row
+            else:
+                legend_spacing = 0.01  # Normal gap for multiple rows
+            
             legend_top = subplot_bottom - x_label_height - legend_spacing
             legend_bottom = legend_top - legend_height
             
