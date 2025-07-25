@@ -368,7 +368,7 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             adjust_text(texts, 
                        x=[x for _, x, _ in genes_to_label],
                        y=[y for _, _, y in genes_to_label],
-                       arrowprops=dict(arrowstyle='->', color='gray', lw=0.5),
+                       arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
                        force_points=0.3,
                        force_text=0.3,
                        expand_points=(1.5, 1.5),
@@ -1449,7 +1449,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     adjust_text(texts,
                                x=[x for _, x, _ in genes_to_label],
                                y=[y for _, _, y in genes_to_label],
-                               arrowprops=dict(arrowstyle='->', color='gray', lw=0.5),
+                               arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
                                force_points=0.3,
                                force_text=0.3,
                                expand_points=(1.5, 1.5),
@@ -1527,7 +1527,11 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             # The bottom row index depends on the actual layout
             bottom_row = n_rows - 1
             # Get a bottom subplot (use first column)
-            bottom_ax = axes[bottom_row, 0] if n_rows > 1 else axes[0]
+            if n_rows > 1:
+                bottom_ax = axes[bottom_row, 0]
+            else:
+                # For single row, axes might be 1D array
+                bottom_ax = axes[0] if isinstance(axes, np.ndarray) else axes
             
             # Get the bottom position of the bottom subplot in figure coordinates
             bbox = bottom_ax.get_position()
