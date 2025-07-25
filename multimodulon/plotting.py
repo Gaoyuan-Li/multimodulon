@@ -368,17 +368,24 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             # Force matplotlib to render the current state before adjust_text
             plt.draw()
             
+            # Get ALL points to avoid, not just the labeled ones
+            all_x = x_positions  # All gene positions
+            all_y = y_weights    # All gene weights
+            
             adjust_text(texts, 
                        x=[x for _, x, _ in genes_to_label],
                        y=[y for _, _, y in genes_to_label],
-                       arrowprops=dict(arrowstyle='->', color='gray', lw=0.5),
-                       force_points=0.3,
-                       force_text=0.3,
-                       expand_points=(1.5, 1.5),
-                       expand_text=(1.5, 1.5),
+                       add_objects=list(zip(all_x, all_y)),  # Pass ALL points to avoid
+                       arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, shrinkA=5, shrinkB=5),
+                       force_points=1.0,
+                       force_text=0.8,
+                       expand_points=(3.0, 3.0),
+                       expand_text=(2.0, 2.0),
                        ax=ax,
                        only_move={'points':'', 'text':'xy'},
-                       ensure_inside_axes=True)
+                       ensure_inside_axes=True,
+                       avoid_points=True,
+                       avoid_text=True)
     
     # Set labels and title
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
@@ -1454,17 +1461,24 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     # Force matplotlib to render the current state before adjust_text
                     plt.draw()
                     
+                    # Get ALL points to avoid, not just the labeled ones
+                    all_x = x_positions  # All gene positions
+                    all_y = y_weights    # All gene weights
+                    
                     adjust_text(texts,
                                x=[x for _, x, _ in genes_to_label],
                                y=[y for _, _, y in genes_to_label],
-                               arrowprops=dict(arrowstyle='->', color='gray', lw=0.5),
-                               force_points=0.3,
-                               force_text=0.3,
-                               expand_points=(1.5, 1.5),
-                               expand_text=(1.5, 1.5),
+                               add_objects=list(zip(all_x, all_y)),  # Pass ALL points to avoid
+                               arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, shrinkA=5, shrinkB=5),
+                               force_points=1.0,
+                               force_text=0.8,
+                               expand_points=(3.0, 3.0),
+                               expand_text=(2.0, 2.0),
                                ax=ax,
                                only_move={'points':'', 'text':'xy'},
-                               ensure_inside_axes=True)
+                               ensure_inside_axes=True,
+                               avoid_points=True,
+                               avoid_text=True)
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
