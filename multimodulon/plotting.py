@@ -368,11 +368,11 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             adjust_text(texts, 
                        x=[x for _, x, _ in genes_to_label],
                        y=[y for _, _, y in genes_to_label],
-                       arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, shrinkA=5),
-                       force_points=0.3,
-                       force_text=0.3,
-                       expand_points=(1.5, 1.5),
-                       expand_text=(1.5, 1.5),
+                       arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, shrinkA=10, shrinkB=10),
+                       force_points=0.5,
+                       force_text=0.5,
+                       expand_points=(2.0, 2.0),
+                       expand_text=(2.0, 2.0),
                        ax=ax)
     
     # Set labels and title
@@ -1449,11 +1449,11 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     adjust_text(texts,
                                x=[x for _, x, _ in genes_to_label],
                                y=[y for _, _, y in genes_to_label],
-                               arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, shrinkA=5),
-                               force_points=0.3,
-                               force_text=0.3,
-                               expand_points=(1.5, 1.5),
-                               expand_text=(1.5, 1.5),
+                               arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, shrinkA=10, shrinkB=10),
+                               force_points=0.5,
+                               force_text=0.5,
+                               expand_points=(2.0, 2.0),
+                               expand_text=(2.0, 2.0),
                                ax=ax)
             
             # Set labels and title
