@@ -372,20 +372,20 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             all_x = x_positions  # All gene positions
             all_y = y_weights    # All gene weights
             
-            adjust_text(texts, 
-                       x=[x for _, x, _ in genes_to_label],
-                       y=[y for _, _, y in genes_to_label],
-                       add_objects=list(zip(all_x, all_y)),  # Pass ALL points to avoid
-                       arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, shrinkA=5, shrinkB=5),
-                       force_points=1.0,
-                       force_text=0.8,
-                       expand_points=(3.0, 3.0),
-                       expand_text=(2.0, 2.0),
+            # Create point objects to avoid
+            from matplotlib.patches import Circle
+            point_objects = [Circle((x, y), 0.01) for x, y in zip(all_x, all_y)]
+            
+            adjust_text(texts,
+                       add_objects=point_objects,  # Pass ALL points as objects to avoid
+                       force_text=(0.5, 0.5),
+                       expand_text=(1.2, 1.2),
+                       expand_objects=(1.2, 1.2),
                        ax=ax,
-                       only_move={'points':'', 'text':'xy'},
-                       ensure_inside_axes=True,
-                       avoid_points=True,
-                       avoid_text=True)
+                       autoalign='xy',
+                       only_move={'text': 'xy'},
+                       avoid_self=True,
+                       save_steps=False)
     
     # Set labels and title
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
@@ -1465,20 +1465,20 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     all_x = x_positions  # All gene positions
                     all_y = y_weights    # All gene weights
                     
+                    # Create point objects to avoid
+                    from matplotlib.patches import Circle
+                    point_objects = [Circle((x, y), 0.01) for x, y in zip(all_x, all_y)]
+                    
                     adjust_text(texts,
-                               x=[x for _, x, _ in genes_to_label],
-                               y=[y for _, _, y in genes_to_label],
-                               add_objects=list(zip(all_x, all_y)),  # Pass ALL points to avoid
-                               arrowprops=dict(arrowstyle='->', color='gray', lw=0.5, shrinkA=5, shrinkB=5),
-                               force_points=1.0,
-                               force_text=0.8,
-                               expand_points=(3.0, 3.0),
-                               expand_text=(2.0, 2.0),
+                               add_objects=point_objects,  # Pass ALL points as objects to avoid
+                               force_text=(0.5, 0.5),
+                               expand_text=(1.2, 1.2),
+                               expand_objects=(1.2, 1.2),
                                ax=ax,
-                               only_move={'points':'', 'text':'xy'},
-                               ensure_inside_axes=True,
-                               avoid_points=True,
-                               avoid_text=True)
+                               autoalign='xy',
+                               only_move={'text': 'xy'},
+                               avoid_self=True,
+                               save_steps=False)
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
