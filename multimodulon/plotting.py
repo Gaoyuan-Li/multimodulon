@@ -354,11 +354,7 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         for gene, x, y in genes_to_label:
             if gene in gene_table.index:
                 gene_name = get_gene_name(gene, gene_table.loc[gene])
-                text = ax.text(x, y, gene_name, fontsize=6, color='black',
-                              bbox=dict(boxstyle='round,pad=0.2',
-                                      facecolor='white',
-                                      edgecolor='none',
-                                      alpha=0.8))
+                text = ax.text(x, y, gene_name, fontsize=6, color='black')
                 if font_path and os.path.exists(font_path) and font_prop:
                     text.set_fontproperties(font_prop)
                 texts.append(text)
@@ -378,14 +374,16 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             
             adjust_text(texts,
                        add_objects=point_objects,  # Pass ALL points as objects to avoid
-                       force_text=(0.5, 0.5),
-                       expand_text=(1.2, 1.2),
-                       expand_objects=(1.2, 1.2),
+                       force_text=(1.0, 1.0),
+                       expand_text=(2.5, 2.5),
+                       expand_objects=(3.0, 3.0),
                        ax=ax,
                        autoalign='xy',
                        only_move={'text': 'xy'},
                        avoid_self=True,
-                       save_steps=False)
+                       save_steps=False,
+                       ensure_inside_axes=True,
+                       expand_axes=(0.95, 0.95))  # Keep labels away from edges
     
     # Set labels and title
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
@@ -1447,11 +1445,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 for gene, x, y in genes_to_label:
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
-                        text = ax.text(x, y, gene_name, fontsize=5, color='black',
-                                      bbox=dict(boxstyle='round,pad=0.2',
-                                              facecolor='white',
-                                              edgecolor='none',
-                                              alpha=0.85))
+                        text = ax.text(x, y, gene_name, fontsize=5, color='black')
                         if font_path and os.path.exists(font_path) and font_prop:
                             text.set_fontproperties(font_prop)
                         texts.append(text)
@@ -1471,14 +1465,16 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     
                     adjust_text(texts,
                                add_objects=point_objects,  # Pass ALL points as objects to avoid
-                               force_text=(0.5, 0.5),
-                               expand_text=(1.2, 1.2),
-                               expand_objects=(1.2, 1.2),
+                               force_text=(1.0, 1.0),
+                               expand_text=(2.5, 2.5),
+                               expand_objects=(3.0, 3.0),
                                ax=ax,
                                autoalign='xy',
                                only_move={'text': 'xy'},
                                avoid_self=True,
-                               save_steps=False)
+                               save_steps=False,
+                               ensure_inside_axes=True,
+                               expand_axes=(0.95, 0.95))  # Keep labels away from edges
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
