@@ -368,7 +368,7 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             adjust_text(texts, 
                        x=[x for _, x, _ in genes_to_label],
                        y=[y for _, _, y in genes_to_label],
-                       arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
+                       arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, shrinkA=5),
                        force_points=0.3,
                        force_text=0.3,
                        expand_points=(1.5, 1.5),
@@ -1449,7 +1449,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     adjust_text(texts,
                                x=[x for _, x, _ in genes_to_label],
                                y=[y for _, _, y in genes_to_label],
-                               arrowprops=dict(arrowstyle='-', color='gray', lw=0.5),
+                               arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, shrinkA=5),
                                force_points=0.3,
                                force_text=0.3,
                                expand_points=(1.5, 1.5),
@@ -1526,12 +1526,22 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             # Get the position of the bottom subplot to position legend correctly
             # The bottom row index depends on the actual layout
             bottom_row = n_rows - 1
-            # Get a bottom subplot (use first column)
-            if n_rows > 1:
+            
+            # Get a bottom subplot - handle different array shapes
+            try:
+                # Try 2D indexing first
                 bottom_ax = axes[bottom_row, 0]
-            else:
-                # For single row, axes might be 1D array
-                bottom_ax = axes[0] if isinstance(axes, np.ndarray) else axes
+            except (IndexError, TypeError):
+                # Fall back to 1D indexing
+                try:
+                    bottom_ax = axes[bottom_row]
+                except (IndexError, TypeError):
+                    # Single subplot case
+                    bottom_ax = axes
+            
+            # Ensure we have an actual axes object, not an array
+            if isinstance(bottom_ax, np.ndarray):
+                bottom_ax = bottom_ax.flat[0]
             
             # Get the bottom position of the bottom subplot in figure coordinates
             bbox = bottom_ax.get_position()
