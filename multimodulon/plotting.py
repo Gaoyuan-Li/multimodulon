@@ -1450,10 +1450,10 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                                x=[x for _, x, _ in genes_to_label],
                                y=[y for _, _, y in genes_to_label],
                                arrowprops=dict(arrowstyle='-', color='gray', lw=0.5, shrinkA=40, shrinkB=10),
-                               force_points=0.5,
-                               force_text=0.5,
-                               expand_points=(2.0, 2.0),
-                               expand_text=(2.0, 2.0),
+                               force_points=2.0,
+                               force_text=0.8,
+                               expand_points=(5.0, 5.0),
+                               expand_text=(3.0, 3.0),
                                ax=ax)
             
             # Set labels and title
