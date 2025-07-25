@@ -347,146 +347,33 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         # Further sort genes_to_label by x position for better label arrangement
         genes_to_label_by_pos = sorted(genes_to_label, key=lambda x: x[1])
         
-        # NEW LABEL PLACEMENT ALGORITHM - Hierarchical non-overlapping placement
-        # Set deterministic random seed for consistent results
-        np.random.seed(42)
-        
-        # Get plot dimensions
-        xlim = ax.get_xlim()
-        ylim = ax.get_ylim()
-        x_range = xlim[1] - xlim[0]
-        y_range = ylim[1] - ylim[0]
-        
-        # Sort genes by absolute weight (descending) - higher weights get priority
-        genes_to_label_sorted = sorted(genes_to_label, key=lambda x: abs(x[2]), reverse=True)
-        
-        # Calculate label dimensions
-        # Use average character width for estimation
-        char_width = x_range * 0.01  # Approximate character width
-        char_height = y_range * 0.03  # Approximate character height
-        
-        # Track placed labels to avoid overlaps
-        placed_labels = []  # List of (x_min, y_min, x_max, y_max, gene_name)
-        
-        def check_overlap(x_min, y_min, x_max, y_max, placed):
-            """Check if a rectangle overlaps with any placed labels"""
-            for px_min, py_min, px_max, py_max, _ in placed:
-                if not (x_max < px_min or x_min > px_max or 
-                        y_max < py_min or y_min > py_max):
-                    return True
-            return False
-        
-        def find_label_position(gene_x, gene_y, gene_name, weight_rank):
-            """Find optimal non-overlapping position for a label"""
-            # Estimate label dimensions
-            label_width = len(gene_name) * char_width * 0.8
-            label_height = char_height * 1.5
-            
-            # Define search parameters
-            # Higher weights (lower rank numbers) get positions closer to points
-            base_distance = 0.05 * x_range
-            rank_penalty = min(weight_rank / 20, 1.0)  # Penalty increases with rank
-            min_distance = base_distance * (1 + rank_penalty)
-            
-            # Determine preferred direction based on weight sign
-            if gene_y > 0:
-                # Positive weights: prefer above
-                preferred_angles = [90, 70, 110, 45, 135, 30, 150, 0, 180, -30, -150, -45, -135, -60, -120, -90]
-            else:
-                # Negative weights: prefer below
-                preferred_angles = [-90, -70, -110, -45, -135, -30, -150, 0, 180, 30, 150, 45, 135, 60, 120, 90]
-            
-            # Try positions at increasing distances
-            for dist_multiplier in np.arange(1.0, 5.0, 0.2):
-                distance = min_distance * dist_multiplier
-                
-                for angle in preferred_angles:
-                    angle_rad = np.radians(angle)
-                    
-                    # Calculate label center position
-                    label_cx = gene_x + distance * np.cos(angle_rad)
-                    label_cy = gene_y + distance * np.sin(angle_rad)
-                    
-                    # Calculate label bounds
-                    label_x_min = label_cx - label_width / 2
-                    label_y_min = label_cy - label_height / 2
-                    label_x_max = label_cx + label_width / 2
-                    label_y_max = label_cy + label_height / 2
-                    
-                    # Check if label is within plot bounds (with margin)
-                    margin_x = x_range * 0.02
-                    margin_y = y_range * 0.02
-                    if (label_x_min < xlim[0] + margin_x or 
-                        label_x_max > xlim[1] - margin_x or
-                        label_y_min < ylim[0] + margin_y or 
-                        label_y_max > ylim[1] - margin_y):
-                        continue
-                    
-                    # Check for overlaps
-                    if not check_overlap(label_x_min, label_y_min, label_x_max, label_y_max, placed_labels):
-                        # Found a valid position
-                        return label_cx, label_cy, label_x_min, label_y_min, label_x_max, label_y_max
-            
-            # Fallback: place far away
-            angle_rad = np.radians(90 if gene_y > 0 else -90)
-            label_cx = gene_x + min_distance * 5 * np.cos(angle_rad)
-            label_cy = gene_y + min_distance * 5 * np.sin(angle_rad)
-            
-            # Ensure within bounds
-            label_cx = max(xlim[0] + label_width/2, min(xlim[1] - label_width/2, label_cx))
-            label_cy = max(ylim[0] + label_height/2, min(ylim[1] - label_height/2, label_cy))
-            
-            return (label_cx, label_cy,
-                   label_cx - label_width/2, label_cy - label_height/2,
-                   label_cx + label_width/2, label_cy + label_height/2)
-        
-        # Place all labels
+        # Use adjust_text for label placement
         texts = []
         
-        for rank, (gene, x, y) in enumerate(genes_to_label_sorted):
+        # Create text labels for all genes above threshold
+        for gene, x, y in genes_to_label:
             if gene in gene_table.index:
                 gene_name = get_gene_name(gene, gene_table.loc[gene])
-                
-                # Find non-overlapping position
-                label_cx, label_cy, x_min, y_min, x_max, y_max = find_label_position(x, y, gene_name, rank)
-                
-                # Add to placed labels
-                placed_labels.append((x_min, y_min, x_max, y_max, gene_name))
-                
-                # Determine alignment based on position relative to point
-                dx = label_cx - x
-                dy = label_cy - y
-                
-                if abs(dx) > abs(dy):
-                    # Horizontal displacement dominates
-                    ha = 'left' if dx > 0 else 'right'
-                    va = 'center'
-                else:
-                    # Vertical displacement dominates
-                    ha = 'center'
-                    va = 'bottom' if dy > 0 else 'top'
-                
-                # Create annotation with line
-                ann = ax.annotate(gene_name, (x, y),
-                                xytext=(label_cx, label_cy),
-                                textcoords='data',
-                                fontsize=6,
-                                ha=ha, va=va,
-                                arrowprops=dict(arrowstyle='-',
-                                              connectionstyle='arc3,rad=0',
-                                              color='gray',
-                                              lw=0.3,
-                                              alpha=0.5),
-                                bbox=dict(boxstyle='round,pad=0.2',
-                                        facecolor='white',
-                                        edgecolor='none',
-                                        alpha=0.8),
-                                zorder=10)
-                
+                text = ax.text(x, y, gene_name, fontsize=6, color='black',
+                              bbox=dict(boxstyle='round,pad=0.2',
+                                      facecolor='white',
+                                      edgecolor='none',
+                                      alpha=0.8))
                 if font_path and os.path.exists(font_path) and font_prop:
-                    ann.set_fontproperties(font_prop)
-                
-                texts.append(ann)
+                    text.set_fontproperties(font_prop)
+                texts.append(text)
+        
+        # Use adjust_text with the specified parameters
+        if ADJUSTTEXT_AVAILABLE and texts:
+            adjust_text(texts, 
+                       x=[x for _, x, _ in genes_to_label],
+                       y=[y for _, _, y in genes_to_label],
+                       arrowprops=dict(arrowstyle='->', color='gray', lw=0.5),
+                       force_points=0.3,
+                       force_text=0.3,
+                       expand_points=(1.5, 1.5),
+                       expand_text=(1.5, 1.5),
+                       ax=ax)
     
     # Set labels and title
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
@@ -1541,139 +1428,33 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 # Sort by absolute weight - no limit since we're only showing species-specific genes
                 genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
                 
-                # NEW LABEL PLACEMENT ALGORITHM - Same as single plot version
-                # Set deterministic random seed for consistent results
-                np.random.seed(42 + species_idx)  # Add species_idx for different but consistent layouts
-                
-                # Get plot dimensions
-                xlim = ax.get_xlim()
-                ylim = ax.get_ylim()
-                x_range = xlim[1] - xlim[0]
-                y_range = ylim[1] - ylim[0]
-                
-                # Sort genes by absolute weight (descending)
-                genes_to_label_sorted = sorted(genes_to_label, key=lambda x: abs(x[2]), reverse=True)
-                
-                # Calculate label dimensions
-                char_width = x_range * 0.012  # Slightly smaller for subplots
-                char_height = y_range * 0.04
-                
-                # Track placed labels
-                placed_labels = []
-                
-                def check_overlap(x_min, y_min, x_max, y_max, placed):
-                    """Check if a rectangle overlaps with any placed labels"""
-                    for px_min, py_min, px_max, py_max, _ in placed:
-                        if not (x_max < px_min or x_min > px_max or 
-                                y_max < py_min or y_min > py_max):
-                            return True
-                    return False
-                
-                def find_label_position(gene_x, gene_y, gene_name, weight_rank):
-                    """Find optimal non-overlapping position for a label"""
-                    # Estimate label dimensions
-                    label_width = len(gene_name) * char_width * 0.8
-                    label_height = char_height * 1.5
-                    
-                    # Define search parameters
-                    base_distance = 0.06 * x_range  # Slightly larger for subplots
-                    rank_penalty = min(weight_rank / 15, 1.0)
-                    min_distance = base_distance * (1 + rank_penalty)
-                    
-                    # Determine preferred direction based on weight sign
-                    if gene_y > 0:
-                        preferred_angles = [90, 70, 110, 45, 135, 30, 150, 0, 180, -30, -150, -45, -135, -60, -120, -90]
-                    else:
-                        preferred_angles = [-90, -70, -110, -45, -135, -30, -150, 0, 180, 30, 150, 45, 135, 60, 120, 90]
-                    
-                    # Try positions at increasing distances
-                    for dist_multiplier in np.arange(1.0, 4.0, 0.25):
-                        distance = min_distance * dist_multiplier
-                        
-                        for angle in preferred_angles:
-                            angle_rad = np.radians(angle)
-                            
-                            # Calculate label center position
-                            label_cx = gene_x + distance * np.cos(angle_rad)
-                            label_cy = gene_y + distance * np.sin(angle_rad)
-                            
-                            # Calculate label bounds
-                            label_x_min = label_cx - label_width / 2
-                            label_y_min = label_cy - label_height / 2
-                            label_x_max = label_cx + label_width / 2
-                            label_y_max = label_cy + label_height / 2
-                            
-                            # Check if label is within plot bounds
-                            margin_x = x_range * 0.03
-                            margin_y = y_range * 0.03
-                            if (label_x_min < xlim[0] + margin_x or 
-                                label_x_max > xlim[1] - margin_x or
-                                label_y_min < ylim[0] + margin_y or 
-                                label_y_max > ylim[1] - margin_y):
-                                continue
-                            
-                            # Check for overlaps
-                            if not check_overlap(label_x_min, label_y_min, label_x_max, label_y_max, placed_labels):
-                                return label_cx, label_cy, label_x_min, label_y_min, label_x_max, label_y_max
-                    
-                    # Fallback position
-                    angle_rad = np.radians(90 if gene_y > 0 else -90)
-                    label_cx = gene_x + min_distance * 4 * np.cos(angle_rad)
-                    label_cy = gene_y + min_distance * 4 * np.sin(angle_rad)
-                    
-                    # Ensure within bounds
-                    label_cx = max(xlim[0] + label_width/2, min(xlim[1] - label_width/2, label_cx))
-                    label_cy = max(ylim[0] + label_height/2, min(ylim[1] - label_height/2, label_cy))
-                    
-                    return (label_cx, label_cy,
-                           label_cx - label_width/2, label_cy - label_height/2,
-                           label_cx + label_width/2, label_cy + label_height/2)
-                
-                # Place all labels
+                # Use adjust_text for label placement
                 texts = []
                 
-                for rank, (gene, x, y) in enumerate(genes_to_label_sorted):
+                # Create text labels for all genes
+                for gene, x, y in genes_to_label:
                     if gene in gene_table.index:
                         gene_name = get_gene_name(gene, gene_table.loc[gene])
-                        
-                        # Find non-overlapping position
-                        label_cx, label_cy, x_min, y_min, x_max, y_max = find_label_position(x, y, gene_name, rank)
-                        
-                        # Add to placed labels
-                        placed_labels.append((x_min, y_min, x_max, y_max, gene_name))
-                        
-                        # Determine alignment
-                        dx = label_cx - x
-                        dy = label_cy - y
-                        
-                        if abs(dx) > abs(dy):
-                            ha = 'left' if dx > 0 else 'right'
-                            va = 'center'
-                        else:
-                            ha = 'center'
-                            va = 'bottom' if dy > 0 else 'top'
-                        
-                        # Create annotation
-                        ann = ax.annotate(gene_name, (x, y),
-                                        xytext=(label_cx, label_cy),
-                                        textcoords='data',
-                                        fontsize=5,  # Smaller for subplots
-                                        ha=ha, va=va,
-                                        arrowprops=dict(arrowstyle='-',
-                                                      connectionstyle='arc3,rad=0',
-                                                      color='gray',
-                                                      lw=0.2,
-                                                      alpha=0.5),
-                                        bbox=dict(boxstyle='round,pad=0.2',
-                                                facecolor='white',
-                                                edgecolor='none',
-                                                alpha=0.85),
-                                        zorder=10)
-                        
+                        text = ax.text(x, y, gene_name, fontsize=5, color='black',
+                                      bbox=dict(boxstyle='round,pad=0.2',
+                                              facecolor='white',
+                                              edgecolor='none',
+                                              alpha=0.85))
                         if font_path and os.path.exists(font_path) and font_prop:
-                            ann.set_fontproperties(font_prop)
-                        
-                        texts.append(ann)
+                            text.set_fontproperties(font_prop)
+                        texts.append(text)
+                
+                # Use adjust_text with the specified parameters
+                if ADJUSTTEXT_AVAILABLE and texts:
+                    adjust_text(texts,
+                               x=[x for _, x, _ in genes_to_label],
+                               y=[y for _, _, y in genes_to_label],
+                               arrowprops=dict(arrowstyle='->', color='gray', lw=0.5),
+                               force_points=0.3,
+                               force_text=0.3,
+                               expand_points=(1.5, 1.5),
+                               expand_text=(1.5, 1.5),
+                               ax=ax)
             
             # Set labels and title
             ax.set_xlabel('Gene Start (1e6)', fontsize=10)
@@ -1742,19 +1523,28 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             legend_item_height = 0.025  # Height per legend item in figure coordinates
             legend_height = n_rows_legend * legend_item_height + 0.02  # Add padding
             
-            # Position legend with top edge at constant distance from x-axis labels
-            # The x-axis labels are typically at the bottom of the axes
-            # We want the top of the legend to be 1 unit below the x-axis labels
-            x_label_bottom = 0.08  # Approximate position of x-axis label bottom
-            legend_spacing = 0.02  # Distance between x-axis labels and legend top
-            legend_top = x_label_bottom - legend_spacing
+            # Get the position of the bottom subplot to position legend correctly
+            # The bottom row index depends on the actual layout
+            bottom_row = n_rows - 1
+            # Get a bottom subplot (use first column)
+            bottom_ax = axes[bottom_row, 0] if n_rows > 1 else axes[0]
+            
+            # Get the bottom position of the bottom subplot in figure coordinates
+            bbox = bottom_ax.get_position()
+            subplot_bottom = bbox.y0
+            
+            # Position legend with top edge at constant distance from the bottom subplot
+            # Account for x-axis label height (approximately 0.05 in axes coordinates)
+            x_label_height = 0.05
+            legend_spacing = 0.01  # Small gap between x-axis labels and legend top
+            legend_top = subplot_bottom - x_label_height - legend_spacing
             legend_bottom = legend_top - legend_height
             
             # Calculate the anchor point (legend is anchored at its center)
             legend_y_pos = (legend_top + legend_bottom) / 2
             
             # Ensure we have enough bottom margin
-            bottom_margin = max(0.12, -legend_bottom + 0.02)
+            bottom_margin = max(0.02, -legend_bottom + 0.01)
             
             # Add legend at bottom with top-edge alignment
             if font_path and os.path.exists(font_path):
