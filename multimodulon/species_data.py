@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import logging
 
@@ -212,3 +213,108 @@ class SpeciesData:
         
         logger.info(f"Data validation passed for {self.species_name}")
         return True
+    
+    def calculate_explained_variance(
+        self, genes=None, samples=None, imodulons=None
+    ):
+        """
+        Calculate the explained variance for each component sorted by importance.
+        
+        This method computes the explained variance based on the reconstruction
+        of the expression matrix from the product of M and A matrices, following
+        the ICA decomposition X = MA.
+        
+        Parameters
+        ----------
+        genes : list, str, or None, optional
+            Specific genes to include in the calculation. If None, all genes are used.
+            Can be a single gene (str) or list of genes.
+        samples : list, str, or None, optional
+            Specific samples to include in the calculation. If None, all samples are used.
+            Can be a single sample (str) or list of samples.
+        imodulons : list, str, int, or None, optional
+            Specific iModulons to include in the calculation. If None, all iModulons are used.
+            Can be a single iModulon (str/int) or list of iModulons.
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with columns 'iModulon' and 'Explained Variance',
+            sorted by explained variance in descending order.
+        
+        Raises
+        ------
+        AttributeError
+            If M or A matrices are not available.
+        
+        Examples
+        --------
+        >>> # Get explained variance for all components
+        >>> exp_var = multimodulon['MG1655'].calculate_explained_variance()
+        >>> print(exp_var.head())
+           iModulon  Explained Variance
+        0        5            0.052134
+        1       12            0.041235
+        2        3            0.038567
+        """
+        # Get the log_tpm matrix (use X if available, otherwise log_tpm_norm)
+        log_tpm = self.X if self._X is not None else self.log_tpm_norm
+        
+        # Check inputs
+        if genes is None:
+            genes = log_tpm.index
+        elif isinstance(genes, str):
+            genes = [genes]
+
+        if samples is None:
+            samples = log_tpm.columns
+        elif isinstance(samples, str):
+            samples = [samples]
+
+        if imodulons is None:
+            imodulons = self.M.columns
+        elif isinstance(imodulons, str) or isinstance(imodulons, int):
+            imodulons = [imodulons]
+
+        centered = log_tpm
+        
+        # Account for normalization procedures before ICA (X=SA-x_mean)
+        baseline = centered.subtract(centered.mean(axis=0), axis=1)
+        baseline = baseline.loc[genes, samples]
+
+        # Initialize variables
+        base_err = np.linalg.norm(baseline) ** 2
+        MA = np.zeros(baseline.shape)
+        rec_var = [0]
+        ma_arrs = {}
+        ma_weights = {}
+        explained_variance_dict = {}
+        i = 0
+        
+        # Get individual modulon contributions
+        for k in imodulons:
+            ma_arr = np.dot(
+                self.M.loc[genes, k].values.reshape(len(genes), 1),
+                self.A.loc[k, samples].values.reshape(1, len(samples)),
+            )
+            ma_arrs[k] = ma_arr
+            ma_weights[k] = np.sum(ma_arr**2)
+
+        # Sum components in order of most important component first
+        sorted_mods = sorted(ma_weights, key=ma_weights.get, reverse=True)
+        
+        # Compute reconstructed variance
+        for k in sorted_mods:
+            MA = MA + ma_arrs[k]
+            sa_err = np.linalg.norm(MA - baseline) ** 2
+            rec_var.append((1 - sa_err / base_err))
+            explained_variance_dict[k] = rec_var[i+1] - rec_var[i]
+            i += 1
+
+        # Create a DataFrame from the collected data
+        explained_variance_df = pd.DataFrame(
+            list(explained_variance_dict.items()), 
+            columns=['iModulon', 'Explained Variance']
+        )
+        
+        return explained_variance_df
