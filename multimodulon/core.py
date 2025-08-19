@@ -1120,6 +1120,70 @@ class MultiModulon:
         print("\n" + "=" * 60)
         print("eggNOG annotation addition completed!")
     
+    def save_gene_table(self, output_folder: str) -> None:
+        """
+        Save gene tables for all species to CSV files.
+        
+        This method saves the gene table of each species to a separate CSV file
+        in the specified folder. The files are named using the species name.
+        
+        Parameters
+        ----------
+        output_folder : str
+            Path to the folder where gene tables will be saved.
+            The folder will be created if it doesn't exist.
+            
+        Notes
+        -----
+        Each gene table is saved as a CSV file with the following naming pattern:
+        - {species_name}.csv
+        
+        The CSV files include the locus_tag as the index column.
+        """
+        output_path = Path(output_folder)
+        
+        # Create output folder if it doesn't exist
+        if not output_path.exists():
+            logger.info(f"Creating output folder: {output_path}")
+            output_path.mkdir(parents=True, exist_ok=True)
+            print(f"Created output folder: {output_path}")
+        
+        print(f"\nSaving gene tables to {output_folder}")
+        print("=" * 60)
+        
+        saved_count = 0
+        
+        for species_name, species_data in self._species_data.items():
+            print(f"\nProcessing {species_name}...")
+            
+            # Check if gene_table exists
+            if species_data._gene_table is None:
+                logger.warning(f"Gene table not found for {species_name}. Skipping...")
+                print(f"  ✗ Gene table not found. Skipping...")
+                continue
+            
+            # Define output file path
+            output_file = output_path / f"{species_name}.csv"
+            
+            try:
+                # Save gene table to CSV
+                species_data._gene_table.to_csv(output_file)
+                saved_count += 1
+                
+                # Get table info
+                num_genes = len(species_data._gene_table)
+                num_columns = len(species_data._gene_table.columns)
+                
+                print(f"  ✓ Saved {num_genes} genes × {num_columns} columns to {output_file.name}")
+                logger.info(f"Saved gene table for {species_name}: {num_genes} genes, {num_columns} columns")
+                
+            except Exception as e:
+                logger.error(f"Error saving gene table for {species_name}: {e}")
+                print(f"  ✗ Error: {e}")
+        
+        print("\n" + "=" * 60)
+        print(f"Gene table saving completed! Saved {saved_count} species tables.")
+    
     
     def optimize_M_thresholds(self, method: str = "Otsu's method", quantile_threshold: float = 90):
         """
