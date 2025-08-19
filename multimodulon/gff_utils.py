@@ -43,11 +43,12 @@ def _get_attr(attr_string: str, attr_id: str, ignore: bool = False) -> Optional[
     if attr_id in attributes:
         return attributes[attr_id]
     
-    # Special handling for locus_tag - try to extract from Note field
+    # Special handling for locus_tag - try multiple fallbacks
     if attr_id == 'locus_tag':
+        # First check if Note field contains W3110-style locus tags
         if 'Note' in attributes:
             note_value = attributes['Note']
-            # Parse "ECK0001:JW4367:b0001" format
+            # Parse "ECK0001:JW4367:b0001" format (W3110 style)
             if ':' in note_value:
                 parts = note_value.split(':')
                 # Look for JW-number first (preferred for W3110)
@@ -58,9 +59,21 @@ def _get_attr(attr_string: str, attr_id: str, ignore: bool = False) -> Optional[
                 for part in reversed(parts):
                     if part.startswith('b') and len(part) > 1:
                         return part
-        # For gene entries without Note field (W3110 case), use gene name as placeholder
-        elif 'gene' in attributes:
-            return attributes['gene']
+        
+        # For entries with gene attribute (like Vibrio parahaemolyticus CDS entries)
+        # Prioritize gene over Name for CDS entries
+        if 'gene' in attributes:
+            gene_value = attributes['gene']
+            # Check if it looks like a gene identifier (e.g., VP0001)
+            if gene_value and not gene_value.startswith('cds-') and not gene_value.startswith('gene-'):
+                return gene_value
+        
+        # For gene features: use Name attribute if available (Vibrio parahaemolyticus style)
+        if 'Name' in attributes:
+            name_value = attributes['Name']
+            # Check if Name looks like a gene identifier (e.g., VP0001)
+            if name_value and not name_value.startswith('cds-') and not name_value.startswith('gene-'):
+                return name_value
     
     if ignore:
         return None
