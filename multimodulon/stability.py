@@ -86,8 +86,6 @@ def core_iModulon_stability(
     ... )
     """
     # Validate inputs
-    if not component.startswith('Core_'):
-        warnings.warn(f"Component '{component}' does not follow core component naming (Core_*)")
     
     # Find species that have this component
     species_with_component = []
@@ -161,33 +159,42 @@ def _mad_threshold(scores: np.ndarray) -> float:
     """
     Calculate threshold using Modified Z-score with Median Absolute Deviation.
     
-    Species with Modified Z-score < -2.5 are considered outliers (unstable).
+    Only considers species unstable when they are truly significant outliers.
+    Uses a more conservative approach to avoid unnecessary unstable classifications.
     """
     if len(scores) < 3:
-        # Too few points for MAD, use mean - std
-        return np.mean(scores) - np.std(scores)
+        # Too few points, consider all stable
+        return np.min(scores) - 0.01
     
     median = np.median(scores)
     mad = median_abs_deviation(scores)
+    score_range = np.max(scores) - np.min(scores)
     
-    if mad == 0:
-        # All scores are identical or very similar
+    # If MAD is very small or range is small, consider all species stable
+    if mad < 0.05 or score_range < 0.1:
         return np.min(scores) - 0.01  # All species are stable
     
-    # Modified Z-scores
+    # Modified Z-scores with more stringent threshold
     modified_z_scores = 0.6745 * (scores - median) / mad
     
-    # Find outliers (Z-score < -2.5)
-    outlier_mask = modified_z_scores < -2.5
+    # Use stricter threshold (-3.0 instead of -2.5) to be more conservative
+    # Only mark as outlier if it's a very clear deviation
+    outlier_mask = modified_z_scores < -3.0
     
     if np.any(outlier_mask):
-        # Threshold between outliers and non-outliers
+        # Only create threshold if outliers are significantly different
         non_outliers = scores[~outlier_mask]
         outliers = scores[outlier_mask]
+        gap = np.min(non_outliers) - np.max(outliers)
+        
+        # If gap between outliers and non-outliers is small, consider all stable
+        if gap < 0.1:
+            return np.min(scores) - 0.01
+        
         threshold = (np.max(outliers) + np.min(non_outliers)) / 2
     else:
-        # No clear outliers, use median - 1.5*MAD
-        threshold = median - 1.5 * mad
+        # No clear outliers, all species are stable
+        return np.min(scores) - 0.01
     
     return threshold
 
@@ -195,17 +202,19 @@ def _mad_threshold(scores: np.ndarray) -> float:
 def _clustering_threshold(scores: np.ndarray) -> float:
     """
     Use DBSCAN clustering to identify groups and set threshold between them.
+    Only creates unstable groups when there's a significant separation.
     """
     if len(scores) < 3:
-        return np.mean(scores) - np.std(scores)
+        # Too few points, consider all stable
+        return np.min(scores) - 0.01
     
     # Reshape for sklearn
     X = scores.reshape(-1, 1)
     
     # Adaptive eps based on score range
     score_range = np.max(scores) - np.min(scores)
-    if score_range < 0.1:
-        # Very similar scores
+    if score_range < 0.15:  # More lenient threshold
+        # Very similar scores, consider all stable
         return np.min(scores) - 0.01
     
     # Try different eps values
@@ -240,19 +249,33 @@ def _clustering_threshold(scores: np.ndarray) -> float:
     if len(unique_labels) < 2:
         return _mad_threshold(scores)
     
-    # Get cluster means
+    # Get cluster means and check separation
     cluster_means = []
+    cluster_sizes = []
     for label in unique_labels:
-        cluster_means.append(np.mean(scores[labels == label]))
+        cluster_scores = scores[labels == label]
+        cluster_means.append(np.mean(cluster_scores))
+        cluster_sizes.append(len(cluster_scores))
     
-    cluster_means.sort()
+    cluster_means = np.array(cluster_means)
+    cluster_sizes = np.array(cluster_sizes)
     
-    # Threshold is midpoint between two lowest clusters
-    # (assuming lower scores = less stable)
+    # Sort by cluster means
+    sorted_indices = np.argsort(cluster_means)
+    cluster_means = cluster_means[sorted_indices]
+    cluster_sizes = cluster_sizes[sorted_indices]
+    
+    # Check if there's significant separation between clusters
     if len(cluster_means) >= 2:
+        gap = cluster_means[1] - cluster_means[0]
+        # Only create threshold if gap is substantial
+        if gap < 0.1:
+            return np.min(scores) - 0.01  # All stable
+        
         threshold = (cluster_means[0] + cluster_means[1]) / 2
     else:
-        threshold = cluster_means[0]
+        # Single cluster, all stable
+        return np.min(scores) - 0.01
     
     return threshold
 
@@ -260,9 +283,15 @@ def _clustering_threshold(scores: np.ndarray) -> float:
 def _otsu_threshold(scores: np.ndarray) -> float:
     """
     Apply Otsu's method to find optimal threshold.
+    Only creates threshold if variance improvement is substantial.
     """
     if len(scores) < 3:
-        return np.mean(scores) - np.std(scores)
+        # Too few points, consider all stable
+        return np.min(scores) - 0.01
+    
+    # If scores are very similar, consider all stable
+    if np.std(scores) < 0.05 or (np.max(scores) - np.min(scores)) < 0.1:
+        return np.min(scores) - 0.01
     
     # Create histogram
     n_bins = min(10, len(scores))
@@ -302,21 +331,42 @@ def _otsu_threshold(scores: np.ndarray) -> float:
             max_variance = variance
             best_threshold = bin_centers[i]
     
+    # Only use threshold if the variance improvement is meaningful
+    # Check if the separation is significant enough
+    total_variance = np.var(scores) * len(scores)
+    if max_variance < total_variance * 0.1:  # Less than 10% improvement
+        return np.min(scores) - 0.01  # All stable
+    
+    # Also check if threshold creates meaningful separation
+    stable_scores = scores[scores >= best_threshold]
+    unstable_scores = scores[scores < best_threshold]
+    
+    if len(unstable_scores) == 0:
+        return np.min(scores) - 0.01  # All stable
+    
+    # Check gap between groups
+    if len(stable_scores) > 0:
+        gap = np.min(stable_scores) - np.max(unstable_scores)
+        if gap < 0.05:  # Very small gap
+            return np.min(scores) - 0.01  # All stable
+    
     return best_threshold
 
 
 def _elbow_threshold(scores: np.ndarray) -> float:
     """
     Find elbow point in sorted scores for threshold.
+    Only creates threshold if elbow represents significant change.
     """
     if len(scores) < 3:
-        return np.mean(scores) - np.std(scores)
+        # Too few points, consider all stable
+        return np.min(scores) - 0.01
     
     # Sort scores
     sorted_scores = np.sort(scores)
     
-    # If scores are very similar
-    if np.std(sorted_scores) < 0.05:
+    # If scores are very similar or range is small
+    if np.std(sorted_scores) < 0.05 or (np.max(scores) - np.min(scores)) < 0.1:
         return np.min(sorted_scores) - 0.01
     
     # Create line from first to last point
@@ -335,14 +385,32 @@ def _elbow_threshold(scores: np.ndarray) -> float:
         distances.append(dist)
     
     # Find maximum distance (elbow point)
+    max_distance = np.max(distances)
     elbow_idx = np.argmax(distances)
     
+    # Check if elbow is significant enough
+    score_range = sorted_scores[-1] - sorted_scores[0]
+    if max_distance < score_range * 0.1:  # Less than 10% of range
+        return np.min(scores) - 0.01  # All stable
+    
     if elbow_idx == 0 or elbow_idx == n_points - 1:
-        # Elbow at extremes, use middle approach
-        threshold = np.median(sorted_scores)
+        # Elbow at extremes, consider all stable
+        return np.min(scores) - 0.01
     else:
-        # Threshold is value at elbow point
-        threshold = sorted_scores[elbow_idx]
+        # Check if elbow creates meaningful separation
+        threshold_candidate = sorted_scores[elbow_idx]
+        stable_scores = scores[scores >= threshold_candidate]
+        unstable_scores = scores[scores < threshold_candidate]
+        
+        if len(unstable_scores) == 0 or len(stable_scores) == 0:
+            return np.min(scores) - 0.01  # All stable
+        
+        # Check gap
+        gap = np.min(stable_scores) - np.max(unstable_scores)
+        if gap < 0.05:  # Very small gap
+            return np.min(scores) - 0.01  # All stable
+        
+        threshold = threshold_candidate
     
     return threshold
 
@@ -385,7 +453,7 @@ def _plot_stability(stability_scores: Dict[str, float], threshold: float,
     ax.set_xticks(range(len(species_names)))
     ax.set_xticklabels(species_names, rotation=45, ha='right')
     ax.set_ylabel('Stability Score (Mean Pairwise Correlation)', fontsize=12)
-    ax.set_title(f'Core iModulon {component} Stability Analysis', fontsize=14, fontweight='bold')
+    ax.set_title(f'Core iModulon {component} Stability Analysis', fontsize=14)
     
     # Set y-axis limits
     ax.set_ylim([min(0, min(scores) - 0.1), 1.0])

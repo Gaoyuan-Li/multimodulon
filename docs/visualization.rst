@@ -731,24 +731,57 @@ of its M matrix weights with all other species for the specified core component:
 Threshold Detection Methods
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-**MAD (Modified Z-score)**
-   Uses Median Absolute Deviation for robust outlier detection. Species with 
-   Modified Z-score < -2.5 are considered unstable. Best for detecting clear outliers.
+All threshold detection methods use a **conservative approach** that only classifies species as unstable when there are truly significant differences. This prevents unnecessary "unstable" classifications when species show similar regulatory patterns.
+
+**MAD (Modified Z-score) - Default**
+   Uses Median Absolute Deviation for robust outlier detection with enhanced conservatism:
+   
+   - Only marks species with Modified Z-score < **-3.0** as outliers (stricter than typical -2.5)
+   - Requires substantial separation (>0.1 correlation units) between outlier and non-outlier groups  
+   - Returns all species as stable when MAD < 0.05 or score range < 0.1
+   - Best for: Detecting clear outliers while avoiding false positives
 
 **Clustering**
-   Uses DBSCAN to identify groups of similar stability scores. Ideal when species
-   form distinct clusters (e.g., 3 stable + 2 unstable species).
+   Uses DBSCAN clustering with gap validation:
+   
+   - Only creates unstable groups when cluster means differ by >0.1 correlation units
+   - Considers all stable when score range < 0.15 (more lenient than other methods)
+   - Validates that identified clusters represent meaningful biological differences
+   - Best for: Complex patterns where species form distinct groups
 
 **Otsu**
-   Finds the threshold that maximizes between-class variance. Works well for
-   bimodal distributions of stability scores.
+   Otsu's method with significance testing:
+   
+   - Requires >10% variance improvement over random threshold placement
+   - Only creates threshold when gap between groups > 0.05 correlation units
+   - Returns all stable when standard deviation < 0.05 or range < 0.1
+   - Best for: Bimodal distributions with clear separation
 
 **Elbow**
-   Identifies the point of maximum curvature in sorted scores. Good for finding
-   natural breaks in the data.
+   Elbow detection with curvature significance:
+   
+   - Elbow point must represent >10% of total score range to be considered significant
+   - Validates gap between threshold groups (must be >0.05 correlation units)
+   - Returns all stable when elbow occurs at data extremes
+   - Best for: Finding natural breakpoints in gradually changing scores
 
 **Manual**
-   Use a predetermined threshold based on domain knowledge or specific requirements.
+   User-specified threshold with no automatic validation:
+   
+   - Bypasses all conservative checks
+   - Use when you have domain knowledge about appropriate thresholds
+   - Best for: Comparative studies or when specific cutoffs are required
+
+**Conservative Design Philosophy**
+
+The threshold methods prioritize **avoiding false unstable classifications** over detecting every possible difference. This means:
+
+- **Similar species (correlation > 0.9)**: Very likely to all be classified as stable
+- **Moderate differences (0.7-0.9)**: Usually all stable unless there's a clear outlier  
+- **Clear outliers (< 0.6)**: Will be identified as unstable only if significantly separated
+- **Edge cases**: Default to "all stable" rather than force classifications
+
+This approach is particularly valuable for core iModulons where you expect high conservation across species.
 
 Understanding the Plot
 ~~~~~~~~~~~~~~~~~~~~~~
