@@ -103,30 +103,66 @@ def core_iModulon_stability(
         other_correlations = np.concatenate([correlation_matrix[i, :i], correlation_matrix[i, i+1:]])
         stability_scores[species] = np.mean(other_correlations)
     
-    # Calculate stable range using Modified Z-score with MAD (robust for small n)
+    # Adaptive gap detection method - optimized for detecting groups
     scores_array = np.array(list(stability_scores.values()))
-    median_score = np.median(scores_array)
+    n_species = len(scores_array)
     
-    # Calculate MAD (Median Absolute Deviation) - more robust than std for small samples
-    mad = np.median(np.abs(scores_array - median_score))
-    if mad == 0:  # All scores identical
-        mad = 0.01  # Small value to avoid division by zero
-    
-    # Modified Z-scores: |0.6745 * (x - median) / MAD| > 2.5 indicates outlier
-    # For stability: species with Z-score < -2.5 are "unstable" (significantly below median)
-    modified_z_scores = 0.6745 * (scores_array - median_score) / mad
-    outlier_threshold = -2.5
-    
-    # Find the boundary between stable and unstable
-    outliers = scores_array[modified_z_scores < outlier_threshold]
-    if len(outliers) > 0:
-        # Threshold between highest outlier and lowest stable
-        stable_min = max(0.0, np.max(outliers) + 0.01)
+    if n_species < 3:
+        # Too few species, mark all as stable
+        stable_min = 0.0
         stable_max = 1.0
     else:
-        # No clear outliers - use median - 2*MAD as lower bound
-        stable_min = max(0.0, median_score - 2.5 * mad / 0.6745)
-        stable_max = 1.0
+        # Sort scores to analyze gaps
+        sorted_scores = np.sort(scores_array)
+        score_range = np.max(scores_array) - np.min(scores_array)
+        
+        if score_range < 0.05:
+            # All scores very similar - all stable (like Core_5)
+            stable_min = 0.0
+            stable_max = 1.0
+        else:
+            # Look for the largest gap between adjacent scores
+            gaps = []
+            for i in range(len(sorted_scores) - 1):
+                gap = sorted_scores[i + 1] - sorted_scores[i]
+                gaps.append((gap, i, sorted_scores[i], sorted_scores[i + 1]))
+            
+            # Find the largest gap
+            largest_gap, gap_idx, gap_start, gap_end = max(gaps, key=lambda x: x[0])
+            
+            # Determine if this gap is significant enough to split
+            # Gap should be at least 20% of the total range to be meaningful
+            gap_threshold = 0.15 if score_range > 0.15 else score_range * 0.6
+            
+            if largest_gap >= gap_threshold:
+                # Significant gap found - split into two groups
+                stable_min = (gap_start + gap_end) / 2
+                stable_max = 1.0
+            else:
+                # No significant gaps - check if there's a clear low outlier
+                # Use IQR method for outlier detection
+                if n_species >= 4:
+                    q1 = np.percentile(sorted_scores, 25)
+                    q3 = np.percentile(sorted_scores, 75)
+                    iqr = q3 - q1
+                    outlier_threshold = q1 - 1.5 * iqr
+                    
+                    if np.min(scores_array) < outlier_threshold:
+                        stable_min = outlier_threshold
+                        stable_max = 1.0
+                    else:
+                        # All stable
+                        stable_min = 0.0
+                        stable_max = 1.0
+                else:
+                    # For 3 species, use simpler rule
+                    # If lowest is much lower than others, mark as unstable
+                    if (sorted_scores[1] - sorted_scores[0]) > 2 * (sorted_scores[2] - sorted_scores[1]):
+                        stable_min = (sorted_scores[0] + sorted_scores[1]) / 2
+                        stable_max = 1.0
+                    else:
+                        stable_min = 0.0
+                        stable_max = 1.0
     
     # Classify species as stable if within the range
     stable_species = [species for species, score in stability_scores.items() 

@@ -673,8 +673,8 @@ Core iModulon Stability Analysis
    Quantify core iModulon stability across species using pairwise correlations.
    
    This function calculates how similar a core iModulon is across different species
-   by computing the mean pairwise correlation of M matrix weights. It uses a robust
-   outlier detection method (Modified Z-score with MAD) optimized for small datasets.
+   by computing the mean pairwise correlation of M matrix weights. It uses adaptive
+   gap detection to identify distinct groups and outliers in small datasets (3-6 species).
    
    :param str component: Component name (e.g., 'Core_1', 'Iron')
    :param str save_path: Path to save the plot (optional)
@@ -727,30 +727,33 @@ of its M matrix weights with all other species for the specified core component:
 - **Score > 0.7**: Good stability, similar regulatory pattern across species
 - **Score < 0.5**: Low stability, divergent regulatory pattern
 
-Robust Outlier Detection
-~~~~~~~~~~~~~~~~~~~~~~~~
+Adaptive Gap Detection
+~~~~~~~~~~~~~~~~~~~~~~
 
-The function uses **Modified Z-score with Median Absolute Deviation (MAD)** - specifically optimized for small datasets (3-6 species):
+The function uses **adaptive gap detection** - specifically designed to handle both group separation and outlier detection in small datasets (3-6 species):
 
-**Modified Z-Score Method**
-   - Uses **median** instead of mean (more robust to outliers)
-   - Uses **MAD** instead of standard deviation (more stable with small samples)
-   - **Outlier threshold**: Species with Modified Z-score < -2.5 are flagged as unstable
-   - **Formula**: Modified Z-score = 0.6745 × (score - median) / MAD
+**Multi-Level Detection Strategy**
+   1. **Similar scores** (range < 0.05): All species marked stable
+   2. **Significant gaps**: Detects natural breaks between groups of species  
+   3. **Outlier detection**: Uses IQR method for scattered individual outliers
+   4. **Edge cases**: Special handling for 3-species datasets
 
-**Why This Approach for Small Datasets?**
-   - **Robust to outliers**: Median and MAD aren't skewed by extreme values
-   - **Better for small n**: Works well even with 3-4 species
-   - **Sensitive enough**: Will identify meaningful differences without being too strict
-   - **Established standard**: Widely used in statistics for outlier detection
+**Gap Detection Logic**
+   - **Large gap threshold**: Gap must be ≥15% of total range (or 60% for small ranges)
+   - **Split groups**: Places threshold at midpoint of largest significant gap
+   - **Fallback to IQR**: Uses interquartile range outlier detection if no clear gaps
 
-**Examples with 5 Species**:
-   - **Scores**: [0.95, 0.92, 0.90, 0.88, 0.65]
-   - **Result**: 0.65 flagged as unstable outlier, others stable
-   - **Scores**: [0.95, 0.94, 0.93, 0.92, 0.91] 
-   - **Result**: All species stable (no significant outliers)
+**Why This Approach Works Better?**
+   - **Detects group patterns**: Identifies when species form distinct clusters
+   - **Handles uniform distributions**: Correctly identifies when all species are similar
+   - **Sensitive to structure**: Finds meaningful biological separations
+   - **Robust to sample size**: Works from 3-6 species with appropriate thresholds
 
-This method strikes the right balance: sensitive enough to detect problematic species while avoiding false positives when species are genuinely similar.
+**Real Examples from Your Data**:
+   - **Core_5 scores**: [0.63, 0.65, 0.67, 0.67, 0.68] → Range=0.05 → **All stable** ✅
+   - **Core_6 scores**: [0.38, 0.38, 0.40, 0.52, 0.52, 0.53] → Gap=0.12 → **Two groups detected** ✅
+
+This adaptive method correctly identifies both scenarios: truly stable components and those with distinct species groups.
 
 Understanding the Plot
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -760,8 +763,8 @@ Understanding the Plot
 * **Bar colors**: 
   - Blue (#C1C6E8): Stable species
   - Peach (#F0DDD2): Unstable species
-* **Gray dashed lines**: Outlier detection boundaries (Modified Z-score method)
-* **Light blue shading**: Stable correlation range (robust to outliers)
+* **Gray dashed lines**: Adaptive detection boundaries (gap detection or outlier threshold)
+* **Light blue shading**: Stable correlation range (adapts to data structure)
 * **Clean legend**: Simple "Stable" and "Unstable" labels
 
 Use Cases
