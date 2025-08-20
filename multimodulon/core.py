@@ -19,12 +19,14 @@ from .gff_utils import gff2pandas, create_gene_table, extract_protein_sequences
 from .multiview_ica import run_multiview_ica
 from .core_io import save_bbh, load_bbh, get_orthologs, save_to_json_multimodulon, load_json_multimodulon
 from .plotting import view_iModulon_weights, view_iModulon_activities, view_iModulon_genes, view_core_iModulon_weights, compare_core_iModulon, compare_core_iModulon_activity, show_iModulon_activity_change, show_gene_iModulon_correlation
-from sklearn.cluster import HDBSCAN
+from sklearn.cluster import HDBSCAN, DBSCAN
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from matplotlib.patches import Patch
 import os
+from scipy.stats import pearsonr, median_abs_deviation
+from scipy.signal import argrelextrema
 
 logger = logging.getLogger(__name__)
 
@@ -1646,6 +1648,11 @@ class MultiModulon:
     def show_gene_iModulon_correlation(self, *args, **kwargs):
         """Show correlation between gene expression and iModulon activity across species."""
         return show_gene_iModulon_correlation(self, *args, **kwargs)
+    
+    def core_iModulon_stability(self, *args, **kwargs):
+        """Quantify core iModulon stability across species."""
+        from .stability import core_iModulon_stability
+        return core_iModulon_stability(self, *args, **kwargs)
     
     def remove_component(self, component: str, species: Optional[str] = None):
         """

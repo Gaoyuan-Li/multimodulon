@@ -1812,8 +1812,6 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     if not species_with_component:
         raise ValueError(f"Component '{component}' not found in any species")
     
-    if not component.startswith('Core_'):
-        warnings.warn(f"Component '{component}' does not appear to be a core component")
     
     # Apply reference_order if provided
     if reference_order:

@@ -6,14 +6,15 @@ This section covers the visualization functions for exploring iModulon gene weig
 Overview
 --------
 
-MultiModulon provides six main visualization functions:
+MultiModulon provides seven main visualization functions:
 
 1. **view_iModulon_weights** - Visualize gene weights within a component for a single species
 2. **view_core_iModulon_weights** - Visualize a core iModulon component across all species
 3. **view_iModulon_activities** - Visualize component activities across samples
 4. **compare_core_iModulon_activity** - Compare core iModulon activities across multiple species for specific conditions
 5. **show_iModulon_activity_change** - Visualize activity changes between two conditions
-6. **show_gene_iModulon_correlation** - Show correlation between gene expression and iModulon activity across species
+6. **core_iModulon_stability** - Quantify core iModulon stability across species using pairwise correlations
+7. **show_gene_iModulon_correlation** - Show correlation between gene expression and iModulon activity across species
 
 All functions support customization of appearance, highlighting, and export options.
 
@@ -663,6 +664,164 @@ Use Cases
        font_path='/path/to/Arial.ttf',
        save_path='growth_phase_comparison.pdf'
    )
+
+Core iModulon Stability Analysis
+--------------------------------
+
+.. py:method:: MultiModulon.core_iModulon_stability(component, threshold_method='mad', manual_threshold=None, save_path=None, fig_size=(10, 6), font_path=None, show_stats=True)
+
+   Quantify core iModulon stability across species using pairwise correlations.
+   
+   This function calculates how similar a core iModulon is across different species
+   by computing the mean pairwise correlation of M matrix weights. It automatically
+   determines a threshold to classify species as stable or unstable.
+   
+   :param str component: Core component name (e.g., 'Core_1')
+   :param str threshold_method: Method for determining stability threshold:
+                                - "mad": Modified Z-score with Median Absolute Deviation (default)
+                                - "clustering": DBSCAN clustering to identify groups
+                                - "otsu": Otsu's method for optimal threshold
+                                - "elbow": Find elbow point in sorted scores
+                                - "manual": Use user-specified threshold
+   :param float manual_threshold: Threshold value when threshold_method="manual"
+   :param str save_path: Path to save the plot (optional)
+   :param tuple fig_size: Figure size as (width, height) (default: (10, 6))
+   :param str font_path: Path to custom font file (optional)
+   :param bool show_stats: Whether to show statistics on the plot (default: True)
+   
+   :returns: Tuple of (stable_species, threshold, stability_scores)
+             - stable_species (list): List of species names classified as stable
+             - threshold (float): The threshold value used for classification
+             - stability_scores (dict): Dictionary mapping species names to stability scores
+
+Basic Usage
+~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Automatic threshold detection using MAD (default)
+   stable, threshold, scores = multiModulon.core_iModulon_stability('Core_1')
+   print(f"Stable species: {stable}")
+   print(f"Threshold: {threshold:.3f}")
+   
+   # Manual threshold specification
+   stable, threshold, scores = multiModulon.core_iModulon_stability(
+       'Core_1',
+       threshold_method='manual',
+       manual_threshold=0.7
+   )
+   
+   # Using clustering for complex patterns
+   stable, threshold, scores = multiModulon.core_iModulon_stability(
+       'Core_1',
+       threshold_method='clustering',
+       save_path='core1_stability.svg'
+   )
+
+Understanding the Stability Metric
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The stability score for each species is calculated as the mean pairwise Pearson correlation
+of its M matrix weights with all other species for the specified core component:
+
+- **Score = 1.0**: Perfect correlation with all other species (highly stable)
+- **Score > 0.7**: Good stability, similar regulatory pattern across species
+- **Score < 0.5**: Low stability, divergent regulatory pattern
+
+Threshold Detection Methods
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**MAD (Modified Z-score)**
+   Uses Median Absolute Deviation for robust outlier detection. Species with 
+   Modified Z-score < -2.5 are considered unstable. Best for detecting clear outliers.
+
+**Clustering**
+   Uses DBSCAN to identify groups of similar stability scores. Ideal when species
+   form distinct clusters (e.g., 3 stable + 2 unstable species).
+
+**Otsu**
+   Finds the threshold that maximizes between-class variance. Works well for
+   bimodal distributions of stability scores.
+
+**Elbow**
+   Identifies the point of maximum curvature in sorted scores. Good for finding
+   natural breaks in the data.
+
+**Manual**
+   Use a predetermined threshold based on domain knowledge or specific requirements.
+
+Understanding the Plot
+~~~~~~~~~~~~~~~~~~~~~~
+
+* **X-axis**: Species names
+* **Y-axis**: Stability scores (mean pairwise correlation)
+* **Bar colors**: 
+  - Blue (#C1C6E8): Stable species
+  - Peach (#F0DDD2): Unstable species
+* **Red dashed line**: Determined or specified threshold
+* **Statistics box**: Shows mean, standard deviation, and range of scores
+
+Use Cases
+~~~~~~~~~
+
+1. **Quality Control**: Identify species where the core iModulon may be poorly defined
+2. **Evolutionary Analysis**: Study conservation of regulatory modules
+3. **Data Validation**: Detect potential issues in ICA decomposition
+4. **Species Selection**: Choose representative species for detailed analysis
+
+.. code-block:: python
+
+   # Example: Analyzing all core components
+   M = multiModulon[multiModulon.species[0]].M
+   core_components = [c for c in M.columns if c.startswith('Core_')]
+   
+   stability_results = {}
+   for comp in core_components:
+       stable, threshold, scores = multiModulon.core_iModulon_stability(
+           comp,
+           threshold_method='mad',
+           save_path=f'stability/{comp}_stability.svg'
+       )
+       stability_results[comp] = {
+           'stable_species': stable,
+           'threshold': threshold,
+           'all_scores': scores
+       }
+   
+   # Find components with low stability
+   low_stability = [comp for comp, res in stability_results.items() 
+                   if len(res['stable_species']) < len(multiModulon.species) * 0.5]
+   print(f"Components with <50% stable species: {low_stability}")
+
+Advanced Options
+~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Disable statistics display for cleaner plots
+   stable, threshold, scores = multiModulon.core_iModulon_stability(
+       'Core_1',
+       show_stats=False,
+       save_path='clean_stability.svg'
+   )
+   
+   # Custom figure size and font
+   stable, threshold, scores = multiModulon.core_iModulon_stability(
+       'Core_1',
+       fig_size=(12, 5),
+       font_path='/path/to/Arial.ttf',
+       save_path='custom_stability.pdf'
+   )
+   
+   # Compare different threshold methods
+   methods = ['mad', 'clustering', 'otsu', 'elbow']
+   for method in methods:
+       stable, threshold, scores = multiModulon.core_iModulon_stability(
+           'Core_1',
+           threshold_method=method,
+           save_path=f'stability_comparison/{method}_stability.svg'
+       )
+       print(f"{method}: {len(stable)} stable species, threshold={threshold:.3f}")
 
 Gene-iModulon Correlation Analysis
 ----------------------------------
