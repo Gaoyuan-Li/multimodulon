@@ -673,19 +673,19 @@ Core iModulon Stability Analysis
    Quantify core iModulon stability across species using pairwise correlations.
    
    This function calculates how similar a core iModulon is across different species
-   by computing the mean pairwise correlation of M matrix weights. It uses a simple
-   statistical approach (mean ± 2 standard deviations) to define stable ranges.
+   by computing the mean pairwise correlation of M matrix weights. It uses a robust
+   outlier detection method (Modified Z-score with MAD) optimized for small datasets.
    
    :param str component: Component name (e.g., 'Core_1', 'Iron')
    :param str save_path: Path to save the plot (optional)
-   :param tuple fig_size: Figure size as (width, height) (default: (6, 4))
+   :param tuple fig_size: Figure size as (width, height) (default: (6, 5))
    :param str font_path: Path to custom font file (optional)
    :param bool show_stats: Whether to show statistics on the plot (default: True)
    
    :returns: Tuple of (stable_species, stable_min, stable_max, stability_scores)
-             - stable_species (list): List of species names classified as stable
-             - stable_min (float): Lower boundary of stable range (mean - 2*std)
-             - stable_max (float): Upper boundary of stable range (mean + 2*std, capped at 1.0)
+             - stable_species (list): List of species names classified as stable (non-outliers)
+             - stable_min (float): Lower boundary for stable range (outlier detection threshold)
+             - stable_max (float): Upper boundary for stable range (always 1.0)
              - stability_scores (dict): Dictionary mapping species names to stability scores
 
 Basic Usage
@@ -693,22 +693,29 @@ Basic Usage
 
 .. code-block:: python
 
-   # Simple usage - statistical boundaries (mean ± 2*std)
+   # Simple usage - robust outlier detection optimized for 3-6 species
    stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability('Core_1')
    print(f"Stable species: {stable}")
-   print(f"Stable range: {min_bound:.3f} - {max_bound:.3f}")
+   print(f"Outlier threshold: {min_bound:.3f}")
    
-   # With custom font
+   # With custom font for publications
    stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability(
        'Iron',
        font_path='/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
        save_path='iron_stability.svg'
    )
    
-   # Access individual stability scores
+   # Analyze individual species stability
    for species, score in scores.items():
-       status = "stable" if species in stable else "outlier"
+       status = "stable" if species in stable else "outlier (problematic)"
        print(f"{species}: {score:.3f} ({status})")
+   
+   # Check if any species are problematic
+   if len(stable) < len(scores):
+       outliers = [s for s in scores.keys() if s not in stable]
+       print(f"⚠️  Potential issues with: {', '.join(outliers)}")
+   else:
+       print("✅ All species show consistent regulatory patterns")
 
 Understanding the Stability Metric
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -720,29 +727,30 @@ of its M matrix weights with all other species for the specified core component:
 - **Score > 0.7**: Good stability, similar regulatory pattern across species
 - **Score < 0.5**: Low stability, divergent regulatory pattern
 
-Statistical Approach
-~~~~~~~~~~~~~~~~~~~~
+Robust Outlier Detection
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-The function uses a simple and robust **statistical method** to define stable ranges:
+The function uses **Modified Z-score with Median Absolute Deviation (MAD)** - specifically optimized for small datasets (3-6 species):
 
-**Mean ± 2 Standard Deviations**
-   - Calculates the mean and standard deviation of all stability scores
-   - **Stable range**: mean - 2*std to mean + 2*std (capped between 0 and 1)
-   - **Stable species**: Those with scores falling within this range
-   - **Outliers**: Species with scores outside the 2-sigma range
+**Modified Z-Score Method**
+   - Uses **median** instead of mean (more robust to outliers)
+   - Uses **MAD** instead of standard deviation (more stable with small samples)
+   - **Outlier threshold**: Species with Modified Z-score < -2.5 are flagged as unstable
+   - **Formula**: Modified Z-score = 0.6745 × (score - median) / MAD
 
-**Why This Approach?**
-   - **Statistically sound**: Based on normal distribution theory (~95% of data within 2σ)
-   - **Data-driven**: Boundaries adapt automatically to your specific dataset
-   - **Simple to interpret**: Clear statistical meaning
-   - **Conservative**: Only flags clear outliers, not minor differences
+**Why This Approach for Small Datasets?**
+   - **Robust to outliers**: Median and MAD aren't skewed by extreme values
+   - **Better for small n**: Works well even with 3-4 species
+   - **Sensitive enough**: Will identify meaningful differences without being too strict
+   - **Established standard**: Widely used in statistics for outlier detection
 
-**Examples of Range Behavior**:
-   - **High similarity** (mean=0.95, std=0.02): Range 0.91-0.99, most species stable
-   - **Moderate variation** (mean=0.80, std=0.10): Range 0.60-1.00, wider tolerance  
-   - **High variation** (mean=0.70, std=0.15): Range 0.40-1.00, identifies true outliers
+**Examples with 5 Species**:
+   - **Scores**: [0.95, 0.92, 0.90, 0.88, 0.65]
+   - **Result**: 0.65 flagged as unstable outlier, others stable
+   - **Scores**: [0.95, 0.94, 0.93, 0.92, 0.91] 
+   - **Result**: All species stable (no significant outliers)
 
-This approach automatically adapts to your data's natural variation while identifying genuinely unusual species.
+This method strikes the right balance: sensitive enough to detect problematic species while avoiding false positives when species are genuinely similar.
 
 Understanding the Plot
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -752,17 +760,18 @@ Understanding the Plot
 * **Bar colors**: 
   - Blue (#C1C6E8): Stable species
   - Peach (#F0DDD2): Unstable species
-* **Gray dashed lines**: Statistical stable range boundaries (mean ± 2*std)
-* **Light blue shading**: Stable correlation range (adaptive to your data)
-* **Statistics box**: Shows mean and standard deviation of scores
+* **Gray dashed lines**: Outlier detection boundaries (Modified Z-score method)
+* **Light blue shading**: Stable correlation range (robust to outliers)
+* **Clean legend**: Simple "Stable" and "Unstable" labels
 
 Use Cases
 ~~~~~~~~~
 
-1. **Quality Control**: Identify species where the core iModulon may be poorly defined
-2. **Evolutionary Analysis**: Study conservation of regulatory modules
-3. **Data Validation**: Detect potential issues in ICA decomposition
-4. **Species Selection**: Choose representative species for detailed analysis
+1. **Quality Control**: Identify species with poorly defined or inconsistent iModulons
+2. **Data Validation**: Detect potential ICA decomposition issues or data quality problems
+3. **Species Selection**: Choose the most reliable species for downstream analysis
+4. **Comparative Analysis**: Understand which species deviate from conserved regulatory patterns
+5. **Method Validation**: Assess whether core components are truly "core" across species
 
 .. code-block:: python
 
@@ -783,10 +792,23 @@ Use Cases
            'range_width': max_bound - min_bound
        }
    
-   # Find components with low stability (high variation)
-   high_variation = [comp for comp, res in stability_results.items() 
-                    if res['range_width'] > 0.3]  # Wide stability range indicates variation
-   print(f"Components with high variation: {high_variation}")
+   # Identify components with outlier species
+   problematic_components = [comp for comp, res in stability_results.items() 
+                           if len(res['stable_species']) < len(scores)]
+   print(f"Components with outlier species: {problematic_components}")
+   
+   # Find the most problematic species across all components
+   all_outliers = []
+   for res in stability_results.values():
+       outliers = [s for s in scores.keys() if s not in res['stable_species']]
+       all_outliers.extend(outliers)
+   
+   from collections import Counter
+   outlier_counts = Counter(all_outliers)
+   if outlier_counts:
+       print("Species flagged as outliers (count across components):")
+       for species, count in outlier_counts.most_common():
+           print(f"  {species}: {count} components")
 
 Advanced Options
 ~~~~~~~~~~~~~~~~
@@ -803,7 +825,7 @@ Advanced Options
    # Custom figure size and font
    stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability(
        'Core_1',
-       fig_size=(8, 5),
+       fig_size=(7, 5),
        font_path='/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
        save_path='custom_stability.pdf'
    )
@@ -821,14 +843,22 @@ Advanced Options
        stability_summary[comp] = {
            'n_stable': len(stable),
            'n_total': len(scores),
-           'range_width': max_bound - min_bound,
-           'mean_score': np.mean(list(scores.values()))
+           'outlier_threshold': min_bound,
+           'median_score': np.median(list(scores.values())),
+           'outlier_species': [s for s in scores.keys() if s not in stable]
        }
    
    print("Component stability summary:")
    for comp, stats in stability_summary.items():
-       print(f"{comp}: {stats['n_stable']}/{stats['n_total']} stable, "
-             f"mean={stats['mean_score']:.3f}")
+       outlier_info = f", outliers: {stats['outlier_species']}" if stats['outlier_species'] else ""
+       print(f"{comp}: {stats['n_stable']}/{stats['n_total']} stable "
+             f"(median={stats['median_score']:.3f}){outlier_info}")
+   
+   # Overall dataset quality assessment
+   total_stable = sum(stats['n_stable'] for stats in stability_summary.values())
+   total_possible = sum(stats['n_total'] for stats in stability_summary.values())
+   print(f"\nOverall stability: {total_stable}/{total_possible} "
+         f"({100*total_stable/total_possible:.1f}%) species-component pairs are stable")
 
 Gene-iModulon Correlation Analysis
 ----------------------------------

@@ -20,7 +20,7 @@ def core_iModulon_stability(
     multimodulon,
     component: str,
     save_path: Optional[str] = None,
-    fig_size: Tuple[float, float] = (6, 4),
+    fig_size: Tuple[float, float] = (6, 5),
     font_path: Optional[str] = None,
     show_stats: bool = True
 ) -> Tuple[List[str], float, float, Dict[str, float]]:
@@ -103,14 +103,30 @@ def core_iModulon_stability(
         other_correlations = np.concatenate([correlation_matrix[i, :i], correlation_matrix[i, i+1:]])
         stability_scores[species] = np.mean(other_correlations)
     
-    # Calculate stable range using statistical approach (mean ± 2 std)
+    # Calculate stable range using Modified Z-score with MAD (robust for small n)
     scores_array = np.array(list(stability_scores.values()))
-    mean_score = np.mean(scores_array)
-    std_score = np.std(scores_array)
+    median_score = np.median(scores_array)
     
-    # Define stable range boundaries
-    stable_min = max(0.0, mean_score - 2 * std_score)  # Don't go below 0
-    stable_max = min(1.0, mean_score + 2 * std_score)  # Don't go above 1
+    # Calculate MAD (Median Absolute Deviation) - more robust than std for small samples
+    mad = np.median(np.abs(scores_array - median_score))
+    if mad == 0:  # All scores identical
+        mad = 0.01  # Small value to avoid division by zero
+    
+    # Modified Z-scores: |0.6745 * (x - median) / MAD| > 2.5 indicates outlier
+    # For stability: species with Z-score < -2.5 are "unstable" (significantly below median)
+    modified_z_scores = 0.6745 * (scores_array - median_score) / mad
+    outlier_threshold = -2.5
+    
+    # Find the boundary between stable and unstable
+    outliers = scores_array[modified_z_scores < outlier_threshold]
+    if len(outliers) > 0:
+        # Threshold between highest outlier and lowest stable
+        stable_min = max(0.0, np.max(outliers) + 0.01)
+        stable_max = 1.0
+    else:
+        # No clear outliers - use median - 2*MAD as lower bound
+        stable_min = max(0.0, median_score - 2.5 * mad / 0.6745)
+        stable_max = 1.0
     
     # Classify species as stable if within the range
     stable_species = [species for species, score in stability_scores.items() 
@@ -182,21 +198,15 @@ def _plot_stability(stability_scores: Dict[str, float], stable_min: float, stabl
     
     # Add legend
     legend_elements = [
-        Patch(facecolor=stable_color, edgecolor='black', label=f'Stable (n={len(stable_species)})'),
-        Patch(facecolor=unstable_color, edgecolor='black', label=f'Unstable (n={len(species_names)-len(stable_species)})')
+        Patch(facecolor=stable_color, edgecolor='black', label='Stable'),
+        Patch(facecolor=unstable_color, edgecolor='black', label='Unstable')
     ]
     legend = ax.legend(handles=legend_elements, loc='upper right')
     if font_prop:
         for text in legend.get_texts():
             text.set_fontproperties(font_prop)
     
-    # Add statistics if requested
-    if show_stats:
-        stats_text = f"Mean: {np.mean(scores):.3f}\n"
-        stats_text += f"Std: {np.std(scores):.3f}"
-        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-               verticalalignment='top', fontsize=10, fontproperties=font_prop,
-               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    # Remove statistics display - no longer needed
     
     # Tight layout
     plt.tight_layout()
