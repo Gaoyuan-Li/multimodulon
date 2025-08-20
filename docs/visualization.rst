@@ -668,30 +668,24 @@ Use Cases
 Core iModulon Stability Analysis
 --------------------------------
 
-.. py:method:: MultiModulon.core_iModulon_stability(component, threshold_method='mad', manual_threshold=None, save_path=None, fig_size=(10, 6), font_path=None, show_stats=True)
+.. py:method:: MultiModulon.core_iModulon_stability(component, save_path=None, fig_size=(6, 4), font_path=None, show_stats=True)
 
    Quantify core iModulon stability across species using pairwise correlations.
    
    This function calculates how similar a core iModulon is across different species
-   by computing the mean pairwise correlation of M matrix weights. It automatically
-   determines a threshold to classify species as stable or unstable.
+   by computing the mean pairwise correlation of M matrix weights. It uses a simple
+   statistical approach (mean ± 2 standard deviations) to define stable ranges.
    
-   :param str component: Core component name (e.g., 'Core_1')
-   :param str threshold_method: Method for determining stability threshold:
-                                - "mad": Modified Z-score with Median Absolute Deviation (default)
-                                - "clustering": DBSCAN clustering to identify groups
-                                - "otsu": Otsu's method for optimal threshold
-                                - "elbow": Find elbow point in sorted scores
-                                - "manual": Use user-specified threshold
-   :param float manual_threshold: Threshold value when threshold_method="manual"
+   :param str component: Component name (e.g., 'Core_1', 'Iron')
    :param str save_path: Path to save the plot (optional)
-   :param tuple fig_size: Figure size as (width, height) (default: (10, 6))
+   :param tuple fig_size: Figure size as (width, height) (default: (6, 4))
    :param str font_path: Path to custom font file (optional)
    :param bool show_stats: Whether to show statistics on the plot (default: True)
    
-   :returns: Tuple of (stable_species, threshold, stability_scores)
+   :returns: Tuple of (stable_species, stable_min, stable_max, stability_scores)
              - stable_species (list): List of species names classified as stable
-             - threshold (float): The threshold value used for classification
+             - stable_min (float): Lower boundary of stable range (mean - 2*std)
+             - stable_max (float): Upper boundary of stable range (mean + 2*std, capped at 1.0)
              - stability_scores (dict): Dictionary mapping species names to stability scores
 
 Basic Usage
@@ -699,24 +693,22 @@ Basic Usage
 
 .. code-block:: python
 
-   # Automatic threshold detection using MAD (default)
-   stable, threshold, scores = multiModulon.core_iModulon_stability('Core_1')
+   # Simple usage - statistical boundaries (mean ± 2*std)
+   stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability('Core_1')
    print(f"Stable species: {stable}")
-   print(f"Threshold: {threshold:.3f}")
+   print(f"Stable range: {min_bound:.3f} - {max_bound:.3f}")
    
-   # Manual threshold specification
-   stable, threshold, scores = multiModulon.core_iModulon_stability(
-       'Core_1',
-       threshold_method='manual',
-       manual_threshold=0.7
+   # With custom font
+   stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability(
+       'Iron',
+       font_path='/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
+       save_path='iron_stability.svg'
    )
    
-   # Using clustering for complex patterns
-   stable, threshold, scores = multiModulon.core_iModulon_stability(
-       'Core_1',
-       threshold_method='clustering',
-       save_path='core1_stability.svg'
-   )
+   # Access individual stability scores
+   for species, score in scores.items():
+       status = "stable" if species in stable else "outlier"
+       print(f"{species}: {score:.3f} ({status})")
 
 Understanding the Stability Metric
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -728,60 +720,29 @@ of its M matrix weights with all other species for the specified core component:
 - **Score > 0.7**: Good stability, similar regulatory pattern across species
 - **Score < 0.5**: Low stability, divergent regulatory pattern
 
-Threshold Detection Methods
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Statistical Approach
+~~~~~~~~~~~~~~~~~~~~
 
-All threshold detection methods use a **conservative approach** that only classifies species as unstable when there are truly significant differences. This prevents unnecessary "unstable" classifications when species show similar regulatory patterns.
+The function uses a simple and robust **statistical method** to define stable ranges:
 
-**MAD (Modified Z-score) - Default**
-   Uses Median Absolute Deviation for robust outlier detection with enhanced conservatism:
-   
-   - Only marks species with Modified Z-score < **-3.0** as outliers (stricter than typical -2.5)
-   - Requires substantial separation (>0.1 correlation units) between outlier and non-outlier groups  
-   - Returns all species as stable when MAD < 0.05 or score range < 0.1
-   - Best for: Detecting clear outliers while avoiding false positives
+**Mean ± 2 Standard Deviations**
+   - Calculates the mean and standard deviation of all stability scores
+   - **Stable range**: mean - 2*std to mean + 2*std (capped between 0 and 1)
+   - **Stable species**: Those with scores falling within this range
+   - **Outliers**: Species with scores outside the 2-sigma range
 
-**Clustering**
-   Uses DBSCAN clustering with gap validation:
-   
-   - Only creates unstable groups when cluster means differ by >0.1 correlation units
-   - Considers all stable when score range < 0.15 (more lenient than other methods)
-   - Validates that identified clusters represent meaningful biological differences
-   - Best for: Complex patterns where species form distinct groups
+**Why This Approach?**
+   - **Statistically sound**: Based on normal distribution theory (~95% of data within 2σ)
+   - **Data-driven**: Boundaries adapt automatically to your specific dataset
+   - **Simple to interpret**: Clear statistical meaning
+   - **Conservative**: Only flags clear outliers, not minor differences
 
-**Otsu**
-   Otsu's method with significance testing:
-   
-   - Requires >10% variance improvement over random threshold placement
-   - Only creates threshold when gap between groups > 0.05 correlation units
-   - Returns all stable when standard deviation < 0.05 or range < 0.1
-   - Best for: Bimodal distributions with clear separation
+**Examples of Range Behavior**:
+   - **High similarity** (mean=0.95, std=0.02): Range 0.91-0.99, most species stable
+   - **Moderate variation** (mean=0.80, std=0.10): Range 0.60-1.00, wider tolerance  
+   - **High variation** (mean=0.70, std=0.15): Range 0.40-1.00, identifies true outliers
 
-**Elbow**
-   Elbow detection with curvature significance:
-   
-   - Elbow point must represent >10% of total score range to be considered significant
-   - Validates gap between threshold groups (must be >0.05 correlation units)
-   - Returns all stable when elbow occurs at data extremes
-   - Best for: Finding natural breakpoints in gradually changing scores
-
-**Manual**
-   User-specified threshold with no automatic validation:
-   
-   - Bypasses all conservative checks
-   - Use when you have domain knowledge about appropriate thresholds
-   - Best for: Comparative studies or when specific cutoffs are required
-
-**Conservative Design Philosophy**
-
-The threshold methods prioritize **avoiding false unstable classifications** over detecting every possible difference. This means:
-
-- **Similar species (correlation > 0.9)**: Very likely to all be classified as stable
-- **Moderate differences (0.7-0.9)**: Usually all stable unless there's a clear outlier  
-- **Clear outliers (< 0.6)**: Will be identified as unstable only if significantly separated
-- **Edge cases**: Default to "all stable" rather than force classifications
-
-This approach is particularly valuable for core iModulons where you expect high conservation across species.
+This approach automatically adapts to your data's natural variation while identifying genuinely unusual species.
 
 Understanding the Plot
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -791,8 +752,9 @@ Understanding the Plot
 * **Bar colors**: 
   - Blue (#C1C6E8): Stable species
   - Peach (#F0DDD2): Unstable species
-* **Red dashed line**: Determined or specified threshold
-* **Statistics box**: Shows mean, standard deviation, and range of scores
+* **Gray dashed lines**: Statistical stable range boundaries (mean ± 2*std)
+* **Light blue shading**: Stable correlation range (adaptive to your data)
+* **Statistics box**: Shows mean and standard deviation of scores
 
 Use Cases
 ~~~~~~~~~
@@ -810,21 +772,21 @@ Use Cases
    
    stability_results = {}
    for comp in core_components:
-       stable, threshold, scores = multiModulon.core_iModulon_stability(
+       stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability(
            comp,
-           threshold_method='mad',
            save_path=f'stability/{comp}_stability.svg'
        )
        stability_results[comp] = {
            'stable_species': stable,
-           'threshold': threshold,
-           'all_scores': scores
+           'range': (min_bound, max_bound),
+           'all_scores': scores,
+           'range_width': max_bound - min_bound
        }
    
-   # Find components with low stability
-   low_stability = [comp for comp, res in stability_results.items() 
-                   if len(res['stable_species']) < len(multiModulon.species) * 0.5]
-   print(f"Components with <50% stable species: {low_stability}")
+   # Find components with low stability (high variation)
+   high_variation = [comp for comp, res in stability_results.items() 
+                    if res['range_width'] > 0.3]  # Wide stability range indicates variation
+   print(f"Components with high variation: {high_variation}")
 
 Advanced Options
 ~~~~~~~~~~~~~~~~
@@ -832,29 +794,41 @@ Advanced Options
 .. code-block:: python
 
    # Disable statistics display for cleaner plots
-   stable, threshold, scores = multiModulon.core_iModulon_stability(
+   stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability(
        'Core_1',
        show_stats=False,
        save_path='clean_stability.svg'
    )
    
    # Custom figure size and font
-   stable, threshold, scores = multiModulon.core_iModulon_stability(
+   stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability(
        'Core_1',
-       fig_size=(12, 5),
-       font_path='/path/to/Arial.ttf',
+       fig_size=(8, 5),
+       font_path='/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
        save_path='custom_stability.pdf'
    )
    
-   # Compare different threshold methods
-   methods = ['mad', 'clustering', 'otsu', 'elbow']
-   for method in methods:
-       stable, threshold, scores = multiModulon.core_iModulon_stability(
-           'Core_1',
-           threshold_method=method,
-           save_path=f'stability_comparison/{method}_stability.svg'
+   # Batch analysis of multiple components
+   M = multiModulon[multiModulon.species[0]].M
+   components = [c for c in M.columns if c.startswith('Core_')]
+   
+   stability_summary = {}
+   for comp in components:
+       stable, min_bound, max_bound, scores = multiModulon.core_iModulon_stability(
+           comp,
+           save_path=f'stability/{comp}_stability.svg'
        )
-       print(f"{method}: {len(stable)} stable species, threshold={threshold:.3f}")
+       stability_summary[comp] = {
+           'n_stable': len(stable),
+           'n_total': len(scores),
+           'range_width': max_bound - min_bound,
+           'mean_score': np.mean(list(scores.values()))
+       }
+   
+   print("Component stability summary:")
+   for comp, stats in stability_summary.items():
+       print(f"{comp}: {stats['n_stable']}/{stats['n_total']} stable, "
+             f"mean={stats['mean_score']:.3f}")
 
 Gene-iModulon Correlation Analysis
 ----------------------------------
