@@ -1902,15 +1902,38 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
                                 gene_species_presence[gene].add(species)
                     break
     
-    # Separate genes into two groups
-    genes_in_all = []
-    genes_not_in_all = []
+    # Calculate how many species have each gene IN the iModulon (blue cells)
+    gene_imodulon_count = {}
+    for gene in all_genes:
+        count = 0
+        for species in species_with_component:
+            if gene in result_dict.get(species, []):
+                count += 1
+        gene_imodulon_count[gene] = count
+    
+    # Separate genes into two main groups based on genome presence
+    genes_in_all_genomes = []
+    genes_not_in_all_genomes = []
+    
+    total_species = len(species_with_component)
     
     for gene in all_genes:
-        if len(gene_species_presence.get(gene, set())) == len(species_with_component):
-            genes_in_all.append(gene)
+        species_count = len(gene_species_presence.get(gene, set()))
+        if species_count == total_species:
+            # Genes present in all species' genomes
+            genes_in_all_genomes.append(gene)
         else:
-            genes_not_in_all.append(gene)
+            # Genes not in all species' genomes
+            genes_not_in_all_genomes.append(gene)
+    
+    # Sort genes in "all genomes" group by iModulon membership count (descending)
+    # More blue cells (denser) on the left, fewer blue cells on the right
+    genes_in_all = sorted(genes_in_all_genomes, 
+                         key=lambda g: (-gene_imodulon_count[g], g))  # Secondary sort by name for consistency
+    
+    # Sort genes in "not all genomes" group by iModulon membership count (descending)
+    genes_not_in_all = sorted(genes_not_in_all_genomes,
+                              key=lambda g: (-gene_imodulon_count[g], g))  # Secondary sort by name
     
     # Check if we need right section
     has_right_section = len(genes_not_in_all) > 0
