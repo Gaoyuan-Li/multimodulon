@@ -424,9 +424,9 @@ def _plot_stability(stability_scores: Dict[str, float], threshold: float,
     Create bar plot visualization for stability scores.
     """
     # Set font if provided
+    font_prop = None
     if font_path and Path(font_path).exists():
         font_prop = fm.FontProperties(fname=font_path)
-        plt.rcParams['font.family'] = font_prop.get_name()
     
     # Create figure
     fig, ax = plt.subplots(figsize=fig_size)
@@ -451,12 +451,17 @@ def _plot_stability(stability_scores: Dict[str, float], threshold: float,
     
     # Customize axes
     ax.set_xticks(range(len(species_names)))
-    ax.set_xticklabels(species_names, rotation=45, ha='right')
-    ax.set_ylabel('Stability Score (Mean Pairwise Correlation)', fontsize=12)
-    ax.set_title(f'Core iModulon {component} Stability Analysis', fontsize=14)
+    ax.set_xticklabels(species_names, rotation=45, ha='right', fontproperties=font_prop)
+    ax.set_ylabel('Stability Score (Mean Pairwise Correlation)', fontsize=12, fontproperties=font_prop)
+    ax.set_title(f'Core iModulon {component} Stability Analysis', fontsize=14, fontproperties=font_prop)
     
     # Set y-axis limits
     ax.set_ylim([min(0, min(scores) - 0.1), 1.0])
+    
+    # Apply font to y-tick labels
+    if font_prop:
+        for label in ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
     
     # Add grid
     ax.grid(True, alpha=0.3, axis='y')
@@ -466,7 +471,10 @@ def _plot_stability(stability_scores: Dict[str, float], threshold: float,
         Patch(facecolor=stable_color, edgecolor='black', label=f'Stable (n={len(stable_species)})'),
         Patch(facecolor=unstable_color, edgecolor='black', label=f'Unstable (n={len(species_names)-len(stable_species)})')
     ]
-    ax.legend(handles=legend_elements, loc='upper right')
+    legend = ax.legend(handles=legend_elements, loc='upper right')
+    if font_prop:
+        for text in legend.get_texts():
+            text.set_fontproperties(font_prop)
     
     # Add statistics if requested
     if show_stats:
@@ -474,7 +482,7 @@ def _plot_stability(stability_scores: Dict[str, float], threshold: float,
         stats_text += f"Std: {np.std(scores):.3f}\n"
         stats_text += f"Range: [{min(scores):.3f}, {max(scores):.3f}]"
         ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-               verticalalignment='top', fontsize=10,
+               verticalalignment='top', fontsize=10, fontproperties=font_prop,
                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     # Tight layout
