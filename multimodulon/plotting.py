@@ -2233,7 +2233,7 @@ def plot_iM_conservation_bubble_matrix(
     font_path: Optional[str] = None
 ) -> pd.DataFrame:
     """
-    Plot a bubble matrix summarizing iModulon conservation across species.
+    Plot a bubble matrix summarizing iModulon conservation across species using radial-gradient bubbles.
 
     Each bubble encodes how conserved an iModulon is within a species:
     size = (# genes shared across all species with the component) / (# genes in this species' iModulon).
@@ -2251,7 +2251,8 @@ def plot_iM_conservation_bubble_matrix(
     fig_size : tuple of float, optional
         Figure size (width, height). Default: (10, 4).
     bubble_scale : float, optional
-        Scaling factor applied to bubble areas. Default: 800.0.
+        Scaling factor controlling the maximum bubble radius (larger values create larger bubbles).
+        Default: 800.0.
     y_label : str, optional
         Label to display on the y-axis. Default: "Species/Strains".
     save_path : str or Path, optional
@@ -2404,6 +2405,8 @@ def plot_iM_conservation_bubble_matrix(
         for component, color in zip(component_order, tab_colors):
             component_color_map[component] = color
 
+    max_radius = min(0.45, max(np.sqrt(max(bubble_scale, 1.0)) / 50.0, 0.05))
+
     x_positions = np.arange(len(component_order))
     y_positions = np.arange(len(species_order))
 
@@ -2412,22 +2415,48 @@ def plot_iM_conservation_bubble_matrix(
             value = conservation_df.loc[species, component]
             if pd.isna(value) or value <= 0:
                 continue
-            ax.scatter(
-                x_idx,
-                y_idx,
-                s=value * bubble_scale,
-                color=component_color_map[component],
-                alpha=0.8,
-                edgecolors='none'
+            base_radius = np.sqrt(min(value, 1.0)) * max_radius
+            if base_radius <= 0:
+                continue
+
+            layers = max(3, int(np.ceil(6 * min(value, 1.0))))
+            outer_alpha = 1 - 0.5 * min(value, 1.0)
+
+            # Draw stacked circles to approximate a radial gradient with translucent edges.
+            for layer in range(layers):
+                fraction = 1 - (layer / layers)
+                layer_radius = base_radius * fraction
+                if layer_radius <= 0:
+                    continue
+                t = 1 - fraction  # 0 at outer edge, 1 near center
+                alpha = outer_alpha + (1 - outer_alpha) * (t ** 0.8)
+                circle = patches.Circle(
+                    (x_idx, y_idx),
+                    layer_radius,
+                    facecolor=component_color_map[component],
+                    edgecolor='none',
+                    alpha=alpha
+                )
+                ax.add_patch(circle)
+
+            center_radius = max(base_radius * 0.15, base_radius / (layers * 1.5))
+            center_circle = patches.Circle(
+                (x_idx, y_idx),
+                center_radius,
+                facecolor=component_color_map[component],
+                edgecolor='none',
+                alpha=1.0
             )
+            ax.add_patch(center_circle)
 
     ax.set_xticks(x_positions)
     ax.set_xticklabels(component_order, rotation=45, ha='right')
     ax.set_yticks(y_positions)
     ax.set_yticklabels(species_order)
-    ax.set_xlim(-0.5, len(component_order) - 0.5)
-    ax.set_ylim(-0.5, len(species_order) - 0.5)
+    ax.set_xlim(-0.5 - max_radius, len(component_order) - 0.5 + max_radius)
+    ax.set_ylim(-0.5 - max_radius, len(species_order) - 0.5 + max_radius)
     ax.invert_yaxis()
+    ax.set_aspect('equal', adjustable='box')
 
     ax.set_xlabel('iModulons')
     ax.set_ylabel(y_label)
