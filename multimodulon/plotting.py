@@ -2228,6 +2228,7 @@ def plot_iM_conservation_bubble_matrix(
     iM_colors: Optional[List[str]] = None,
     fig_size: Tuple[float, float] = (10, 4),
     bubble_scale: float = 800.0,
+    y_label: str = "Species/Strains",
     save_path: Optional[Union[str, Path]] = None,
     font_path: Optional[str] = None
 ) -> pd.DataFrame:
@@ -2251,6 +2252,8 @@ def plot_iM_conservation_bubble_matrix(
         Figure size (width, height). Default: (10, 4).
     bubble_scale : float, optional
         Scaling factor applied to bubble areas. Default: 800.0.
+    y_label : str, optional
+        Label to display on the y-axis. Default: "Species/Strains".
     save_path : str or Path, optional
         File path or directory to save the figure. If None, figure is not saved.
     font_path : str, optional
@@ -2427,7 +2430,7 @@ def plot_iM_conservation_bubble_matrix(
     ax.invert_yaxis()
 
     ax.set_xlabel('iModulons')
-    ax.set_ylabel('Species/Strains')
+    ax.set_ylabel(y_label)
 
     font_prop = None
     if font_path:
