@@ -18,7 +18,17 @@ from .utils import BBHAnalyzer
 from .gff_utils import gff2pandas, create_gene_table, extract_protein_sequences
 from .multiview_ica import run_multiview_ica
 from .core_io import save_bbh, load_bbh, get_orthologs, save_to_json_multimodulon, load_json_multimodulon
-from .plotting import view_iModulon_weights, view_iModulon_activities, view_iModulon_genes, view_core_iModulon_weights, compare_core_iModulon, compare_core_iModulon_activity, show_iModulon_activity_change, show_gene_iModulon_correlation
+from .plotting import (
+    view_iModulon_weights,
+    view_iModulon_activities,
+    view_iModulon_genes,
+    view_core_iModulon_weights,
+    compare_core_iModulon,
+    compare_core_iModulon_activity,
+    show_iModulon_activity_change,
+    show_gene_iModulon_correlation,
+    plot_iM_conservation_bubble_matrix,
+)
 from sklearn.cluster import HDBSCAN, DBSCAN
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
@@ -1636,6 +1646,10 @@ class MultiModulon:
     def compare_core_iModulon(self, *args, **kwargs):
         """Compare core iModulon across species."""
         return compare_core_iModulon(self, *args, **kwargs)
+    
+    def plot_iM_conservation_bubble_matrix(self, *args, **kwargs):
+        """Plot the cross-species iModulon conservation bubble matrix."""
+        return plot_iM_conservation_bubble_matrix(self, *args, **kwargs)
     
     def compare_core_iModulon_activity(self, *args, **kwargs):
         """Compare core iModulon activities across species."""

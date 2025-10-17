@@ -2221,6 +2221,248 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     return result_df
 
 
+def plot_iM_conservation_bubble_matrix(
+    multimodulon,
+    n_components: int,
+    reference_order: Optional[List[str]] = None,
+    species_colors: Optional[List[str]] = None,
+    fig_size: Tuple[float, float] = (12, 8),
+    bubble_scale: float = 800.0,
+    save_path: Optional[Union[str, Path]] = None,
+    font_path: Optional[str] = None
+) -> pd.DataFrame:
+    """
+    Plot a bubble matrix summarizing iModulon conservation across species.
+
+    Each bubble encodes how conserved an iModulon is within a species:
+    size = (# genes shared across all species with the component) / (# genes in this species' iModulon).
+
+    Parameters
+    ----------
+    multimodulon : MultiModulon
+        MultiModulon instance containing species data.
+    n_components : int
+        Number of leading components (per species) to include on the x-axis.
+    reference_order : list of str, optional
+        Custom ordering for species on the y-axis.
+    species_colors : list of str, optional
+        Colors corresponding to species (same order as y-axis). If None, uses multimodulon.species_palette.
+    fig_size : tuple of float, optional
+        Figure size (width, height). Default: (12, 8).
+    bubble_scale : float, optional
+        Scaling factor applied to bubble areas. Default: 800.0.
+    save_path : str or Path, optional
+        File path or directory to save the figure. If None, figure is not saved.
+    font_path : str, optional
+        Path to a font file applied to tick labels when provided.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with species as index, iModulon names as columns, containing conservation ratios.
+
+    Raises
+    ------
+    ValueError
+        If required data (M matrices, presence matrices, combined_gene_db) are missing or inputs invalid.
+    """
+    if n_components <= 0:
+        raise ValueError("n_components must be a positive integer.")
+
+    species_order = list(multimodulon._species_data.keys())
+    if not species_order:
+        raise ValueError("No species data found in the provided MultiModulon object.")
+
+    if reference_order:
+        ordered_species = [sp for sp in reference_order if sp in species_order]
+        remaining_species = [sp for sp in species_order if sp not in ordered_species]
+        species_order = ordered_species + remaining_species
+
+    if species_colors is not None:
+        if len(species_colors) != len(species_order):
+            raise ValueError("species_colors length must match the number of species.")
+        species_color_map = {species: color for species, color in zip(species_order, species_colors)}
+    else:
+        palette = getattr(multimodulon, "species_palette", {}) or {}
+        species_color_map = {}
+        for idx, species in enumerate(species_order):
+            if species in palette:
+                species_color_map[species] = palette[species]
+            else:
+                color_idx = idx / max(1, len(species_order) - 1) if len(species_order) > 1 else 0
+                species_color_map[species] = plt.cm.tab20(color_idx)
+
+    combined_gene_db = getattr(multimodulon, "combined_gene_db", None)
+    if combined_gene_db is None:
+        raise ValueError("combined_gene_db not found. Please run align_genes() before plotting conservation.")
+
+    species_columns = [col for col in combined_gene_db.columns if col in species_order]
+    if not species_columns:
+        raise ValueError("combined_gene_db does not contain any of the loaded species.")
+
+    locus_to_leftmost: Dict[Tuple[str, str], str] = {}
+    leftmost_genes: set[str] = set()
+
+    for _, row in combined_gene_db.iterrows():
+        leftmost_gene = None
+        for col in combined_gene_db.columns:
+            val = row[col]
+            if pd.notna(val) and val not in ("None", None):
+                leftmost_gene = str(val)
+                break
+        if not leftmost_gene:
+            continue
+
+        leftmost_genes.add(leftmost_gene)
+        for species in species_columns:
+            val = row[species]
+            if pd.notna(val) and val not in ("None", None):
+                locus_to_leftmost[(species, str(val))] = leftmost_gene
+
+    component_order: List[str] = []
+    component_species_map: Dict[str, List[str]] = {}
+    component_gene_sets: Dict[str, Dict[str, set[str]]] = {}
+
+    for species in species_order:
+        species_data = multimodulon._species_data[species]
+
+        try:
+            species_M = species_data.M
+        except AttributeError as exc:
+            raise ValueError(f"M matrix not available for species '{species}'. Run multiview ICA first.") from exc
+
+        try:
+            presence_matrix = species_data.presence_matrix
+        except AttributeError as exc:
+            raise ValueError(f"presence_matrix not available for species '{species}'. Run optimize_M_thresholds() first.") from exc
+
+        if presence_matrix is None or presence_matrix.empty:
+            logger.warning(f"Skipping species '{species}' because presence_matrix is empty.")
+            continue
+
+        selected_components = [
+            comp for comp in species_M.columns[:n_components] if comp in presence_matrix.columns
+        ]
+
+        for component in selected_components:
+            if component not in component_order:
+                component_order.append(component)
+
+            component_species_map.setdefault(component, []).append(species)
+
+            gene_mask = presence_matrix[component] == 1
+            component_genes = presence_matrix.index[gene_mask]
+
+            mapped_genes = set()
+            for gene in component_genes:
+                gene_str = str(gene)
+                mapped_gene = locus_to_leftmost.get((species, gene_str))
+                if mapped_gene:
+                    mapped_genes.add(mapped_gene)
+                elif gene_str in leftmost_genes:
+                    mapped_genes.add(gene_str)
+                else:
+                    mapped_genes.add(gene_str)
+
+            component_gene_sets.setdefault(component, {})[species] = mapped_genes
+
+    if not component_order:
+        raise ValueError("No components found within the specified n_components across species.")
+
+    component_shared_counts: Dict[str, int] = {}
+    for component in component_order:
+        species_list = component_species_map.get(component, [])
+        shared_genes: Optional[set[str]] = None
+        for species in species_list:
+            genes = component_gene_sets[component].get(species, set())
+            if shared_genes is None:
+                shared_genes = set(genes)
+            else:
+                shared_genes &= genes
+            if not shared_genes:
+                break
+        component_shared_counts[component] = len(shared_genes) if shared_genes is not None else 0
+
+    conservation_df = pd.DataFrame(
+        np.nan, index=species_order, columns=component_order, dtype=float
+    )
+
+    for component in component_order:
+        shared_count = component_shared_counts.get(component, 0)
+        for species in species_order:
+            gene_set = component_gene_sets.get(component, {}).get(species)
+            if gene_set is None:
+                continue
+            gene_total = len(gene_set)
+            if gene_total == 0:
+                conservation_df.loc[species, component] = 0.0
+            else:
+                ratio = shared_count / gene_total
+                conservation_df.loc[species, component] = float(max(0.0, min(1.0, ratio)))
+
+    fig, ax = plt.subplots(figsize=fig_size)
+
+    x_positions = np.arange(len(component_order))
+    y_positions = np.arange(len(species_order))
+
+    for y_idx, species in enumerate(species_order):
+        color = species_color_map[species]
+        for x_idx, component in enumerate(component_order):
+            value = conservation_df.loc[species, component]
+            if pd.isna(value) or value <= 0:
+                continue
+            ax.scatter(
+                x_idx,
+                y_idx,
+                s=value * bubble_scale,
+                color=color,
+                alpha=0.8,
+                edgecolors='none'
+            )
+
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(component_order, rotation=45, ha='right')
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels(species_order)
+    ax.set_xlim(-0.5, len(component_order) - 0.5)
+    ax.set_ylim(-0.5, len(species_order) - 0.5)
+    ax.invert_yaxis()
+
+    ax.set_xlabel('iModulons')
+    ax.set_ylabel('Species/Strains')
+
+    if font_path and os.path.exists(font_path):
+        font_prop = fm.FontProperties(fname=font_path)
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
+        ax.xaxis.label.set_fontproperties(font_prop)
+        ax.yaxis.label.set_fontproperties(font_prop)
+
+    ax.set_facecolor('none')
+    fig.patch.set_alpha(0)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.grid(False)
+
+    plt.tight_layout()
+
+    if save_path:
+        save_path = Path(save_path)
+        if save_path.suffix in ['.svg', '.png', '.pdf', '.jpg', '.jpeg']:
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(save_path, dpi=300, bbox_inches='tight', transparent=True)
+        else:
+            save_path.mkdir(parents=True, exist_ok=True)
+            output_file = save_path / "iM_conservation_bubble_matrix.svg"
+            fig.savefig(output_file, dpi=300, bbox_inches='tight', transparent=True)
+            logger.info(f"Bubble matrix saved to {output_file}")
+
+    plt.show()
+
+    return conservation_df
+
+
 def compare_core_iModulon_activity(multimodulon, component: str, species_in_comparison: List[str], 
                                   condition_list: List[str], save_path: Optional[str] = None,
                                   fig_size: Tuple[float, float] = (12, 3), font_path: Optional[str] = None,
