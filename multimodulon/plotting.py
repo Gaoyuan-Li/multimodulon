@@ -2419,8 +2419,8 @@ def plot_iM_conservation_bubble_matrix(
             if base_radius <= 0:
                 continue
 
-            layers = max(20, int(np.ceil(80 * min(value, 1.0))))
-            outer_alpha = 1 - 0.3 * min(value, 1.0)
+            layers = max(40, int(np.ceil(120 * min(value, 1.0))))
+            outer_alpha = 1 - 0.7 * min(value, 1.0)
 
             # Draw stacked circles to approximate a radial gradient with translucent edges.
             for layer in range(layers):
@@ -2429,7 +2429,7 @@ def plot_iM_conservation_bubble_matrix(
                 if layer_radius <= 0:
                     continue
                 t = 1 - fraction  # 0 at outer edge, 1 near center
-                alpha = outer_alpha + (1 - outer_alpha) * (t ** 1.2)
+                alpha = outer_alpha + (1 - outer_alpha) * (t ** 0.7)
                 alpha = max(0.0, min(1.0, alpha))
                 circle = patches.Circle(
                     (x_idx, y_idx),
