@@ -2225,8 +2225,8 @@ def plot_iM_conservation_bubble_matrix(
     multimodulon,
     n_components: int,
     reference_order: Optional[List[str]] = None,
-    species_colors: Optional[List[str]] = None,
-    fig_size: Tuple[float, float] = (12, 8),
+    iM_colors: Optional[List[str]] = None,
+    fig_size: Tuple[float, float] = (10, 4),
     bubble_scale: float = 800.0,
     save_path: Optional[Union[str, Path]] = None,
     font_path: Optional[str] = None
@@ -2245,10 +2245,10 @@ def plot_iM_conservation_bubble_matrix(
         Number of leading components (per species) to include on the x-axis.
     reference_order : list of str, optional
         Custom ordering for species on the y-axis.
-    species_colors : list of str, optional
-        Colors corresponding to species (same order as y-axis). If None, uses multimodulon.species_palette.
+    iM_colors : list of str, optional
+        Colors applied per iModulon (column order). If None, defaults to matplotlib tab20 colors.
     fig_size : tuple of float, optional
-        Figure size (width, height). Default: (12, 8).
+        Figure size (width, height). Default: (10, 4).
     bubble_scale : float, optional
         Scaling factor applied to bubble areas. Default: 800.0.
     save_path : str or Path, optional
@@ -2278,19 +2278,8 @@ def plot_iM_conservation_bubble_matrix(
         remaining_species = [sp for sp in species_order if sp not in ordered_species]
         species_order = ordered_species + remaining_species
 
-    if species_colors is not None:
-        if len(species_colors) != len(species_order):
-            raise ValueError("species_colors length must match the number of species.")
-        species_color_map = {species: color for species, color in zip(species_order, species_colors)}
-    else:
-        palette = getattr(multimodulon, "species_palette", {}) or {}
-        species_color_map = {}
-        for idx, species in enumerate(species_order):
-            if species in palette:
-                species_color_map[species] = palette[species]
-            else:
-                color_idx = idx / max(1, len(species_order) - 1) if len(species_order) > 1 else 0
-                species_color_map[species] = plt.cm.tab20(color_idx)
+    # Determine colors per component (column)
+    component_color_map: Dict[str, str] = {}
 
     combined_gene_db = getattr(multimodulon, "combined_gene_db", None)
     if combined_gene_db is None:
@@ -2402,11 +2391,20 @@ def plot_iM_conservation_bubble_matrix(
 
     fig, ax = plt.subplots(figsize=fig_size)
 
+    # Assign colors to components (columns)
+    if iM_colors is not None:
+        if len(iM_colors) != len(component_order):
+            raise ValueError("iM_colors length must match the number of selected iModulons.")
+        component_color_map = {component: color for component, color in zip(component_order, iM_colors)}
+    else:
+        tab_colors = plt.cm.tab20(np.linspace(0, 1, len(component_order)))
+        for component, color in zip(component_order, tab_colors):
+            component_color_map[component] = color
+
     x_positions = np.arange(len(component_order))
     y_positions = np.arange(len(species_order))
 
     for y_idx, species in enumerate(species_order):
-        color = species_color_map[species]
         for x_idx, component in enumerate(component_order):
             value = conservation_df.loc[species, component]
             if pd.isna(value) or value <= 0:
@@ -2415,7 +2413,7 @@ def plot_iM_conservation_bubble_matrix(
                 x_idx,
                 y_idx,
                 s=value * bubble_scale,
-                color=color,
+                color=component_color_map[component],
                 alpha=0.8,
                 edgecolors='none'
             )
@@ -2431,12 +2429,20 @@ def plot_iM_conservation_bubble_matrix(
     ax.set_xlabel('iModulons')
     ax.set_ylabel('Species/Strains')
 
-    if font_path and os.path.exists(font_path):
+    font_prop = None
+    if font_path:
+        if not os.path.exists(font_path):
+            raise ValueError(f"Provided font_path does not exist: {font_path}")
         font_prop = fm.FontProperties(fname=font_path)
-        for label in ax.get_xticklabels() + ax.get_yticklabels():
-            label.set_fontproperties(font_prop)
+
+    if font_prop:
+        for text_obj in ax.get_xticklabels() + ax.get_yticklabels():
+            text_obj.set_fontproperties(font_prop)
         ax.xaxis.label.set_fontproperties(font_prop)
         ax.yaxis.label.set_fontproperties(font_prop)
+        for text in ax.texts:
+            text.set_fontproperties(font_prop)
+
 
     ax.set_facecolor('none')
     fig.patch.set_alpha(0)
