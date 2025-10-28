@@ -18,7 +18,7 @@ https://multimodulon.readthedocs.io/en/latest/
 
 - Python >= 3.10
 - NCBI BLAST+ tools (required for BBH generation)
-- **PyTorch 2.6.0 with CUDA support (required for multi-view ICA)**
+- **PyTorch (required for multi-view ICA)** (This package has been tested and verified to work with PyTorch 2.6.0 and 2.9.0)
 
 ## Installation
 
