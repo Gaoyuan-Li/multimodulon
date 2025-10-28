@@ -100,10 +100,10 @@ def _run_single_gene_optimization(
     all_metric_per_k: Dict[int, List[float]] = {k: [] for k in k_candidates}
     
     for run in range(num_runs):
-        k_iterator = (
-            tqdm(k_candidates, desc=f"Run {run+1}/{num_runs}")
-            if num_runs > 1
-            else k_candidates
+        k_iterator = tqdm(
+            k_candidates,
+            desc=f"Run {run+1}/{num_runs}",
+            leave=False
         )
         
         for k in k_iterator:
