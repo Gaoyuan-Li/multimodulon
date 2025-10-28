@@ -123,7 +123,7 @@ Main class for multi-species/strain analysis.
 - `generate_A()`: Generate A matrices for all species from M matrices (A = M.T @ X)
 
 **Optimization:**
-- `optimize_number_of_core_components(**kwargs)`: Optimize number of core components using specified metric
+- `optimize_number_of_core_components(**kwargs)`: Optimize number of core components using the single-gene filter metric
 - `optimize_number_of_unique_components(**kwargs)`: Optimize unique components for each species
 - `optimize_M_thresholds(method="Otsu's method", quantile_threshold=90)`: Optimize thresholds for M matrices
 

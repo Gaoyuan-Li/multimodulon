@@ -244,13 +244,16 @@ Assess ICA Results
    for species, var in explained_var.items():
        print(f"{species}: {var:.1%} variance explained")
    
-   # Check component effect sizes
-   from multimodulon.multiview_ica_optimization import calculate_average_effect_sizes
+   # Check components passing the single-gene filter
+   from multimodulon.optimization import passes_single_gene_filter
    
-   effect_sizes = calculate_average_effect_sizes(
-       M_matrices,
-       num_top_gene=20
-   )
+   for species, M in M_matrices.items():
+       n_components = M.shape[1]
+       n_passing = sum(
+           passes_single_gene_filter(M.iloc[:, idx].values)
+           for idx in range(n_components)
+       )
+       print(f"{species}: {n_passing}/{n_components} components pass single-gene filter")
 
 Component Correlation
 ~~~~~~~~~~~~~~~~~~~~~

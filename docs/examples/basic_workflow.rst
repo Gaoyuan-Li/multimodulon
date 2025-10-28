@@ -100,24 +100,23 @@ This step:
 * Reports dimensions and recommendations
 
 Step 6: Optimize Number of Core Components
--------------------------------------------
+------------------------------------------
 
-Use Cohen's d effect size metric to automatically determine the optimal number of core components.
+Use the single-gene filter metric to automatically determine the optimal number of core components.
 
 .. code-block:: python
 
    # Optimize number of core components
    optimal_num_core_components = multiModulon.optimize_number_of_core_components(
-       metric='effect_size',       # Use Cohen's d effect size
-       step=5,                     # Test k = 5, 10, 15, 20, ...
-       save_path=output_dir,       # Save plots
-       fig_size=(7, 5),           # Figure size
+      step=5,                    # Test k = 5, 10, 15, 20, ...
+      save_path=output_dir,      # Save plots
+      fig_size=(7, 5),           # Figure size
    )
 
 The optimization:
 
 * Tests different numbers of core components
-* Evaluates using Cohen's d effect size
+* Removes components dominated by a single gene
 * Selects optimal k based on interpretability
 * Saves optimization plots
 
@@ -139,7 +138,7 @@ Determine the optimal number of unique (species-specific) components for each st
 This process:
 
 * Tests different numbers of unique components per species
-* Evaluates component quality using effect size
+* Removes single-gene components before clustering/counting
 * Returns optimal numbers for each species
 
 Step 8: Run Robust Multi-view ICA

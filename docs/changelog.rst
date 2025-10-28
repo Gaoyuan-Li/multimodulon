@@ -24,7 +24,7 @@ Initial release of MultiModulon package.
 * BBH generation using containerized BLAST
 * Gene alignment with customizable thresholds
 * Multi-view ICA with PyTorch backend
-* Cohen's d effect size filtering
+* Single-gene component filtering
 * Otsu's method for threshold optimization
 
 **Visualization:**
@@ -36,7 +36,7 @@ Initial release of MultiModulon package.
 
 **Optimization:**
 
-* NRE and effect size based optimization
+* Single-gene filter–based optimization workflow
 * Separate optimization for core and unique components
 * Cross-validation support
 * Automated parameter selection

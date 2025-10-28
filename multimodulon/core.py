@@ -13,7 +13,7 @@ from typing import Dict, Optional, Tuple, List, Union
 
 from .species_data import SpeciesData
 from .gene_alignment import generate_BBH, align_genes
-from .optimization import optimize_number_of_core_components, optimize_number_of_unique_components, calculate_cohens_d_effect_size
+from .optimization import optimize_number_of_core_components, optimize_number_of_unique_components, passes_single_gene_filter
 from .utils import BBHAnalyzer
 from .gff_utils import gff2pandas, create_gene_table, extract_protein_sequences
 from .multiview_ica import run_multiview_ica
@@ -497,8 +497,6 @@ class MultiModulon:
             Number of core components
         mode : str, optional
             'gpu' or 'cpu' (default: 'gpu')
-        effect_size_threshold : float, optional
-            Cohen's d threshold for component filtering
         
         Examples
         --------
@@ -545,7 +543,6 @@ class MultiModulon:
         
         # Get other parameters
         mode = kwargs.get('mode', 'gpu')
-        effect_size_threshold = kwargs.get('effect_size_threshold', None)
         
         # Prepare X matrices dictionary
         species_X_matrices = {}
@@ -557,8 +554,7 @@ class MultiModulon:
             species_X_matrices=species_X_matrices,
             a_values=a_values,
             c=c,
-            mode=mode,
-            effect_size_threshold=effect_size_threshold
+            mode=mode
         )
         
         # Save M matrices to each species
@@ -593,18 +589,15 @@ class MultiModulon:
         c: int,
         num_runs: int = 100,
         mode: str = 'gpu',
-        seed: int = 42,
-        effect_size_threshold: Optional[float] = 1,
-        effect_size_threshold_core: Optional[float] = None,
-        effect_size_threshold_unique: Optional[float] = None,
-        num_top_gene: int = 20
+        seed: int = 42
     ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame]]:
         """
         Run robust multi-view ICA with clustering to identify consistent components.
         
         This method runs multi-view ICA multiple times and uses clustering to identify
-        robust components that appear consistently across runs. Components are filtered
-        by Cohen's d effect size before clustering.
+        robust components that appear consistently across runs. Components whose largest
+        absolute weight is less than three times the second-largest (per species) are
+        treated as single-gene components and removed before clustering.
         
         Parameters
         ----------
@@ -619,17 +612,8 @@ class MultiModulon:
             'gpu' or 'cpu' mode for computation
         seed : int, default=42
             Random seed for reproducibility
-        effect_size_threshold : float, optional, default=1
-            Cohen's d threshold for both core and unique components.
-            Only used if specific thresholds are not provided.
-        effect_size_threshold_core : float, optional
-            Cohen's d threshold specifically for core components.
-            If provided, overrides effect_size_threshold for core components.
-        effect_size_threshold_unique : float, optional
-            Cohen's d threshold specifically for unique components.
-            If provided, overrides effect_size_threshold for unique components.
-        num_top_gene : int, default=20
-            Number of top genes to use when calculating Cohen's d effect size
+        Components are filtered using the single-gene criterion described in the
+        package overview; no additional thresholds are required.
             
         Returns
         -------
@@ -647,28 +631,13 @@ class MultiModulon:
         >>> M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
         ...     a=a_values,
         ...     c=30,
-        ...     num_runs=100,
-        ...     effect_size_threshold=1
-        ... )
-        
-        >>> # Use different thresholds for core and unique components
-        >>> M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
-        ...     a=a_values,
-        ...     c=30,
-        ...     effect_size_threshold_core=5,
-        ...     effect_size_threshold_unique=3
+        ...     num_runs=100
         ... )
         
         >>> # Access the results
         >>> M_strain1 = M_matrices['strain1']  # Mixing matrix for strain1
         >>> A_strain1 = A_matrices['strain1']  # Activity matrix for strain1
         """
-        # Set effect size thresholds
-        if effect_size_threshold_core is None:
-            effect_size_threshold_core = effect_size_threshold if effect_size_threshold is not None else 1
-        if effect_size_threshold_unique is None:
-            effect_size_threshold_unique = effect_size_threshold if effect_size_threshold is not None else 1
-            
         species_list = list(self._species_data.keys())
         n_species = len(species_list)
         
@@ -722,12 +691,7 @@ class MultiModulon:
                 for comp_idx in range(c):
                     weight_vector = M.iloc[:, comp_idx].values
                     
-                    # Calculate effect size
-                    effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
-                    
-                    # Only keep components above threshold
-                    if effect_size >= effect_size_threshold_core:
-                        # Apply sign convention
+                    if passes_single_gene_filter(weight_vector):
                         component = self._enforce_sign_convention(weight_vector)
                         core_components[species].append(component)
                 
@@ -735,12 +699,7 @@ class MultiModulon:
                 for comp_idx in range(c, a[species]):
                     weight_vector = M.iloc[:, comp_idx].values
                     
-                    # Calculate effect size
-                    effect_size = calculate_cohens_d_effect_size(weight_vector, seed, num_top_gene)
-                    
-                    # Only keep components above threshold
-                    if effect_size >= effect_size_threshold_unique:
-                        # Apply sign convention
+                    if passes_single_gene_filter(weight_vector):
                         component = self._enforce_sign_convention(weight_vector)
                         unique_components[species].append(component)
         
@@ -988,8 +947,8 @@ class MultiModulon:
         """Align genes across all species using Union-Find algorithm."""
         return align_genes(self, input_bbh_dir, output_dir, reference_order, bbh_threshold)
     
-    def optimize_number_of_core_components(self, **kwargs) -> Tuple[int, Dict[int, float]]:
-        """Optimize the number of core components using specified metric."""
+    def optimize_number_of_core_components(self, **kwargs) -> int:
+        """Optimize the number of core components using the single-gene filter."""
         return optimize_number_of_core_components(self, **kwargs)
     
     def optimize_number_of_unique_components(self, **kwargs) -> Tuple[Dict[str, int], Dict[str, int]]:

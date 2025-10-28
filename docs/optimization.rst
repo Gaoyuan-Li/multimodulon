@@ -11,10 +11,7 @@ Choosing the right number of components is crucial for meaningful results. Multi
 1. **Optimal number of core components** - Shared across all species
 2. **Optimal number of unique components** - Specific to each species
 
-Two optimization metrics are available:
-
-* **Cohen's d Effect Size** - between top genes and others (default, and recommended)
-* **NRE (Normalized Reconstruction Error)** - From paper https://proceedings.mlr.press/v216/pandeva23a.html)
+All optimization now relies on the **single-gene filter** metric, which removes components dominated by a single gene (largest absolute weight < 3 × second-largest).
 
 Optimizing Core Components
 --------------------------
@@ -25,49 +22,38 @@ Optimizing Core Components
 
    :param int max_k: Maximum number of core components to test (Auto-determined)
    :param int step: Step size for k candidates (default: 5)
-   :param int max_a_per_view: Maximum components per species (default: max_k)
-   :param float train_frac: Fraction of data for training (default: 0.75)
-   :param int num_runs: Number of cross-validation runs (default: 1)
+   :param int num_runs: Number of runs per k value (default: 1)
    :param str mode: Computation mode 'gpu' or 'cpu' (default: 'gpu')
    :param int seed: Random seed for reproducibility (default: 42)
-   :param str metric: Optimization metric 'nre' or 'effect_size' (default: 'effect_size')
    :param str save_path: Directory to save optimization plot
    :param tuple fig_size: Figure size as (width, height) (default: (5, 3))
    :param str font_path: Path to font file for plots
    
-   :return: Tuple of (optimal_num_core_components, metric_scores)
-   :rtype: Tuple[int, Dict[int, float]]
+   :return: Optimal number of core components
+   :rtype: int
 
 Basic Usage
 ~~~~~~~~~~~
 
 .. code-block:: python
 
-   # Optimize using Cohen's d effect size
-   optimal_core, scores = multiModulon.optimize_number_of_core_components(
+   # Optimize using single-gene filter
+   optimal_core = multiModulon.optimize_number_of_core_components(
        max_k=30,
        step=5,
-       metric='effect_size',
-       save_plot="effect_size_optimization.png"
+       save_plot="single_gene_optimization.png"
    )
 
    print(f"Optimal number of core components: {optimal_core}")
 
-Understanding the Metrics
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Understanding the Metric
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-**NRE (Normalized Reconstruction Error):**
+**Single-gene Filter:**
 
-* Measures how well core components reconstruct the data
-* Lower values are better
-* May include noise components
-
-**Cohen's d Effect Size:**
-
-* Measures separation between top genes and others
-* Higher values indicate components with a more clear gene membership
-* Better for biological interpretability
-* Filters out noise components
+* Removes components where the top gene does not dominate (largest absolute weight < 3 × second-largest)
+* Highlights components with distributed gene contributions
+* Improves biological interpretability by eliminating single-gene artifacts
 
 Optimizing Unique Components
 ----------------------------
@@ -114,7 +100,7 @@ For each species:
 
 1. Tests different numbers of unique components
 2. Runs ICA with fixed core + varying unique
-3. Calculates mean Cohen's d for unique components
+3. Removes single-gene components before clustering/counting
 4. Selects number that maximizes interpretable components
 
 
@@ -127,10 +113,9 @@ Here's a complete optimization workflow:
 
    # Step 1: Optimize core components
    print("Optimizing core components...")
-   optimal_core, core_scores = multiModulon.optimize_number_of_core_components(
+   optimal_core = multiModulon.optimize_number_of_core_components(
        max_k=40,
        step=5,
-       metric='effect_size',
        num_runs=3,
        save_path="optimization_results/",
        fig_size=(6, 4)
@@ -164,7 +149,7 @@ Here's a complete optimization workflow:
 Best Practices
 --------------
 
-1. **Start with effect_size metric** - More biologically relevant
+1. **Use the single-gene filter** - More biologically relevant
 2. **Use multiple runs** - At least 3-5 for reliability  
 3. **Inspect plots** - Don't just trust automatic selection
 4. **Validate results** - Check if components make biological sense
