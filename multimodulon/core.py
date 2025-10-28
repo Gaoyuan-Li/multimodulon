@@ -718,6 +718,17 @@ class MultiModulon:
         # Create final M matrices with robust components
         print(f"\nCreating final M matrices with robust components...")
         final_M_matrices = {}
+        consistent_core_centroids = {
+            core_name: centroids
+            for core_name, centroids in core_results['centroids'].items()
+            if len(centroids) == len(species_list)
+        }
+        removed_core_components = [
+            core_name
+            for core_name in core_results['centroids'].keys()
+            if core_name not in consistent_core_centroids
+        ]
+        expected_core_components = list(consistent_core_centroids.keys())
         
         for species in species_list:
             # Get gene names from X matrix
@@ -726,22 +737,20 @@ class MultiModulon:
             # Collect all components for this species
             components = []
             component_names = []
-            
+
             # Add core components
-            for core_name, centroids in core_results['centroids'].items():
-                if species in centroids:
-                    component_vector = np.asarray(centroids[species])
-                    if passes_single_gene_filter(component_vector):
-                        components.append(component_vector)
-                        component_names.append(core_name)
-            
+            for core_name in expected_core_components:
+                centroids = consistent_core_centroids[core_name]
+                component_vector = np.asarray(centroids[species])
+                components.append(component_vector)
+                component_names.append(core_name)
+
             # Add unique components
             for unique_name, centroid in unique_results[species]:
                 component_vector = np.asarray(centroid)
-                if passes_single_gene_filter(component_vector):
-                    components.append(component_vector)
-                    component_names.append(unique_name)
-            
+                components.append(component_vector)
+                component_names.append(unique_name)
+
             if components:
                 # Create M matrix
                 M = pd.DataFrame(
@@ -764,6 +773,13 @@ class MultiModulon:
             n_core = len([c for c in M_matrix.columns if c.startswith('Core_')])
             n_unique = len([c for c in M_matrix.columns if c.startswith('Unique_')])
             print(f"✓ {species}: {M_matrix.shape} ({n_core} core, {n_unique} unique components)")
+
+        if removed_core_components:
+            removed_list = ", ".join(sorted(removed_core_components))
+            print(
+                "Removed core components lacking centroids for all species: "
+                f"{removed_list}"
+            )
         
         # Generate A matrices using the robust M matrices
         print("\nGenerating A matrices from robust M matrices...")
