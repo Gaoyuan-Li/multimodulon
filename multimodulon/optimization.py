@@ -31,7 +31,7 @@ def passes_single_gene_filter(weight_vector: np.ndarray, ratio_threshold: float 
     """
     Determine whether a component passes the single-gene filter.
     
-    Components are rejected when the largest absolute weight is less than
+    Components are rejected when the largest absolute weight is more than
     ``ratio_threshold`` times the second-largest absolute weight.
     
     Args:
@@ -52,10 +52,10 @@ def passes_single_gene_filter(weight_vector: np.ndarray, ratio_threshold: float 
     second_largest = top_two.min()
     
     if second_largest == 0:
-        # When the second-largest weight is zero, the ratio is infinite; keep component.
-        return True
-    
-    return largest >= ratio_threshold * second_largest
+        # If only one non-zero entry, treat as single-gene component (reject).
+        return largest == 0
+
+    return largest <= ratio_threshold * second_largest
 
 
 def _run_single_gene_optimization(

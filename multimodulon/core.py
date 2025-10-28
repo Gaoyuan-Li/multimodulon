@@ -730,13 +730,17 @@ class MultiModulon:
             # Add core components
             for core_name, centroids in core_results['centroids'].items():
                 if species in centroids:
-                    components.append(centroids[species])
-                    component_names.append(core_name)
+                    component_vector = np.asarray(centroids[species])
+                    if passes_single_gene_filter(component_vector):
+                        components.append(component_vector)
+                        component_names.append(core_name)
             
             # Add unique components
             for unique_name, centroid in unique_results[species]:
-                components.append(centroid)
-                component_names.append(unique_name)
+                component_vector = np.asarray(centroid)
+                if passes_single_gene_filter(component_vector):
+                    components.append(component_vector)
+                    component_names.append(unique_name)
             
             if components:
                 # Create M matrix
@@ -786,9 +790,11 @@ class MultiModulon:
         print(f"\n{'='*60}")
         print("Robust multi-view ICA completed!")
         print(f"{'='*60}")
-        print(f"Total core clusters identified: {len(core_results['clusters'])}")
+        any_species = species_list[0]
+        core_count = len([col for col in final_M_matrices[any_species].columns if col.startswith('Core_')])
+        print(f"Total core components retained: {core_count}")
         for species in species_list:
-            n_unique = len(unique_results[species])
+            n_unique = len([col for col in final_M_matrices[species].columns if col.startswith('Unique_')])
             print(f"{species}: {n_unique} unique components")
         print(f"{'='*60}")
         

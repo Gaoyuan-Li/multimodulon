@@ -11,7 +11,7 @@ Choosing the right number of components is crucial for meaningful results. Multi
 1. **Optimal number of core components** - Shared across all species
 2. **Optimal number of unique components** - Specific to each species
 
-All optimization now relies on the **single-gene filter** metric, which removes components dominated by a single gene (largest absolute weight < 3 × second-largest).
+All optimization now relies on the **single-gene filter** metric, which removes components dominated by a single gene (largest absolute weight > 3 × second-largest).
 
 Optimizing Core Components
 --------------------------
@@ -51,7 +51,7 @@ Understanding the Metric
 
 **Single-gene Filter:**
 
-* Removes components where the top gene does not dominate (largest absolute weight < 3 × second-largest)
+* Removes components dominated by a single gene (largest absolute weight > 3 × second-largest)
 * Highlights components with distributed gene contributions
 * Improves biological interpretability by eliminating single-gene artifacts
 
