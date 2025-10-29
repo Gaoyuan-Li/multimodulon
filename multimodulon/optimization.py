@@ -204,43 +204,19 @@ def _run_single_gene_optimization(
     
     k_sorted = sorted(mean_metric_per_k.keys())
     counts = [mean_metric_per_k[k] for k in k_sorted]
-    
+
     if len(k_sorted) < 3:
         optimal_num_core_components = k_sorted[np.argmax(counts)]
     else:
-        max_count = max(counts)
-        min_count = min(counts)
-        count_range = max_count - min_count
-        
-        if count_range == 0:
-            optimal_num_core_components = k_sorted[0]
-        else:
-            threshold_percentage = 0.9
-            target_count = min_count + threshold_percentage * count_range
-            
-            for i, (k_value, count) in enumerate(zip(k_sorted, counts)):
-                if count >= target_count:
-                    if i < len(k_sorted) - 2:
-                        next_counts = counts[i:i+3]
-                        count_std = np.std(next_counts)
-                        if count_std < 0.1 * count:
-                            optimal_num_core_components = k_value
-                            break
-                    else:
-                        optimal_num_core_components = k_value
-                        break
-            else:
-                rates = []
-                for i in range(1, len(counts)):
-                    rate = (counts[i] - counts[i-1]) / (k_sorted[i] - k_sorted[i-1])
-                    rates.append(rate)
-                
-                for i in range(1, len(rates)):
-                    if rates[i] < 0.1 * rates[0]:
-                        optimal_num_core_components = k_sorted[i]
-                        break
-                else:
-                    optimal_num_core_components = k_sorted[-1]
+        # Find the top 3 dimensions with highest robust components
+        # Create list of (k, count) pairs, sorted by count descending
+        k_count_pairs = sorted(zip(k_sorted, counts), key=lambda x: x[1], reverse=True)
+
+        # Get top 3 dimensions
+        top_3_dimensions = sorted([k for k, _ in k_count_pairs[:3]])  # Sort k values ascending
+
+        # Select the smallest dimension among the top 3
+        optimal_num_core_components = top_3_dimensions[0]
 
     descriptor = (
         "robust components passing filter"
@@ -271,7 +247,7 @@ def _run_single_gene_optimization(
         mean_values = [mean_metric_per_k[k] for k in k_values]
         
         ax.plot(k_values, mean_values, 'go-', linewidth=2, markersize=8,
-                label='Components passing single-gene filter')
+                label='Non-single gene robust components')
         
         ax.axvline(x=optimal_num_core_components, color='red', linestyle='--', alpha=0.7, linewidth=2,
                    label=f'Optimal k = {optimal_num_core_components}')
@@ -280,7 +256,7 @@ def _run_single_gene_optimization(
         
         if num_runs_per_dimension is not None and num_runs_per_dimension > 1:
             ax.set_ylabel('Number of robust components', fontsize=12)
-            ax.set_title('Optimization of core components (robust clustering)', fontsize=14, fontweight='bold')
+            ax.set_title('Optimization of core components', fontsize=14, fontweight='bold')
         else:
             ax.set_ylabel('Number of components', fontsize=12)
             ax.set_title('Optimization of core components', fontsize=14, fontweight='bold')
@@ -298,11 +274,7 @@ def _run_single_gene_optimization(
             for text in ax.get_legend().get_texts():
                 text.set_fontproperties(font_prop)  # type: ignore[name-defined]
         
-        count_desc = "robust components" if num_runs_per_dimension and num_runs_per_dimension > 1 else "components"
-        label_text = (
-            f'Optimal k = {optimal_num_core_components}\n'
-            f'{int(round(mean_metric_per_k[optimal_num_core_components]))} {count_desc} passing filter'
-        )
+        label_text = f'Optimal k = {optimal_num_core_components}'
         
         text_obj = ax.text(
             0.02,
@@ -660,30 +632,23 @@ def optimize_number_of_unique_components(
                 
                 consistent_counts[a_test] = consistent_unique
         
-        # Find optimal a using 90% growth method
+        # Find optimal a using top 3 method
         a_sorted = sorted(consistent_counts.keys())
         counts = [consistent_counts[a] for a in a_sorted]
-        
-        if len(a_sorted) < 2:
-            optimal_a = a_sorted[0]
+
+        if len(a_sorted) < 3:
+            # If less than 3 candidates, pick the one with max count
+            optimal_a = a_sorted[np.argmax(counts)] if counts else a_sorted[0]
         else:
-            max_count = max(counts)
-            min_count = min(counts)
-            count_range = max_count - min_count
-            
-            if count_range == 0:
-                optimal_a = a_sorted[0]
-            else:
-                # Find where we reach 90% of the range
-                threshold_percentage = 0.9
-                target_count = min_count + threshold_percentage * count_range
-                
-                # Find the smallest a that achieves at least the target count
-                optimal_a = a_sorted[0]
-                for i, (a, count) in enumerate(zip(a_sorted, counts)):
-                    if count >= target_count:
-                        optimal_a = a
-                        break
+            # Find the top 3 dimensions with highest robust components
+            # Create list of (a, count) pairs, sorted by count descending
+            a_count_pairs = sorted(zip(a_sorted, counts), key=lambda x: x[1], reverse=True)
+
+            # Get top 3 dimensions
+            top_3_dimensions = sorted([a for a, _ in a_count_pairs[:3]])  # Sort a values ascending
+
+            # Select the smallest dimension among the top 3
+            optimal_a = top_3_dimensions[0]
         
         optimal_num_unique_components[target_species] = optimal_a - optimal_num_core_components
         
@@ -707,7 +672,7 @@ def optimize_number_of_unique_components(
         ax.set_xlabel('Number of Total Components (a)', fontsize=12)
         if num_runs_per_dimension > 1:
             ax.set_ylabel('Number of robust QC-passed components', fontsize=12)
-            ax.set_title(f'Optimization of Unique Components for {target_species} (Robust clustering)', fontsize=14, fontweight='bold')
+            ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
         else:
             ax.set_ylabel('Number of QC-passed components', fontsize=12)
             ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
