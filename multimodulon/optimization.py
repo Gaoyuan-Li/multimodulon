@@ -632,23 +632,16 @@ def optimize_number_of_unique_components(
                 
                 consistent_counts[a_test] = consistent_unique
         
-        # Find optimal a using top 3 method
+        # Find optimal a by selecting the highest count
         a_sorted = sorted(consistent_counts.keys())
         counts = [consistent_counts[a] for a in a_sorted]
 
-        if len(a_sorted) < 3:
-            # If less than 3 candidates, pick the one with max count
-            optimal_a = a_sorted[np.argmax(counts)] if counts else a_sorted[0]
+        # Select the dimension with the highest count
+        if counts:
+            max_count_idx = np.argmax(counts)
+            optimal_a = a_sorted[max_count_idx]
         else:
-            # Find the top 3 dimensions with highest robust components
-            # Create list of (a, count) pairs, sorted by count descending
-            a_count_pairs = sorted(zip(a_sorted, counts), key=lambda x: x[1], reverse=True)
-
-            # Get top 3 dimensions
-            top_3_dimensions = sorted([a for a, _ in a_count_pairs[:3]])  # Sort a values ascending
-
-            # Select the smallest dimension among the top 3
-            optimal_a = top_3_dimensions[0]
+            optimal_a = a_sorted[0] if a_sorted else optimal_num_core_components
         
         optimal_num_unique_components[target_species] = optimal_a - optimal_num_core_components
         
