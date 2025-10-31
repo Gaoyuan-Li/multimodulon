@@ -92,7 +92,11 @@ class MultiModulon:
     gene annotations, and ortholog relationships across multiple species.
     """
     
-    def __init__(self, input_folder_path: str):
+    def __init__(
+        self,
+        input_folder_path: str,
+        skip: Optional[List[str]] | None = None,
+    ):
         """
         Initialize MultiModulon object.
         
@@ -100,12 +104,43 @@ class MultiModulon:
         ----------
         input_folder_path : str
             Path to the Input_Data folder containing species/strain subfolders
+        skip : list of str, optional
+            Components to skip during initialization. Supported values are
+            ``"log_tpm"``, ``"log_tpm_norm"``, and ``"samplesheet"``.
+            When provided, loading of the specified components and the
+            validation step are skipped. Components can be specified with or
+            without underscores (e.g., ``"sample_sheet"``).
         """
         print(f"\nInitializing MultiModulon...")
         
         self.input_folder_path = Path(input_folder_path)
         if not self.input_folder_path.exists():
             raise ValueError(f"Input folder not found: {input_folder_path}")
+
+        # Normalize skip components
+        self._skip_components: set[str] = set()
+        if skip:
+            canonical_map = {
+                "log_tpm": "log_tpm",
+                "logtpm": "log_tpm",
+                "log_tpm_norm": "log_tpm_norm",
+                "logtpm_norm": "log_tpm_norm",
+                "sample_sheet": "samplesheet",
+                "samplesheet": "samplesheet",
+            }
+            unknown_components = []
+            for component in skip:
+                normalized = component.lower().replace("-", "_")
+                canonical = canonical_map.get(normalized)
+                if canonical:
+                    self._skip_components.add(canonical)
+                else:
+                    unknown_components.append(component)
+            if unknown_components:
+                warnings.warn(
+                    f"Unknown skip components ignored: {', '.join(map(str, unknown_components))}"
+                )
+        self._skip_validation = bool(self._skip_components)
         
         # Initialize storage
         self._species_data: dict[str, SpeciesData] = {}
@@ -136,23 +171,45 @@ class MultiModulon:
             
             try:
                 species_data = SpeciesData(species_name, species_dir)
-                # Load required data
-                _ = species_data.log_tpm  # Trigger loading
-                _ = species_data.log_tpm_norm  # Trigger loading
-                _ = species_data.sample_sheet  # Trigger loading
+                # Load required data unless explicitly skipped
+                log_tpm = None
+                log_tpm_norm = None
+                sample_sheet = None
+
+                if "log_tpm" not in self._skip_components:
+                    log_tpm = species_data.log_tpm  # Trigger loading
+                if "log_tpm_norm" not in self._skip_components:
+                    log_tpm_norm = species_data.log_tpm_norm  # Trigger loading
+                if "samplesheet" not in self._skip_components:
+                    sample_sheet = species_data.sample_sheet  # Trigger loading
                 
                 # Print species information
                 print(f"\n{species_name}:")
-                print(f"  - Number of genes: {species_data.log_tpm.shape[0]}")
-                print(f"  - Number of samples: {species_data.log_tpm.shape[1]}")
+                if log_tpm is not None:
+                    print(f"  - Number of genes: {log_tpm.shape[0]}")
+                    print(f"  - Number of samples: {log_tpm.shape[1]}")
+                elif log_tpm_norm is not None:
+                    print(f"  - Number of genes: {log_tpm_norm.shape[0]}")
+                    print(f"  - Number of samples: {log_tpm_norm.shape[1]}")
+                else:
+                    skipped_components = ", ".join(sorted(self._skip_components)) or "expression matrices"
+                    print(f"  - Number of genes: SKIPPED ({skipped_components})")
+                    print(f"  - Number of samples: SKIPPED ({skipped_components})")
+                
+                if sample_sheet is None and "samplesheet" in self._skip_components:
+                    print("  - Sample metadata: SKIPPED (samplesheet)")
                 
                 # Validate data consistency
-                if species_data.validate_data():
+                if self._skip_validation:
                     self._species_data[species_name] = species_data
-                    print(f"  - Data validation: PASSED")
+                    print("  - Data validation: SKIPPED (skip parameter provided)")
+                    logger.info(f"Loaded {species_name} with validation skipped (skip={self._skip_components})")
+                elif species_data.validate_data():
+                    self._species_data[species_name] = species_data
+                    print("  - Data validation: PASSED")
                     logger.info(f"Successfully loaded {species_name}")
                 else:
-                    print(f"  - Data validation: FAILED")
+                    print("  - Data validation: FAILED")
                     logger.warning(f"Skipping {species_name} due to validation failure")
                     
             except Exception as e:
