@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from matplotlib.patches import Patch
 import matplotlib.patches as patches
+from matplotlib.ticker import FormatStrFormatter
 import os
 from scipy import stats
 import sys
@@ -41,7 +42,8 @@ def suppress_stdout():
 
 def view_iModulon_weights(multimodulon, species: str, component: str, save_path: Optional[str] = None, 
                   fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
-                  show_COG: bool = False, show_gene_names: Optional[bool] = None):
+                  show_COG: bool = False, show_gene_names: Optional[bool] = None,
+                  show_legend: Optional[bool] = None, in_iModulon_color: str = ""):
     """
     Visualize gene weights for a specific iModulon component in a species.
     
@@ -71,6 +73,10 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         If True, show gene names for genes above threshold. If None (default), 
         automatically set to True if component has <10 genes, False otherwise.
         Maximum 60 gene labels will be shown (top genes by weight magnitude).
+    show_legend : bool, optional
+        Controls legend display when show_COG=True. Legend is shown by default; set to False to hide.
+    in_iModulon_color : str, optional
+        Hex color code to use for genes above threshold. Applies when a threshold is available.
         
     Raises
     ------
@@ -192,14 +198,16 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
     
     # Create figure - the given fig_size is for the plot area only
     # If showing COG, we need extra space for the legend
-    if show_COG and 'COG_category' in gene_table.columns:
+    legend_enabled = show_COG and show_legend is not False
+    
+    if show_COG and 'COG_category' in gene_table.columns and legend_enabled:
         # Add extra width for legend (80% more for long COG category names)
         fig_width = fig_size[0] * 1.8
         fig = plt.figure(figsize=(fig_width, fig_size[1]))
         # Create axis that uses only the original fig_size width
         ax = fig.add_axes([0.1, 0.1, fig_size[0]/fig_width * 0.8, 0.8])
     else:
-        _, ax = plt.subplots(figsize=fig_size)
+        fig, ax = plt.subplots(figsize=fig_size)
     
     # Set font properties if provided
     font_prop = None
@@ -243,6 +251,15 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         # Get colors for all genes
         colors = [get_cog_color(gene, weight) for gene, weight in zip(genes_with_pos, y_weights)]
         
+        if in_iModulon_color:
+            if threshold is None:
+                colors = [in_iModulon_color] * len(colors)
+            else:
+                colors = [
+                    in_iModulon_color if abs(weight) > threshold else color
+                    for color, weight in zip(colors, y_weights)
+                ]
+        
         # Create scatter plot
         ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
         
@@ -251,61 +268,62 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             ax.axhline(y=threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
             ax.axhline(y=-threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
         
-        # Create legend
-        unique_colors = {}
-        for _, color, weight in zip(genes_with_pos, colors, y_weights):
-            if threshold is None or abs(weight) > threshold:
-                # Get COG category name for this color
-                for cat_name, cat_color in COG_COLORS.items():
-                    if cat_color == color:
-                        unique_colors[cat_name] = color
-                        break
-        
-        # Sort categories by type
-        info_storage = ['Translation, ribosomal structure and biogenesis', 'RNA processing and modification', 
-                       'Transcription', 'Replication, recombination and repair', 'Chromatin structure and dynamics']
-        cellular = ['Cell cycle control, cell division, chromosome partitioning', 'Nuclear structure', 
-                   'Defense mechanisms', 'Signal transduction mechanisms', 'Cell wall/membrane/envelope biogenesis',
-                   'Cell motility', 'Cytoskeleton', 'Extracellular structures', 
-                   'Intracellular trafficking, secretion, and vesicular transport',
-                   'Posttranslational modification, protein turnover, chaperones',
-                   'Post-translational modification, protein turnover, and chaperones']
-        metabolism = ['Energy production and conversion', 'Carbohydrate transport and metabolism',
-                     'Amino acid transport and metabolism', 'Nucleotide transport and metabolism',
-                     'Coenzyme transport and metabolism', 'Lipid transport and metabolism',
-                     'Inorganic ion transport and metabolism', 
-                     'Secondary metabolites biosynthesis, transport and catabolism',
-                     'Secondary metabolites biosynthesis, transport, and catabolism']
-        poorly_char = ['Function unknown', 'No COG annotation']
-        
-        sorted_categories = []
-        for cat_list in [info_storage, cellular, metabolism, poorly_char]:
-            for cat in cat_list:
-                if cat in unique_colors:
-                    sorted_categories.append(cat)
-        
-        if sorted_categories:
-            # Create legend elements
-            from matplotlib.patches import Patch
-            legend_elements = [Patch(facecolor=unique_colors[cat], label=cat) 
-                             for cat in sorted_categories]
+        if legend_enabled and not in_iModulon_color:
+            # Create legend
+            unique_colors = {}
+            for _, color, weight in zip(genes_with_pos, colors, y_weights):
+                if threshold is None or abs(weight) > threshold:
+                    # Get COG category name for this color
+                    for cat_name, cat_color in COG_COLORS.items():
+                        if cat_color == color:
+                            unique_colors[cat_name] = color
+                            break
             
-            # Add legend with appropriate font - align to top edge
-            if font_path and os.path.exists(font_path):
-                legend = ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1),
-                                 frameon=True, fontsize=10)
-                for text in legend.get_texts():
-                    text.set_fontproperties(font_prop)
-            else:
-                ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1),
-                        frameon=True, fontsize=10)
+            # Sort categories by type
+            info_storage = ['Translation, ribosomal structure and biogenesis', 'RNA processing and modification', 
+                           'Transcription', 'Replication, recombination and repair', 'Chromatin structure and dynamics']
+            cellular = ['Cell cycle control, cell division, chromosome partitioning', 'Nuclear structure', 
+                       'Defense mechanisms', 'Signal transduction mechanisms', 'Cell wall/membrane/envelope biogenesis',
+                       'Cell motility', 'Cytoskeleton', 'Extracellular structures', 
+                       'Intracellular trafficking, secretion, and vesicular transport',
+                       'Posttranslational modification, protein turnover, chaperones',
+                       'Post-translational modification, protein turnover, and chaperones']
+            metabolism = ['Energy production and conversion', 'Carbohydrate transport and metabolism',
+                         'Amino acid transport and metabolism', 'Nucleotide transport and metabolism',
+                         'Coenzyme transport and metabolism', 'Lipid transport and metabolism',
+                         'Inorganic ion transport and metabolism', 
+                         'Secondary metabolites biosynthesis, transport and catabolism',
+                         'Secondary metabolites biosynthesis, transport, and catabolism']
+            poorly_char = ['Function unknown', 'No COG annotation']
+            
+            sorted_categories = []
+            for cat_list in [info_storage, cellular, metabolism, poorly_char]:
+                for cat in cat_list:
+                    if cat in unique_colors:
+                        sorted_categories.append(cat)
+            
+            if sorted_categories:
+                # Create legend elements
+                legend_elements = [Patch(facecolor=unique_colors[cat], label=cat) 
+                                 for cat in sorted_categories]
+                
+                # Add legend with appropriate font - align to top edge
+                if font_path and os.path.exists(font_path):
+                    legend = ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1),
+                                     frameon=True, fontsize=10)
+                    for text in legend.get_texts():
+                        text.set_fontproperties(font_prop)
+                else:
+                    ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1),
+                            frameon=True, fontsize=10)
     
     elif threshold is not None:
         # Original threshold-based coloring
+        highlight_color = in_iModulon_color if in_iModulon_color else 'lightblue'
         colors = []
         for weight in y_weights:
             if abs(weight) > threshold:
-                colors.append('lightblue')  # Above threshold
+                colors.append(highlight_color)  # Above threshold
             else:
                 colors.append('grey')  # Below threshold
         ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
@@ -315,7 +333,10 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         ax.axhline(y=-threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
     else:
         # No threshold available, use default plotting
-        ax.scatter(x_positions, y_weights, alpha=0.6, s=20)
+        if in_iModulon_color:
+            ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=[in_iModulon_color] * len(y_weights))
+        else:
+            ax.scatter(x_positions, y_weights, alpha=0.6, s=20)
     
     # Add gene labels if requested
     if show_gene_names:
@@ -419,6 +440,7 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
     ax.set_xlabel('Gene Start (1e6)', fontsize=12)
     ax.set_ylabel('Gene Weight', fontsize=12)
     ax.set_title(f'iModulon {component} on {species}', fontsize=14)
+    ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
     
     # Set font for tick labels if font_path provided
     if font_path and os.path.exists(font_path):
@@ -451,9 +473,8 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         # Save with tight bbox to include legend if present
         plt.savefig(save_file, dpi=300, bbox_inches='tight')
         logger.info(f"Plot saved to {save_file}")
-        plt.close()
-    else:
-        plt.show()
+    
+    plt.show()
 
 
 def view_iModulon_activities(multimodulon, species: str, component: str, save_path: Optional[str] = None,
