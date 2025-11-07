@@ -1760,7 +1760,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
 def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species', 
                           save_path: Optional[str] = None, fig_size: Tuple[float, float] = (12, 8),
                           font_path: Optional[str] = None, reference_order: Optional[List[str]] = None,
-                          heatmap_palette: Optional[List[str]] = None, show_gene_names: bool = False) -> pd.DataFrame:
+                          heatmap_palette: Optional[List[str]] = None, show_gene_names: bool = False,
+                          show_list: Optional[List[str]] = None) -> pd.DataFrame:
     """
     Compare a core iModulon component across species with a dual-layer heatmap.
     
@@ -1801,6 +1802,11 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         If True, maps locus tags to gene names from the species' gene_table.
         The leftmost locus tag is used to identify which species' gene_table to use.
         Default: False
+    show_list : list of str, optional
+        Restrict the visualization to the provided x-ticks (column names of the
+        returned DataFrame). When ``show_gene_names`` is True, provide gene
+        names; otherwise provide locus tags. The DataFrame returned by the
+        function will contain only the displayed genes. If None, show all genes.
         
     Returns
     -------
@@ -1954,13 +1960,80 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     genes_not_in_all = sorted(genes_not_in_all_genomes,
                               key=lambda g: (-gene_imodulon_count[g], g))  # Secondary sort by name
     
-    # Check if we need right section
-    has_right_section = len(genes_not_in_all) > 0
-    
     # Combine with gap (only if we have right section)
-    gap_width = 1 if has_right_section else 0
-    ordered_genes = genes_in_all + genes_not_in_all
-    gap_position = len(genes_in_all) if (genes_in_all and has_right_section) else -1
+    ordered_genes_full = genes_in_all + genes_not_in_all
+
+    # Compute display labels ahead of plotting so they can be filtered if needed
+    x_labels_full = ordered_genes_full.copy()
+    if show_gene_names:
+        x_labels_mapped = []
+        for gene in ordered_genes_full:
+            gene_name = gene  # Default to locus tag
+
+            if multimodulon.combined_gene_db is not None:
+                for _, row in multimodulon.combined_gene_db.iterrows():
+                    leftmost_gene = None
+                    leftmost_species = None
+                    for col in multimodulon.combined_gene_db.columns:
+                        val = row[col]
+                        if pd.notna(val) and val != "None" and val is not None:
+                            leftmost_gene = val
+                            leftmost_species = col
+                            break
+
+                    if leftmost_gene == gene and leftmost_species:
+                        if leftmost_species in multimodulon._species_data:
+                            species_data = multimodulon._species_data[leftmost_species]
+                            if species_data.gene_table is not None and gene in species_data.gene_table.index:
+                                has_gene_name = 'gene_name' in species_data.gene_table.columns
+                                has_preferred_name = 'Preferred_name' in species_data.gene_table.columns
+
+                                gene_name_val = species_data.gene_table.loc[gene, 'gene_name'] if has_gene_name else None
+                                pref_name_val = species_data.gene_table.loc[gene, 'Preferred_name'] if has_preferred_name else None
+
+                                def is_valid_name(name):
+                                    return pd.notna(name) and str(name).strip() != '' and str(name).strip() not in ['None', '-']
+
+                                if is_valid_name(gene_name_val):
+                                    gene_name = str(gene_name_val)
+                                elif is_valid_name(pref_name_val):
+                                    gene_name = str(pref_name_val)
+                        break
+
+            x_labels_mapped.append(gene_name)
+        x_labels_full = x_labels_mapped
+
+    filtered_pairs = list(zip(ordered_genes_full, x_labels_full))
+
+    if show_list is not None:
+        try:
+            requested_labels = [str(label) for label in show_list]
+        except TypeError as exc:
+            raise TypeError("show_list must be an iterable of strings representing x-ticks") from exc
+
+        requested_set = set(requested_labels)
+        filtered_pairs = [pair for pair in filtered_pairs if pair[1] in requested_set]
+
+        if not filtered_pairs:
+            raise ValueError("None of the entries in show_list matched the plot columns.")
+
+        missing = [label for label in requested_labels if label not in {pair[1] for pair in filtered_pairs}]
+        if missing:
+            raise ValueError(f"The following entries in show_list were not found: {missing}")
+
+    left_pairs = [pair for pair in filtered_pairs if pair[0] in genes_in_all]
+    right_pairs = [pair for pair in filtered_pairs if pair[0] in genes_not_in_all]
+
+    ordered_pairs = left_pairs + right_pairs
+    if not ordered_pairs:
+        raise ValueError("No genes available for plotting after applying show_list.")
+
+    ordered_genes = [gene for gene, _ in ordered_pairs]
+    x_labels = [label for _, label in ordered_pairs]
+
+    has_right_section_display = len(right_pairs) > 0
+    gap_width = 1 if has_right_section_display else 0
+    gap_position = len(left_pairs) if (left_pairs and has_right_section_display) else -1
     
     # Create figure
     fig, ax = plt.subplots(figsize=fig_size)
@@ -2074,62 +2147,6 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     ax.set_yticks(np.arange(n_species) + 0.5)
     
     # Use leftmost gene names directly as x-axis labels
-    x_labels = ordered_genes
-    
-    # If show_gene_names is True, map locus tags to gene names
-    if show_gene_names:
-        x_labels_mapped = []
-        for gene in ordered_genes:
-            gene_name = gene  # Default to locus tag
-            
-            # Find which species this leftmost locus tag belongs to
-            if multimodulon.combined_gene_db is not None:
-                for _, row in multimodulon.combined_gene_db.iterrows():
-                    # Find leftmost gene in this row
-                    leftmost_gene = None
-                    leftmost_species = None
-                    for col in multimodulon.combined_gene_db.columns:
-                        val = row[col]
-                        if pd.notna(val) and val != "None" and val is not None:
-                            leftmost_gene = val
-                            leftmost_species = col
-                            break
-                    
-                    # If this is our gene
-                    if leftmost_gene == gene and leftmost_species:
-                        # Get the gene_table from the leftmost species
-                        if leftmost_species in multimodulon._species_data:
-                            species_data = multimodulon._species_data[leftmost_species]
-                            if species_data.gene_table is not None and gene in species_data.gene_table.index:
-                                # Check if both columns exist
-                                has_gene_name = 'gene_name' in species_data.gene_table.columns
-                                has_preferred_name = 'Preferred_name' in species_data.gene_table.columns
-                                
-                                # Get values if columns exist
-                                gene_name_val = None
-                                pref_name_val = None
-                                
-                                if has_gene_name:
-                                    gene_name_val = species_data.gene_table.loc[gene, 'gene_name']
-                                if has_preferred_name:
-                                    pref_name_val = species_data.gene_table.loc[gene, 'Preferred_name']
-                                
-                                # Check if values are valid (not None, '', 'None', or '-')
-                                def is_valid_name(name):
-                                    return pd.notna(name) and str(name).strip() != '' and str(name).strip() not in ['None', '-']
-                                
-                                # Try gene_name first
-                                if is_valid_name(gene_name_val):
-                                    gene_name = str(gene_name_val)
-                                # Try Preferred_name second
-                                elif is_valid_name(pref_name_val):
-                                    gene_name = str(pref_name_val)
-                                # Otherwise keep the locus tag (gene)
-                        break
-            
-            x_labels_mapped.append(gene_name)
-        x_labels = x_labels_mapped
-    
     ax.set_xticklabels(x_labels, rotation=45, ha='right')
     # Reverse y-axis labels to match top-to-bottom order
     ax.set_yticklabels(species_with_component[::-1])

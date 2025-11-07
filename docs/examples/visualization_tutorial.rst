@@ -165,6 +165,17 @@ This creates:
 * Genes grouped by conservation pattern
 * Visual identification of core vs species-specific genes
 
+To highlight only a subset of genes on the heatmap, pass the new ``show_list`` parameter
+with x-tick labels (locus tags by default, gene names when ``show_gene_names=True``):
+
+.. code-block:: python
+
+   multiModulon.compare_core_iModulon(
+       component='Core_1',
+       show_gene_names=True,
+       show_list=['cysB', 'cysK', 'cysM']
+   )
+
 Characterizing Unique Components
 --------------------------------
 
