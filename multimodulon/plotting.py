@@ -1761,7 +1761,7 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
                           save_path: Optional[str] = None, fig_size: Tuple[float, float] = (12, 8),
                           font_path: Optional[str] = None, reference_order: Optional[List[str]] = None,
                           heatmap_palette: Optional[List[str]] = None, show_gene_names: bool = False,
-                          show_list: Optional[List[str]] = None) -> pd.DataFrame:
+                          show_list: Optional[List[str]] = None, split_plot: bool = False) -> pd.DataFrame:
     """
     Compare a core iModulon component across species with a dual-layer heatmap.
     
