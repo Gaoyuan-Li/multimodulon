@@ -176,6 +176,17 @@ with x-tick labels (locus tags by default, gene names when ``show_gene_names=Tru
        show_list=['cysB', 'cysK', 'cysM']
    )
 
+When preparing figures for vector editors (Illustrator/Inkscape), set ``split_plot=True`` to
+separate the shared and non-shared gene groups into two stacked panels that are easier to
+edit independently:
+
+.. code-block:: python
+
+   multiModulon.compare_core_iModulon(
+       component='Core_1',
+       split_plot=True
+   )
+
 Characterizing Unique Components
 --------------------------------
 

@@ -1807,6 +1807,10 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         returned DataFrame). When ``show_gene_names`` is True, provide gene
         names; otherwise provide locus tags. The DataFrame returned by the
         function will contain only the displayed genes. If None, show all genes.
+    split_plot : bool, optional
+        If True, create two vertically stacked subplots (shared genes on top,
+        other genes on bottom) for easier SVG editing; otherwise render both
+        sections on a single axis separated by a gap. Default: False.
         
     Returns
     -------
@@ -2031,17 +2035,14 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
     ordered_genes = [gene for gene, _ in ordered_pairs]
     x_labels = [label for _, label in ordered_pairs]
 
+    left_genes = [gene for gene, _ in left_pairs]
+    left_labels = [label for _, label in left_pairs]
+    right_genes = [gene for gene, _ in right_pairs]
+    right_labels = [label for _, label in right_pairs]
+
     has_right_section_display = len(right_pairs) > 0
-    gap_width = 1 if has_right_section_display else 0
-    gap_position = len(left_pairs) if (left_pairs and has_right_section_display) else -1
-    
-    # Create figure
-    fig, ax = plt.subplots(figsize=fig_size)
-    
-    # Prepare data for visualization
-    n_species = len(species_with_component)
-    n_genes = len(ordered_genes)
-    total_width = n_genes + (gap_width if gap_position > 0 else 0)
+    gap_width = 1 if has_right_section_display and not split_plot else 0
+    gap_position = len(left_pairs) if (left_pairs and has_right_section_display and not split_plot) else -1
     
     # Function to create merged rectangles for adjacent species
     def create_merged_rectangles(_, x_pos, species_list, in_component_flags, exists_flags, is_right_section=False):
@@ -2093,103 +2094,169 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         
         return rectangles
     
-    # Create patches for the heatmap
-    all_rectangles = []
-    
-    # Process each gene
-    for j, gene in enumerate(ordered_genes):
-        # Calculate x position accounting for gap
-        if gap_position > 0 and j >= gap_position:
-            x_pos = j + gap_width
-        else:
+    def draw_section(ax, genes, labels, title, is_right_section):
+        """Draw a heatmap section on the provided axis."""
+        n_species = len(species_with_component)
+        margin = 0.1
+        
+        if not genes:
+            ax.axis('off')
+            ax.text(0.5, 0.5, f'No {title.lower()} to display',
+                    transform=ax.transAxes, ha='center', va='center', fontsize=12)
+            return False
+        
+        n_genes = len(genes)
+        total_width = n_genes
+        
+        all_rectangles = []
+        for j, gene in enumerate(genes):
             x_pos = j
-        
-        # Determine if this is in the right section
-        is_right_section = gene in genes_not_in_all
-        
-        # Collect status for all species
-        in_component_flags = []
-        exists_flags = []
-        
-        for species in species_with_component:
-            in_component = gene in result_dict.get(species, [])
-            exists_in_species = species in gene_species_presence.get(gene, set())
             
-            in_component_flags.append(in_component)
-            exists_flags.append(exists_in_species)
+            in_component_flags = []
+            exists_flags = []
+            for species in species_with_component:
+                in_component = gene in result_dict.get(species, [])
+                exists_in_species = species in gene_species_presence.get(gene, set())
+                in_component_flags.append(in_component)
+                exists_flags.append(exists_in_species)
+            
+            rectangles = create_merged_rectangles(j, x_pos, species_with_component,
+                                                 in_component_flags, exists_flags,
+                                                 is_right_section)
+            all_rectangles.extend(rectangles)
         
-        # Create merged rectangles
-        rectangles = create_merged_rectangles(j, x_pos, species_with_component, 
-                                             in_component_flags, exists_flags, is_right_section)
-        all_rectangles.extend(rectangles)
-    
-    # Add all rectangles to the plot
-    for rect in all_rectangles:
-        ax.add_patch(rect)
-    
-    # Set axis properties with small margin to show box edges
-    margin = 0.1
-    ax.set_xlim(-margin, total_width + margin)
-    ax.set_ylim(-margin, n_species + margin)
-    ax.set_aspect('equal')
-    
-    # No vertical line needed - gap will separate the sections
-    
-    # Set ticks and labels
-    x_positions = []
-    for j in range(len(ordered_genes)):
-        if gap_position > 0 and j >= gap_position:
-            x_positions.append(j + gap_width + 0.5)
-        else:
-            x_positions.append(j + 0.5)
-    
-    ax.set_xticks(x_positions)
-    ax.set_yticks(np.arange(n_species) + 0.5)
-    
-    # Use leftmost gene names directly as x-axis labels
-    ax.set_xticklabels(x_labels, rotation=45, ha='right')
-    # Reverse y-axis labels to match top-to-bottom order
-    ax.set_yticklabels(species_with_component[::-1])
-    
-    # Set labels and title
-    ax.set_xlabel('Genes', fontsize=12)
-    ax.set_ylabel(y_label, fontsize=12)
-    ax.set_title(f'Core iModulon {component} Comparison', fontsize=14)
-    
-    # Apply font to all text elements if font_path provided
-    if font_path and os.path.exists(font_path):
-        for label in ax.get_xticklabels() + ax.get_yticklabels():
-            label.set_fontproperties(font_prop)
-        ax.xaxis.label.set_fontproperties(font_prop)
-        ax.yaxis.label.set_fontproperties(font_prop)
-        ax.title.set_fontproperties(font_prop)
-    
-    # Remove all spines first
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.spines['left'].set_visible(False)
-    
-    # Add separate boxes for left and right heatmaps
-    if gap_position > 0:
-        # Left heatmap box
-        left_box = patches.Rectangle((0, 0), gap_position, n_species, 
-                                   linewidth=1, edgecolor='black', facecolor='none')
-        ax.add_patch(left_box)
+        for rect in all_rectangles:
+            ax.add_patch(rect)
         
-        # Right heatmap box
-        right_start = gap_position + gap_width
-        right_width = total_width - right_start
-        right_box = patches.Rectangle((right_start, 0), right_width, n_species,
-                                    linewidth=1, edgecolor='black', facecolor='none')
-        ax.add_patch(right_box)
+        ax.set_xlim(-margin, total_width + margin)
+        ax.set_ylim(-margin, n_species + margin)
+        ax.set_aspect('equal')
+        
+        x_positions = [j + 0.5 for j in range(n_genes)]
+        ax.set_xticks(x_positions)
+        ax.set_yticks(np.arange(n_species) + 0.5)
+        ax.set_xticklabels(labels, rotation=45, ha='right')
+        ax.set_yticklabels(species_with_component[::-1])
+        
+        ax.set_xlabel('Genes', fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.set_title(title, fontsize=14)
+        
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        
+        box = patches.Rectangle((0, 0), total_width, n_species,
+                                linewidth=1, edgecolor='black', facecolor='none')
+        ax.add_patch(box)
+        return True
+    
+    if split_plot:
+        fig, axes = plt.subplots(2, 1, figsize=fig_size, sharex=False)
+        axes = np.atleast_1d(axes)
+        sections = [
+            (axes[0], left_genes, left_labels, f'Core iModulon {component} (shared genes)', False),
+            (axes[1], right_genes, right_labels, f'Core iModulon {component} (non-shared genes)', True)
+        ]
+        axes_rendered = []
+        for ax, genes, labels, title, is_right in sections:
+            rendered = draw_section(ax, genes, labels, title, is_right)
+            if rendered:
+                axes_rendered.append(ax)
+        if not axes_rendered:
+            axes_rendered = list(axes)
     else:
-        # Single box if no separation
-        full_box = patches.Rectangle((0, 0), total_width, n_species,
-                                   linewidth=1, edgecolor='black', facecolor='none')
-        ax.add_patch(full_box)
+        fig, ax = plt.subplots(figsize=fig_size)
+        axes = [ax]
+        axes_rendered = axes
+        
+        n_species = len(species_with_component)
+        n_genes = len(ordered_genes)
+        total_width = n_genes + (gap_width if gap_position > 0 else 0)
+        
+        all_rectangles = []
+        for j, gene in enumerate(ordered_genes):
+            if gap_position > 0 and j >= gap_position:
+                x_pos = j + gap_width
+            else:
+                x_pos = j
+            
+            is_right_section = gene in genes_not_in_all
+            
+            in_component_flags = []
+            exists_flags = []
+            for species in species_with_component:
+                in_component = gene in result_dict.get(species, [])
+                exists_in_species = species in gene_species_presence.get(gene, set())
+                
+                in_component_flags.append(in_component)
+                exists_flags.append(exists_in_species)
+            
+            rectangles = create_merged_rectangles(j, x_pos, species_with_component,
+                                                 in_component_flags, exists_flags,
+                                                 is_right_section)
+            all_rectangles.extend(rectangles)
+        
+        for rect in all_rectangles:
+            ax.add_patch(rect)
+        
+        margin = 0.1
+        ax.set_xlim(-margin, total_width + margin)
+        ax.set_ylim(-margin, n_species + margin)
+        ax.set_aspect('equal')
+        
+        x_positions = []
+        for j in range(len(ordered_genes)):
+            if gap_position > 0 and j >= gap_position:
+                x_positions.append(j + gap_width + 0.5)
+            else:
+                x_positions.append(j + 0.5)
+        
+        ax.set_xticks(x_positions)
+        ax.set_yticks(np.arange(n_species) + 0.5)
+        ax.set_xticklabels(x_labels, rotation=45, ha='right')
+        ax.set_yticklabels(species_with_component[::-1])
+        
+        ax.set_xlabel('Genes', fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
+        ax.set_title(f'Core iModulon {component} Comparison', fontsize=14)
+        
+        if font_path and os.path.exists(font_path):
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            ax.xaxis.label.set_fontproperties(font_prop)
+            ax.yaxis.label.set_fontproperties(font_prop)
+            ax.title.set_fontproperties(font_prop)
+        
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        
+        if gap_position > 0:
+            left_box = patches.Rectangle((0, 0), gap_position, n_species,
+                                         linewidth=1, edgecolor='black', facecolor='none')
+            ax.add_patch(left_box)
+            
+            right_start = gap_position + gap_width
+            right_width = total_width - right_start
+            right_box = patches.Rectangle((right_start, 0), right_width, n_species,
+                                          linewidth=1, edgecolor='black', facecolor='none')
+            ax.add_patch(right_box)
+        else:
+            full_box = patches.Rectangle((0, 0), total_width, n_species,
+                                         linewidth=1, edgecolor='black', facecolor='none')
+            ax.add_patch(full_box)
     
-    # Add legend
+    if split_plot and font_path and os.path.exists(font_path):
+        for axis in axes_rendered:
+            for label in axis.get_xticklabels() + axis.get_yticklabels():
+                label.set_fontproperties(font_prop)
+            axis.xaxis.label.set_fontproperties(font_prop)
+            axis.yaxis.label.set_fontproperties(font_prop)
+            axis.title.set_fontproperties(font_prop)
+    
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor=heatmap_palette[0], edgecolor='black', linewidth=1, label='In iModulon & genome'),
@@ -2197,30 +2264,19 @@ def compare_core_iModulon(multimodulon, component: str, y_label: str = 'Species'
         Patch(facecolor=heatmap_palette[2], edgecolor='black', linewidth=1, label='Not in genome')
     ]
     
-    # Position legend to the right with same gap as between heatmaps
-    if gap_position > 0:
-        legend_x = total_width + gap_width
-    else:
-        legend_x = total_width + 1
-        
-    # Create custom legend
-    legend = ax.legend(handles=legend_elements, 
-                      loc='center left',
-                      bbox_to_anchor=(legend_x / total_width, 0.5),
-                      frameon=True,
-                      framealpha=1,
-                      edgecolor='black')
+    legend = fig.legend(handles=legend_elements,
+                        loc='center left',
+                        bbox_to_anchor=(0.82, 0.5),
+                        frameon=True,
+                        framealpha=1,
+                        edgecolor='black')
     
-    # Apply font to legend if provided
     if font_path and os.path.exists(font_path):
         for text in legend.get_texts():
             text.set_fontproperties(font_prop)
     
-    # Adjust figure size to accommodate legend
-    fig.subplots_adjust(right=0.75)
-    
-    # Tight layout
-    plt.tight_layout()
+    # Tight layout leaving room for the legend
+    plt.tight_layout(rect=(0, 0, 0.78, 1))
     
     # Save or show
     if save_path:
