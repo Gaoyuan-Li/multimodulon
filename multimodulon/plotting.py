@@ -29,6 +29,47 @@ from .core_io import COG_COLORS, COG_LETTER_CODES
 
 logger = logging.getLogger(__name__)
 
+
+def _is_svg_output(save_path: Optional[Union[str, Path]]) -> bool:
+    """Return True when the requested output is an SVG file."""
+    if not save_path:
+        return False
+    path = Path(save_path)
+    if path.suffix:
+        return path.suffix.lower() == '.svg'
+    # When only a directory is provided the default extension is .svg
+    return True
+
+
+def _scatter_with_svg_optimization(ax, x_vals, y_vals, *, colors=None,
+                                   threshold: Optional[float] = None,
+                                   optimize_for_svg: bool = False, **kwargs):
+    """Scatter helper that rasterizes low-weight points when exporting to SVG."""
+    x_arr = np.asarray(x_vals)
+    y_arr = np.asarray(y_vals)
+    color_arr = np.asarray(colors) if colors is not None else None
+
+    def _draw(mask, rasterized=False):
+        if not np.any(mask):
+            return
+        scatter_kwargs = dict(kwargs)
+        if rasterized:
+            scatter_kwargs['rasterized'] = True
+        else:
+            scatter_kwargs.pop('rasterized', None)
+        if color_arr is not None:
+            scatter_kwargs['c'] = color_arr[mask].tolist()
+        ax.scatter(x_arr[mask], y_arr[mask], **scatter_kwargs)
+
+    if optimize_for_svg and threshold is not None:
+        mask_above = np.abs(y_arr) > threshold
+        mask_below = ~mask_above
+        _draw(mask_below, rasterized=True)
+        _draw(mask_above, rasterized=False)
+    else:
+        _draw(np.ones_like(y_arr, dtype=bool))
+
+
 @contextmanager
 def suppress_stdout():
     """Temporarily suppress stdout output"""
@@ -88,6 +129,7 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         raise ValueError(f"Species '{species}' not found in loaded data")
     
     species_data = multimodulon._species_data[species]
+    svg_output_requested = _is_svg_output(save_path)
     
     # Check if M matrix exists
     if species_data.M is None:
@@ -261,7 +303,16 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                 ]
         
         # Create scatter plot
-        ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
+        _scatter_with_svg_optimization(
+            ax,
+            x_positions,
+            y_weights,
+            colors=colors,
+            threshold=threshold,
+            optimize_for_svg=svg_output_requested,
+            alpha=0.6,
+            s=20,
+        )
         
         # Add horizontal threshold lines if available
         if threshold is not None:
@@ -326,7 +377,16 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                 colors.append(highlight_color)  # Above threshold
             else:
                 colors.append('grey')  # Below threshold
-        ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
+        _scatter_with_svg_optimization(
+            ax,
+            x_positions,
+            y_weights,
+            colors=colors,
+            threshold=threshold,
+            optimize_for_svg=svg_output_requested,
+            alpha=0.6,
+            s=20,
+        )
         
         # Add horizontal threshold lines
         ax.axhline(y=threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
@@ -334,9 +394,25 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
     else:
         # No threshold available, use default plotting
         if in_iModulon_color:
-            ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=[in_iModulon_color] * len(y_weights))
+            color_array = [in_iModulon_color] * len(y_weights)
+            _scatter_with_svg_optimization(
+                ax,
+                x_positions,
+                y_weights,
+                colors=color_array,
+                optimize_for_svg=svg_output_requested,
+                alpha=0.6,
+                s=20,
+            )
         else:
-            ax.scatter(x_positions, y_weights, alpha=0.6, s=20)
+            _scatter_with_svg_optimization(
+                ax,
+                x_positions,
+                y_weights,
+                optimize_for_svg=svg_output_requested,
+                alpha=0.6,
+                s=20,
+            )
     
     # Add gene labels if requested
     if show_gene_names:
@@ -1192,6 +1268,9 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
     ValueError
         If component is not a core component or not found in any species
     """
+    # Determine if we expect an SVG output to optimize render complexity
+    svg_output_requested = _is_svg_output(save_path)
+
     # Get all species
     species_list = list(multimodulon._species_data.keys())
     
@@ -1416,7 +1495,16 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                             break
             
             # Create scatter plot
-            ax.scatter(x_positions, y_weights, alpha=0.6, s=20, c=colors)
+            _scatter_with_svg_optimization(
+                ax,
+                x_positions,
+                y_weights,
+                colors=colors,
+                threshold=threshold,
+                optimize_for_svg=svg_output_requested,
+                alpha=0.6,
+                s=20,
+            )
             
             # Add threshold lines
             if threshold is not None:
