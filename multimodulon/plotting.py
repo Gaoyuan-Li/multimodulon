@@ -1780,6 +1780,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
             
             plt.savefig(save_file, dpi=300, bbox_inches='tight')
             logger.info(f"Combined plot saved to {save_file}")
+            plt.show()
             plt.close()
         else:
             plt.show()
