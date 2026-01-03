@@ -187,6 +187,20 @@ edit independently:
        split_plot=True
    )
 
+Conservation Bubble Matrix
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Summarize cross-species conservation across the top components:
+
+.. code-block:: python
+
+   # Requires align_genes() to populate combined_gene_db
+   multiModulon.plot_iM_conservation_bubble_matrix(
+       n_components=8,
+       reference_order=['Species1', 'Species2', 'Species3'],
+       save_path='conservation_bubble_matrix.svg'
+   )
+
 Characterizing Unique Components
 --------------------------------
 

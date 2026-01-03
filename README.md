@@ -142,6 +142,7 @@ Main class for multi-species/strain analysis.
 - `view_core_iModulon_weights(*args, **kwargs)`: View weights of a core iModulon across all species
 - `compare_core_iModulon(*args, **kwargs)`: Compare core iModulon across species
 - `compare_core_iModulon_activity(*args, **kwargs)`: Compare core iModulon activities across species
+- `plot_iM_conservation_bubble_matrix(*args, **kwargs)`: Summarize iModulon conservation across species
 - `show_iModulon_activity_change(*args, **kwargs)`: Visualize iModulon activity changes between conditions
 - `show_gene_iModulon_correlation(*args, **kwargs)`: Show correlation between gene expression and iModulon activity
 

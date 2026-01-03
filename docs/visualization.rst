@@ -6,15 +6,16 @@ This section covers the visualization functions for exploring iModulon gene weig
 Overview
 --------
 
-MultiModulon provides seven main visualization functions:
+MultiModulon provides eight main visualization functions:
 
 1. **view_iModulon_weights** - Visualize gene weights within a component for a single species
 2. **view_core_iModulon_weights** - Visualize a core iModulon component across all species
 3. **view_iModulon_activities** - Visualize component activities across samples
 4. **compare_core_iModulon_activity** - Compare core iModulon activities across multiple species for specific conditions
-5. **show_iModulon_activity_change** - Visualize activity changes between two conditions
-6. **core_iModulon_stability** - Quantify core iModulon stability across species using pairwise correlations
-7. **show_gene_iModulon_correlation** - Show correlation between gene expression and iModulon activity across species
+5. **plot_iM_conservation_bubble_matrix** - Summarize iModulon conservation across species
+6. **show_iModulon_activity_change** - Visualize activity changes between two conditions
+7. **core_iModulon_stability** - Quantify core iModulon stability across species using pairwise correlations
+8. **show_gene_iModulon_correlation** - Show correlation between gene expression and iModulon activity across species
 
 All functions support customization of appearance, highlighting, and export options.
 
@@ -555,6 +556,34 @@ Use Cases
        species_in_comparison=['E_coli', 'S_enterica', 'K_pneumoniae'],
        condition_list=stress_conditions,
        save_path='stress_response_comparison.svg'
+   )
+
+Conservation Bubble Matrix
+--------------------------
+
+.. py:method:: MultiModulon.plot_iM_conservation_bubble_matrix(n_components, reference_order=None, iM_colors=None, fig_size=(10, 4), bubble_scale=800.0, y_label="Species/Strains", save_path=None, font_path=None)
+
+   Plot a bubble matrix summarizing iModulon conservation across species.
+
+   :param int n_components: Number of leading components (per species) on the x-axis
+   :param list reference_order: Optional species order for the y-axis
+   :param list iM_colors: Optional list of colors for iModulon columns
+   :param tuple fig_size: Figure size as (width, height) (default: (10, 4))
+   :param float bubble_scale: Scaling factor for bubble sizes (default: 800.0)
+   :param str y_label: Label for the y-axis (default: "Species/Strains")
+   :param str save_path: Path to save the plot (optional)
+   :param str font_path: Path to custom font file (optional)
+
+Basic Usage
+~~~~~~~~~~~
+
+.. code-block:: python
+
+   # Summarize conservation for the top 8 components per species
+   multiModulon.plot_iM_conservation_bubble_matrix(
+       n_components=8,
+       reference_order=['Species1', 'Species2', 'Species3'],
+       save_path='conservation_bubble_matrix.svg'
    )
 
 Visualizing Activity Changes Between Conditions
