@@ -208,15 +208,29 @@ def _run_single_gene_optimization(
     if len(k_sorted) < 3:
         optimal_num_core_components = k_sorted[np.argmax(counts)]
     else:
-        # Find the top 3 dimensions with highest robust components
-        # Create list of (k, count) pairs, sorted by count descending
-        k_count_pairs = sorted(zip(k_sorted, counts), key=lambda x: x[1], reverse=True)
-
-        # Get top 3 dimensions
-        top_3_dimensions = sorted([k for k, _ in k_count_pairs[:3]])  # Sort k values ascending
-
-        # Select the smallest dimension among the top 3
-        optimal_num_core_components = top_3_dimensions[0]
+        # Elbow method on k vs non-single-gene component count.
+        x_vals = np.array(k_sorted, dtype=float)
+        y_vals = np.array(counts, dtype=float)
+        x_min, x_max = x_vals[0], x_vals[-1]
+        y_min, y_max = y_vals[0], y_vals[-1]
+        if x_max == x_min or y_max == y_min:
+            optimal_num_core_components = k_sorted[np.argmax(counts)]
+        else:
+            x_norm = (x_vals - x_min) / (x_max - x_min)
+            y_norm = (y_vals - y_min) / (y_max - y_min)
+            line_vec = np.array([x_norm[-1] - x_norm[0], y_norm[-1] - y_norm[0]])
+            line_len = np.hypot(line_vec[0], line_vec[1])
+            if line_len == 0:
+                optimal_num_core_components = k_sorted[np.argmax(counts)]
+            else:
+                # Distance from each point to the line between endpoints.
+                distances = []
+                for xn, yn in zip(x_norm, y_norm):
+                    point_vec = np.array([xn - x_norm[0], yn - y_norm[0]])
+                    area = abs(line_vec[0] * point_vec[1] - line_vec[1] * point_vec[0])
+                    distances.append(area / line_len)
+                elbow_idx = int(np.argmax(distances))
+                optimal_num_core_components = k_sorted[elbow_idx]
 
     descriptor = (
         "robust components passing filter"

@@ -102,7 +102,8 @@ This step:
 Step 6: Optimize Number of Core Components
 ------------------------------------------
 
-Use the single-gene filter metric to automatically determine the optimal number of core components.
+Use the single-gene filter metric and an elbow method on k vs the number of non-single-gene
+robust components to determine the optimal number of core components.
 
 .. code-block:: python
 
@@ -117,7 +118,7 @@ The optimization:
 
 * Tests different numbers of core components
 * Removes components dominated by a single gene
-* Selects optimal k based on interpretability
+* Uses the elbow point of the k vs non-single-gene component curve
 * Saves optimization plots
 
 Step 7: Optimize Number of Unique Components
