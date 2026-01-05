@@ -276,7 +276,16 @@ def _run_single_gene_optimization(
             ax.set_title('Optimization of core components', fontsize=14, fontweight='bold')
         
         ax.set_xlabel('Number of Core Components (k)', fontsize=12)
-        ax.legend()
+        ax.legend(loc='lower right')
+        ax.text(
+            0.02,
+            0.98,
+            f'Optimal k = {optimal_num_core_components}',
+            transform=ax.transAxes,
+            ha='left',
+            va='top',
+            fontsize=11
+        )
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
         if font_path and os.path.exists(font_path):
