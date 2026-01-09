@@ -84,7 +84,8 @@ def suppress_stdout():
 def view_iModulon_weights(multimodulon, species: str, component: str, save_path: Optional[str] = None, 
                   fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
                   show_COG: bool = False, show_gene_names: Optional[bool] = None,
-                  show_legend: Optional[bool] = None, in_iModulon_color: str = ""):
+                  show_legend: Optional[bool] = None, in_iModulon_color: str = "",
+                  show_all_gene_names: bool = False):
     """
     Visualize gene weights for a specific iModulon component in a species.
     
@@ -114,6 +115,9 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         If True, show gene names for genes above threshold. If None (default), 
         automatically set to True if component has <10 genes, False otherwise.
         Maximum 60 gene labels will be shown (top genes by weight magnitude).
+    show_all_gene_names : bool, optional
+        If True, label all genes and skip the 60-label cap and threshold filter.
+        Default: False.
     show_legend : bool, optional
         Controls legend display when show_COG=True. Legend is shown by default; set to False to hide.
     in_iModulon_color : str, optional
@@ -428,18 +432,21 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
             else:
                 return str(gene_idx)
         
-        # Get genes above threshold
-        if threshold is not None:
-            genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
-                             if abs(y) > threshold]
-        else:
+        # Get genes to label
+        if show_all_gene_names:
             genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
-        
-        # Sort by absolute weight and limit to top 60
-        genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
-        if len(genes_to_label) > 60:
-            print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 60 genes will have labels printed.")
-            genes_to_label = genes_to_label[:60]
+        else:
+            if threshold is not None:
+                genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
+                                 if abs(y) > threshold]
+            else:
+                genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
+            
+            # Sort by absolute weight and limit to top 60
+            genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
+            if len(genes_to_label) > 60:
+                print(f"Component {component} has {len(genes_to_label)} genes above threshold. Only the top 60 genes will have labels printed.")
+                genes_to_label = genes_to_label[:60]
         
         # Further sort genes_to_label by x position for better label arrangement
         genes_to_label_by_pos = sorted(genes_to_label, key=lambda x: x[1])
@@ -1229,7 +1236,7 @@ def view_iModulon_genes(multimodulon, species: str, component: str) -> pd.DataFr
 def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional[str] = None,
                        fig_size: Tuple[float, float] = (6, 4), font_path: Optional[str] = None,
                        show_COG: bool = False, reference_order: Optional[List[str]] = None,
-                       show_gene_names: Optional[bool] = None):
+                       show_gene_names: bool = False):
     """
     Visualize a core iModulon component across all species.
     
@@ -1259,9 +1266,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
         Example: ['MG1655', 'BL21', 'C', 'Crooks', 'W', 'W3110']
         If not provided, species are plotted in their default order.
     show_gene_names : bool, optional
-        If True, show gene names for genes above threshold. If None (default), 
-        automatically set to True if component has <10 genes, False otherwise.
-        When True, only species-specific genes are labeled (no limit).
+        If True, show gene names for all genes and use adjust_text to reduce
+        overlap. Default: False.
         
     Raises
     ------
@@ -1297,6 +1303,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
     # Generate plots for each species
     logger.info(f"Generating plots for core component '{component}' across {len(species_with_component)} species")
     
+    shared_genes_across_all = set()
     if show_COG:
         # When showing COG, create a combined plot with subplots and single legend
         
@@ -1347,7 +1354,6 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
         all_unique_colors = {}
         
         # If show_gene_names is True, first identify genes shared across all species
-        shared_genes_across_all = set()
         species_specific_genes = {}
         
         if show_gene_names:
@@ -1511,22 +1517,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 ax.axhline(y=threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
                 ax.axhline(y=-threshold, color='black', linestyle=':', linewidth=1, alpha=0.7)
             
-            # Determine show_gene_names setting if not explicitly provided
-            if show_gene_names is None:
-                # Check presence matrix to count genes in component
-                if hasattr(species_data, '_presence_matrix') and species_data._presence_matrix is not None:
-                    if component in species_data._presence_matrix.columns:
-                        n_genes_in_component = species_data._presence_matrix[component].sum()
-                        show_gene_names_local = n_genes_in_component < 10
-                    else:
-                        show_gene_names_local = False
-                else:
-                    show_gene_names_local = False
-            else:
-                show_gene_names_local = show_gene_names
-            
             # Add gene labels if requested
-            if show_gene_names_local:
+            if show_gene_names:
                 # Helper function to get gene name
                 def get_gene_name(gene_idx, gene_table_row):
                     # Try gene_name first
@@ -1539,42 +1531,9 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     else:
                         return str(gene_idx)
                 
-                # Get genes above threshold
-                if threshold is not None:
-                    genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
-                                     if abs(y) > threshold]
-                else:
-                    genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
+                genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
                 
-                # FILTER: Only keep species-specific genes (not shared across all)
-                if shared_genes_across_all:
-                    # We need to map species genes back to leftmost genes to check membership
-                    genes_to_label_filtered = []
-                    for gene, x, y in genes_to_label:
-                        # Find the leftmost gene for this species gene
-                        leftmost_gene = None
-                        if multimodulon.combined_gene_db is not None:
-                            for idx, row in multimodulon.combined_gene_db.iterrows():
-                                if species in multimodulon.combined_gene_db.columns and row[species] == gene:
-                                    # Find leftmost gene in this row
-                                    for col in multimodulon.combined_gene_db.columns:
-                                        val = row[col]
-                                        if pd.notna(val) and val != "None" and val is not None:
-                                            leftmost_gene = val
-                                            break
-                                    break
-                        
-                        # If we couldn't find in combined_gene_db, the gene itself might be the leftmost
-                        if leftmost_gene is None:
-                            leftmost_gene = gene
-                        
-                        # Only include if NOT in shared genes
-                        if leftmost_gene not in shared_genes_across_all:
-                            genes_to_label_filtered.append((gene, x, y))
-                    
-                    genes_to_label = genes_to_label_filtered
-                
-                # Sort by absolute weight - no limit since we're only showing species-specific genes
+                # Sort by absolute weight - no limit since we're showing all genes
                 genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
                 
                 # Use adjust_text for label placement
@@ -1658,7 +1617,7 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                 ax.yaxis.label.set_fontproperties(font_prop)
                 ax.title.set_fontproperties(font_prop)
                 # Apply font to gene labels
-                if show_gene_names_local:
+                if show_gene_names:
                     for text in ax.texts:
                         text.set_fontproperties(font_prop)
         
@@ -1797,7 +1756,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     fig_size=fig_size,
                     font_path=font_path,
                     show_COG=show_COG,
-                    show_gene_names=show_gene_names
+                    show_gene_names=show_gene_names,
+                    show_all_gene_names=show_gene_names
                 )
                 logger.info(f"✓ Generated plot for {species}")
             except Exception as e:

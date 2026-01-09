@@ -22,7 +22,7 @@ All functions support customization of appearance, highlighting, and export opti
 Visualizing Gene Weights
 ------------------------
 
-.. py:method:: MultiModulon.view_iModulon_weights(species, component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, show_gene_names=None)
+.. py:method:: MultiModulon.view_iModulon_weights(species, component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, show_gene_names=None, show_all_gene_names=False)
 
    Create a bar plot showing gene weights for a specific iModulon component.
 
@@ -34,6 +34,7 @@ Visualizing Gene Weights
    :param bool show_COG: Color genes by COG category (default: False)
    :param bool show_gene_names: Show gene names on plot. If None, auto-set based on component size (default: None).
                                Maximum 60 gene labels will be shown (top genes by weight magnitude)
+   :param bool show_all_gene_names: Label all genes without the 60-label cap or threshold filter (default: False)
 
 Basic Usage
 ~~~~~~~~~~~
@@ -130,7 +131,7 @@ Customizing Appearance
 Visualizing Core iModulons Across Species
 -----------------------------------------
 
-.. py:method:: MultiModulon.view_core_iModulon_weights(component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, reference_order=None, show_gene_names=None)
+.. py:method:: MultiModulon.view_core_iModulon_weights(component, save_path=None, fig_size=(6, 4), font_path=None, show_COG=False, reference_order=None, show_gene_names=False)
 
    Visualize a core iModulon component across all species. Creates individual plots for each species
    showing the same core component, or a combined plot with subplots when COG coloring is enabled.
@@ -141,8 +142,8 @@ Visualizing Core iModulons Across Species
    :param str font_path: Path to custom font file (optional)
    :param bool show_COG: Color genes by COG category (default: False)
    :param list reference_order: Custom species order for subplot arrangement (optional)
-   :param bool show_gene_names: Show gene names on plots. If None, auto-set based on component size (default: None).
-                               When True for view_core_iModulon_weights, only species-specific genes are labeled (no limit)
+   :param bool show_gene_names: Show gene names on plots. Labels all genes and uses adjust_text
+                               to reduce overlap (default: False).
 
 Basic Usage
 ~~~~~~~~~~~
@@ -162,16 +163,15 @@ Basic Usage
        save_path='core1_all_species_COG.svg'
    )
    
-   # With gene labeling - shows only species-specific genes
+   # With gene labeling - shows all genes
    multiModulon.view_core_iModulon_weights(
        component='Core_1',
        show_gene_names=True,
        save_path='core1_labeled.svg'
    )
    # This will:
-   # - Label only genes NOT shared across all species
-   # - Print list of shared genes to console
-   # - Show all species-specific gene labels (no limit)
+   # - Label all genes in each species plot
+   # - Print list of shared genes to console (when available)
 
 Custom Species Order
 ~~~~~~~~~~~~~~~~~~~~
