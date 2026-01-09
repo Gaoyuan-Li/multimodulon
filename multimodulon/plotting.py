@@ -116,8 +116,8 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
         automatically set to True if component has <10 genes, False otherwise.
         Maximum 60 gene labels will be shown (top genes by weight magnitude).
     show_all_gene_names : bool, optional
-        If True, label all genes and skip the 60-label cap and threshold filter.
-        Default: False.
+        If True, label all genes above threshold and skip the 60-label cap.
+        When no threshold is available, labels all genes. Default: False.
     show_legend : bool, optional
         Controls legend display when show_COG=True. Legend is shown by default; set to False to hide.
     in_iModulon_color : str, optional
@@ -433,15 +433,13 @@ def view_iModulon_weights(multimodulon, species: str, component: str, save_path:
                 return str(gene_idx)
         
         # Get genes to label
-        if show_all_gene_names:
-            genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
+        if threshold is not None:
+            genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
+                             if abs(y) > threshold]
         else:
-            if threshold is not None:
-                genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
-                                 if abs(y) > threshold]
-            else:
-                genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
-            
+            genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
+        
+        if not show_all_gene_names:
             # Sort by absolute weight and limit to top 60
             genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
             if len(genes_to_label) > 60:
@@ -1266,8 +1264,8 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
         Example: ['MG1655', 'BL21', 'C', 'Crooks', 'W', 'W3110']
         If not provided, species are plotted in their default order.
     show_gene_names : bool, optional
-        If True, show gene names for all genes and use adjust_text to reduce
-        overlap. Default: False.
+        If True, show gene names for all genes above threshold and use adjust_text
+        to reduce overlap. Default: False.
         
     Raises
     ------
@@ -1303,6 +1301,52 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
     # Generate plots for each species
     logger.info(f"Generating plots for core component '{component}' across {len(species_with_component)} species")
     
+    def _refresh_presence_matrix_for_component(species_name: str, species_data) -> None:
+        if species_data._presence_matrix is None:
+            logger.warning(f"presence_matrix not found for species '{species_name}'. Run optimize_M_thresholds() first.")
+            return
+        if species_data._M_thresholds is None or component not in species_data._M_thresholds.index:
+            return
+        if species_data.M is None or component not in species_data.M.columns:
+            return
+
+        threshold = species_data._M_thresholds.loc[component, 'M_threshold']
+        gene_mapping = {}
+        M = species_data.M
+
+        if multimodulon.combined_gene_db is not None and species_name in multimodulon.combined_gene_db.columns:
+            for _, row in multimodulon.combined_gene_db.iterrows():
+                leftmost_gene = None
+                for col in multimodulon.combined_gene_db.columns:
+                    val = row[col]
+                    if pd.notna(val) and val != "None" and val is not None:
+                        leftmost_gene = val
+                        break
+
+                if leftmost_gene and leftmost_gene in M.index:
+                    species_gene = row[species_name]
+                    if pd.notna(species_gene) and species_gene != "None" and species_gene is not None:
+                        if species_data.gene_table is not None and species_gene in species_data.gene_table.index:
+                            gene_mapping[leftmost_gene] = species_gene
+        else:
+            if species_data.gene_table is not None:
+                for gene in M.index:
+                    if gene in species_data.gene_table.index:
+                        gene_mapping[gene] = gene
+
+        if component not in species_data._presence_matrix.columns:
+            species_data._presence_matrix[component] = 0
+        else:
+            species_data._presence_matrix[component] = 0
+
+        for leftmost_gene, species_gene in gene_mapping.items():
+            if species_gene in species_data._presence_matrix.index and leftmost_gene in M.index:
+                species_data._presence_matrix.loc[species_gene, component] = int(abs(M.loc[leftmost_gene, component]) > threshold)
+
+    if show_gene_names:
+        for species in species_with_component:
+            _refresh_presence_matrix_for_component(species, multimodulon._species_data[species])
+
     shared_genes_across_all = set()
     if show_COG:
         # When showing COG, create a combined plot with subplots and single legend
@@ -1531,9 +1575,13 @@ def view_core_iModulon_weights(multimodulon, component: str, save_path: Optional
                     else:
                         return str(gene_idx)
                 
-                genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
+                if threshold is not None:
+                    genes_to_label = [(gene, x, y) for gene, x, y in zip(genes_with_pos, x_positions, y_weights) 
+                                     if abs(y) > threshold]
+                else:
+                    genes_to_label = list(zip(genes_with_pos, x_positions, y_weights))
                 
-                # Sort by absolute weight - no limit since we're showing all genes
+                # Sort by absolute weight - no limit
                 genes_to_label.sort(key=lambda x: abs(x[2]), reverse=True)
                 
                 # Use adjust_text for label placement

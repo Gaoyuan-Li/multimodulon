@@ -34,7 +34,7 @@ Visualizing Gene Weights
    :param bool show_COG: Color genes by COG category (default: False)
    :param bool show_gene_names: Show gene names on plot. If None, auto-set based on component size (default: None).
                                Maximum 60 gene labels will be shown (top genes by weight magnitude)
-   :param bool show_all_gene_names: Label all genes without the 60-label cap or threshold filter (default: False)
+   :param bool show_all_gene_names: Label all genes above threshold without the 60-label cap (default: False)
 
 Basic Usage
 ~~~~~~~~~~~
@@ -142,7 +142,7 @@ Visualizing Core iModulons Across Species
    :param str font_path: Path to custom font file (optional)
    :param bool show_COG: Color genes by COG category (default: False)
    :param list reference_order: Custom species order for subplot arrangement (optional)
-   :param bool show_gene_names: Show gene names on plots. Labels all genes and uses adjust_text
+   :param bool show_gene_names: Show gene names on plots for all genes above threshold and uses adjust_text
                                to reduce overlap (default: False).
 
 Basic Usage
@@ -163,14 +163,14 @@ Basic Usage
        save_path='core1_all_species_COG.svg'
    )
    
-   # With gene labeling - shows all genes
+   # With gene labeling - shows all genes above threshold
    multiModulon.view_core_iModulon_weights(
        component='Core_1',
        show_gene_names=True,
        save_path='core1_labeled.svg'
    )
    # This will:
-   # - Label all genes in each species plot
+   # - Label all genes above threshold in each species plot
    # - Print list of shared genes to console (when available)
 
 Custom Species Order
@@ -195,15 +195,14 @@ Understanding the Output
    - Each plot saved as '{species}_{component}_iModulon.svg'
    - Shows gene weights on genomic coordinates
    - Includes threshold lines if available
-   - Gene labels shown if show_gene_names=True or component has <10 genes
+   - Gene labels shown if show_gene_names=True
 
 **With COG coloring**: Creates a single combined plot
    - All species shown as subplots
    - Shared COG category legend at bottom
    - Genes colored by functional category
    - Grey dots indicate genes below threshold
-   - Gene labels shown if show_gene_names=True (no limit for species-specific genes)
-   - When show_gene_names=True, only species-specific genes are labeled
+   - Gene labels shown if show_gene_names=True (all genes above threshold)
    - Shared genes across all species are printed to console instead
    - Initial positioning uses golden angle spiral (same as view_iModulon_weights)
    - Stronger force parameters for crowded subplots (force_points: 1.0-1.2, force_text: 2.0-2.5)
