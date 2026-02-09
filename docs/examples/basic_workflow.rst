@@ -1,29 +1,43 @@
-Basic Workflow
-==============
+MultiModulon Worflow
+====================
 
-This example demonstrates the complete MultiModulon analysis workflow from data loading to component visualization.
+This notebook demonstrates the first step for multi-species/strain/modality analysis using the MultiModulon package.
 
-Step 1: Initialize MultiModulon Object
---------------------------------------
+Step 1: Initialize MultiModulon
+-------------------------------
 
 Load data from the Input_Data directory containing expression matrices, gene annotations, and sample metadata for all strains.
 
 .. code-block:: python
 
+   # Import required libraries
    from multimodulon import MultiModulon
    import pandas as pd
    import numpy as np
-   
+   import matplotlib.pyplot as plt
+
+   # Set display options
+   pd.set_option('display.max_columns', None)
+   pd.set_option('display.max_rows', 50)
+
+   # Path to the Input_Data folder
+   input_data_path = './Input_Data'
+
    # Initialize MultiModulon object
    multiModulon = MultiModulon(input_data_path)
 
-The initialization will:
+Step 2: Create Gene Tables
+--------------------------
 
-* Scan the input directory for species/strain subdirectories
-* Load expression data (log_tpm.csv)
-* Load sample metadata (sample_sheet.csv)
-* Validate data consistency
-* Report the number of genes and samples for each species
+Parse GFF files to create gene annotation tables for each strain.
+
+.. code-block:: python
+
+   # Create gene tables from GFF files
+   print("Creating gene tables from GFF files...")
+   multiModulon.create_gene_table()
+
+   multiModulon.add_eggnog_annotation("./Output_eggnog_mapper")
 
 Step 2: Generate BBH Files
 --------------------------
@@ -32,115 +46,111 @@ Generate Bidirectional Best Hits (BBH) files for ortholog detection between all 
 
 .. code-block:: python
 
-   # Generate BBH files using multiple threads
-   multiModulon.generate_BBH(output_path, threads=8)
+   # Generate BBH files using multiple threads for faster computation
+   output_bbh_path = './Output_BBH'
 
-This step:
-
-* Extracts protein sequences from genome files
-* Runs BLAST between all species pairs
-* Identifies reciprocal best hits
-* Saves results as CSV files
+   multiModulon.generate_BBH(output_bbh_path, threads=16)
 
 Step 3: Align Genes Across Strains
------------------------------------
+----------------------------------
 
 Create a unified gene database by aligning genes across all strains using the BBH results.
 
 .. code-block:: python
 
    # Align genes across all strains
+   output_gene_info_path = './Output_Gene_Info'
+
    combined_gene_db = multiModulon.align_genes(
        input_bbh_dir=output_bbh_path,
        output_dir=output_gene_info_path,
-       reference_order=['Species1', 'Species2', 'Species3'],  # optional
-       bbh_threshold=90  # optional: minimum percent identity
+       reference_order=['MG1655', 'BL21', 'W3110'],  # optional: specify order
+       # bbh_threshold=90  # optional: minimum percent identity threshold
    )
 
-The alignment process:
-
-* Groups orthologous genes using Union-Find algorithm
-* Creates gene families across species
-* Generates a combined gene database
-* Saves the alignment for future use
-
-Step 4: Create Gene Tables
---------------------------
-
-Parse GFF files to create gene annotation tables for each strain.
-
-.. code-block:: python
-
-   # Create gene tables from GFF files
-   multiModulon.create_gene_table()
-   
-   # Optional: Add eggNOG annotations
-   multiModulon.add_eggnog_annotation(eggnog_output_path)
-
-This enriches gene information with:
-
-* Gene names and products
-* COG categories
-* Functional annotations
+   combined_gene_db.head()
 
 Step 5: Generate Aligned Expression Matrices
 --------------------------------------------
 
-Create expression matrices with consistent gene indexing across all strains.
+Create expression matrices with consistent gene indexing across all strains for multi-view ICA.
 
 .. code-block:: python
 
    # Generate aligned expression matrices
-   multiModulon.generate_X(gene_info_folder_path)
+   print("Generating aligned expression matrices...")
+   multiModulon.generate_X(output_gene_info_path)
 
-This step:
-
-* Aligns expression matrices based on gene families
-* Handles missing genes with NaN values
-* Reports dimensions and recommendations
+   # The output shows aligned X matrices and dimension recommendations
 
 Step 6: Optimize Number of Core Components
 ------------------------------------------
 
-Use the single-gene filter metric and an elbow method on k vs the number of non-single-gene
-robust components to determine the optimal number of core components.
+Determine the optimal number of core components.
 
 .. code-block:: python
 
    # Optimize number of core components
+   print("Optimizing number of core components...")
+   print("This will test different values of k and find the optimal number.")
+
    optimal_num_core_components = multiModulon.optimize_number_of_core_components(
-      step=5,                    # Test k = 5, 10, 15, 20, ...
-      save_path=output_dir,      # Save plots
-      fig_size=(7, 5),           # Figure size
+       step=10,                        # Test k = 5, 10, 15, 20, ...
+       save_path='./Output_Optimization_Figures',  # Save plots to directory
+       fig_size=(7, 5),                # Figure size
+       num_runs_per_dimension=10,
+       seed=10
    )
 
-The optimization:
+.. figure:: ../../notebooks/Output_Optimization_Figures/num_core_optimization.svg
+   :alt: Core component optimization figure
+   :width: 95%
 
-* Tests different numbers of core components
-* Removes components dominated by a single gene
-* Uses the elbow point of the k vs non-single-gene component curve
-* Saves optimization plots
+   Core component optimization result.
 
 Step 7: Optimize Number of Unique Components
----------------------------------------------
+--------------------------------------------
 
 Determine the optimal number of unique (species-specific) components for each strain.
 
 .. code-block:: python
 
    # Optimize unique components for each species
+   print("Optimizing unique components per species...")
+   print("This will test different numbers of unique components for each species.\n")
+
    optimal_unique, optimal_total = multiModulon.optimize_number_of_unique_components(
        optimal_num_core_components=optimal_num_core_components,
-       step=5,
-       save_path=output_dir,
-       fig_size=(7, 5)
+       step=10,
+       save_path='./Output_Optimization_Figures',
+       fig_size=(7, 5),
+       num_runs_per_dimension=10,
+       seed=10
    )
 
-This process:
+.. figure:: ../../notebooks/Output_Optimization_Figures/num_unique_MG1655_optimization.svg
+   :alt: Unique component optimization for MG1655
+   :width: 95%
 
-* Tests different numbers of unique components per species
-* Removes single-gene components before clustering/counting
-* Returns optimal numbers for each species
+   Unique component optimization result for MG1655.
+
+.. figure:: ../../notebooks/Output_Optimization_Figures/num_unique_BL21_optimization.svg
+   :alt: Unique component optimization for BL21
+   :width: 95%
+
+   Unique component optimization result for BL21.
+
+.. figure:: ../../notebooks/Output_Optimization_Figures/num_unique_W3110_optimization.svg
+   :alt: Unique component optimization for W3110
+   :width: 95%
+
+   Unique component optimization result for W3110.
+
+.. code-block:: python
+
+   optimal_num_core_components
+
+   optimal_total
 
 Step 8: Run Robust Multi-view ICA
 ---------------------------------
@@ -150,70 +160,33 @@ Perform robust multi-view ICA with multiple runs and clustering to identify cons
 .. code-block:: python
 
    # Run robust multi-view ICA
+   print("Running robust multi-view ICA with clustering...")
+   print("This performs multiple ICA runs and clusters the results for robustness.\n")
+
    M_matrices, A_matrices = multiModulon.run_robust_multiview_ica(
-       a=optimal_total,                 # Total components per species
+       a=optimal_total,                 # Dictionary of total components per species
        c=optimal_num_core_components,   # Number of core components
-       num_runs=20,                     # Number of runs for robustness
-       seed=42                          # Random seed
+       num_runs=10,                     # Number of runs for robustness
+       seed=100                         # Random seed for reproducibility
    )
 
-The robust ICA:
+Step 9: Optimize thresholds to binarize the M matrices
+------------------------------------------------------
 
-* Runs ICA multiple times with different initializations
-* Clusters components across runs
-* Selects consistent components
-* Generates final M (gene weights) and A (activities) matrices
-
-Step 9: Optimize M Matrix Thresholds
-------------------------------------
-
-Calculate thresholds for binarizing the M matrices using Otsu's method.
+Use Otsu's method to calculate thresholds for each component in M matrices across all species.
 
 .. code-block:: python
 
-   # Optimize thresholds for each component
-   multiModulon.optimize_M_thresholds(
-       method="Otsu's method", 
-       quantile_threshold=95
-   )
+   multiModulon.optimize_M_thresholds(method="Otsu's method", quantile_threshold=95)
 
-This creates:
+Step 10: Save the multiModulon object to json
+---------------------------------------------
 
-* Component-specific thresholds
-* Binarized presence matrices
-* Statistics on genes per component
-
-Step 10: Save Results
----------------------
-
-Save the complete MultiModulon object for future use.
+Save the multiModulon object to json in the given path and file name.
 
 .. code-block:: python
 
-   # Save to compressed JSON format
-   multiModulon.save_to_json_multimodulon("multiModulon_results.json.gz")
-   
-   # Load saved object
-   multiModulon = MultiModulon.load_json_multimodulon("multiModulon_results.json.gz")
+   multiModulon.save_to_json_multimodulon("./multiModulon_E_coli_comparison_demo.json.gz")
 
-Summary
--------
-
-This workflow covers the complete pipeline from raw data to interpretable multi-species regulatory modules:
-
-1. Data loading and validation
-2. Ortholog detection via BBH
-3. Gene alignment across species
-4. Expression matrix alignment
-5. Component number optimization
-6. Robust multi-view ICA
-7. Threshold optimization
-8. Results storage
-
-The output includes:
-
-* Core components conserved across species
-* Unique components specific to each species
-* Gene membership for each component
-* Activity profiles across samples
-* Optimized thresholds for interpretation
+   for i in multiModulon.species:
+       print(i, " : ", multiModulon[i].M.shape)

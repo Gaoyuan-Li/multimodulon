@@ -37,7 +37,7 @@ Key Features
 
 * **Multi-species Integration**: Analyze gene expression data from multiple bacterial species simultaneously
 * **Multi-view ICA**: Identify core (conserved) and unique (species-specific) regulatory modules
-* **Optimization Tools**: Automated optimization of component numbers using multiple metrics
+* **Optimization Tools**: Automated optimization of component numbers using non-single-gene filtering
 * **Visualization**: Comprehensive plotting functions for iModulon activities and gene weights
 * **GPU Support**: Accelerated computation using GPU for large-scale analyses
 
@@ -68,6 +68,7 @@ Contents
    
    examples/basic_workflow
    examples/visualization_tutorial
+   examples/characterization_unique_components
    
 .. toctree::
    :maxdepth: 1
