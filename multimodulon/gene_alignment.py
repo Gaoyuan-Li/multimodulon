@@ -495,6 +495,9 @@ def _create_protein_to_locus_mapping(multimodulon: 'MultiModulon', gff_file: Pat
         Mapping from protein_id to locus_tag
     """
     protein_to_locus = {}
+    has_locus_tag = False
+    fallback_source_used = None
+    fallback_priority = {'Note': 1, 'gene': 2, 'protein_id': 3}
     
     with open(gff_file, 'r') as f:
         for line in f:
@@ -527,17 +530,11 @@ def _create_protein_to_locus_mapping(multimodulon: 'MultiModulon', gff_file: Pat
                 
                 # Get locus_tag - handle different formats
                 locus_tag = attr_dict.get('locus_tag', None)
+                if locus_tag:
+                    has_locus_tag = True
                 
                 # If no locus_tag found, try to extract from Note field (W3110 format)
                 if not locus_tag and 'Note' in attr_dict:
-                    # Issue warning for locus_tag extraction
-                    warning_key = f"{species_name}_note_extraction"
-                    if warning_key not in getattr(multimodulon, '_warned_extractions', set()):
-                        print(f"WARNING: '{species_name}' - No locus_tag found in GFF file, extracting from Note field")
-                        if not hasattr(multimodulon, '_warned_extractions'):
-                            multimodulon._warned_extractions = set()
-                        multimodulon._warned_extractions.add(warning_key)
-                    
                     note_value = attr_dict['Note']
                     # Parse "ECK0001:JW4367:b0001" format - use the JW-number for W3110
                     if ':' in note_value:
@@ -553,29 +550,40 @@ def _create_protein_to_locus_mapping(multimodulon: 'MultiModulon', gff_file: Pat
                                 if part.startswith('b') and len(part) > 1:
                                     locus_tag = part
                                     break
+                    if locus_tag and (
+                        fallback_source_used is None
+                        or fallback_priority['Note'] > fallback_priority[fallback_source_used]
+                    ):
+                        fallback_source_used = 'Note'
                 
                 # If still no locus_tag, try using gene name as fallback
                 if not locus_tag and 'gene' in attr_dict:
-                    warning_key = f"{species_name}_gene_fallback"
-                    if warning_key not in getattr(multimodulon, '_warned_extractions', set()):
-                        print(f"WARNING: Species '{species_name}' - No locus_tag or Note field found in GFF file, using gene name as fallback")
-                        if not hasattr(multimodulon, '_warned_extractions'):
-                            multimodulon._warned_extractions = set()
-                        multimodulon._warned_extractions.add(warning_key)
                     locus_tag = attr_dict['gene']
+                    if fallback_source_used is None or fallback_priority['gene'] > fallback_priority[fallback_source_used]:
+                        fallback_source_used = 'gene'
                 
                 # If still no locus_tag, use protein_id itself as last resort
                 if not locus_tag and protein_id:
-                    warning_key = f"{species_name}_protein_id_fallback"
-                    if warning_key not in getattr(multimodulon, '_warned_extractions', set()):
-                        print(f"WARNING: Species '{species_name}' - No identifiable locus_tag in GFF file, using protein_id as last resort")
-                        if not hasattr(multimodulon, '_warned_extractions'):
-                            multimodulon._warned_extractions = set()
-                        multimodulon._warned_extractions.add(warning_key)
                     locus_tag = protein_id
+                    if fallback_source_used is None or fallback_priority['protein_id'] > fallback_priority[fallback_source_used]:
+                        fallback_source_used = 'protein_id'
                 
                 if protein_id and locus_tag:
                     protein_to_locus[protein_id] = locus_tag
+    
+    if not has_locus_tag:
+        warning_key = f"{species_name}_missing_locus_tag"
+        warned_extractions = getattr(multimodulon, '_warned_extractions', set())
+        if warning_key not in warned_extractions:
+            print(f"WARNING: Species '{species_name}' - No locus_tag found in GFF file")
+            if fallback_source_used == 'protein_id':
+                print(f"INFO: Species '{species_name}' - Using protein_id as fallback IDs")
+            elif fallback_source_used == 'gene':
+                print(f"INFO: Species '{species_name}' - Using gene as fallback IDs")
+            elif fallback_source_used == 'Note':
+                print(f"INFO: Species '{species_name}' - Using Note as fallback IDs")
+            warned_extractions.add(warning_key)
+            multimodulon._warned_extractions = warned_extractions
     
     return protein_to_locus
 
