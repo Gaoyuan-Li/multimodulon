@@ -676,8 +676,8 @@ def optimize_number_of_unique_components(
             font_prop = fm.FontProperties(fname=font_path)
             plt.rcParams['font.family'] = font_prop.get_name()
         
-        ax.plot(a_sorted, counts, 'bo-', linewidth=2, markersize=8, 
-               label='QC-passed components')
+        ax.plot(a_sorted, counts, 'bo-', linewidth=2, markersize=8,
+               label='Non-single gene robust components')
         
         # Highlight optimal a
         ax.axvline(x=optimal_a, color='red', linestyle='--', alpha=0.7, linewidth=2,
@@ -686,12 +686,8 @@ def optimize_number_of_unique_components(
                   edgecolors='darkred', linewidth=2)
         
         ax.set_xlabel('Number of Total Components (a)', fontsize=12)
-        if num_runs_per_dimension > 1:
-            ax.set_ylabel('Number of robust QC-passed components', fontsize=12)
-            ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
-        else:
-            ax.set_ylabel('Number of QC-passed components', fontsize=12)
-            ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Number of robust components', fontsize=12)
+        ax.set_title(f'Optimization of Unique Components for {target_species}', fontsize=14, fontweight='bold')
         ax.legend()
         
         # Set font for tick labels if font_path provided
@@ -709,10 +705,7 @@ def optimize_number_of_unique_components(
         ax.yaxis.set_major_locator(MaxNLocator(integer=True))
         
         # Add text box with result
-        if num_runs_per_dimension > 1:
-            label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} robust unique components'
-        else:
-            label_text = f'Optimal a = {optimal_a}\n{consistent_counts[optimal_a]} consistent unique components'
+        label_text = f'Optimal a = {optimal_a}'
         text_obj = ax.text(0.02, 0.98, label_text, 
                transform=ax.transAxes, fontsize=11, fontweight='bold',
                bbox=dict(boxstyle="round,pad=0.4", facecolor='lightblue', alpha=0.8),
