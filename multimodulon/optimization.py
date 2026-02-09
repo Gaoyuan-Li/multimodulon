@@ -233,9 +233,9 @@ def _run_single_gene_optimization(
                 optimal_num_core_components = k_sorted[elbow_idx]
 
     descriptor = (
-        "robust components passing filter"
+        "robust non-single gene components"
         if num_runs_per_dimension and num_runs_per_dimension > 1
-        else "components passing filter"
+        else "non-single gene components"
     )
     print(
         f"\nOptimal k = {optimal_num_core_components} "
@@ -528,13 +528,13 @@ def optimize_number_of_unique_components(
         if not a_candidates:
             a_candidates = [optimal_num_core_components]
         
-        print(f"Testing a values: {a_candidates}")
+        print(f"Optimizing unique components: {a_candidates}")
         
         # Store results
         consistent_counts = {}
         
         # Test each a value
-        for a_test in tqdm(a_candidates, desc=f"Testing a values for {target_species}"):
+        for a_test in tqdm(a_candidates, desc=f"Optimizing unique components for {target_species}"):
             if num_runs_per_dimension > 1:
                 # Use robust clustering approach
                 from sklearn.cluster import HDBSCAN
