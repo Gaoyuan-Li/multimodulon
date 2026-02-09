@@ -53,6 +53,14 @@ Contents
    
 .. toctree::
    :maxdepth: 2
+   :caption: Examples & Tutorials
+   
+   examples/basic_workflow
+   examples/characterization_core_components
+   examples/characterization_unique_components
+
+.. toctree::
+   :maxdepth: 2
    :caption: Core Functionality
    
    initialization
@@ -61,14 +69,6 @@ Contents
    multiview_ica
    threshold_optimization
    visualization
-   
-.. toctree::
-   :maxdepth: 2
-   :caption: Examples & Tutorials
-   
-   examples/basic_workflow
-   examples/visualization_tutorial
-   examples/characterization_unique_components
    
 .. toctree::
    :maxdepth: 1

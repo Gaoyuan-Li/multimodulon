@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multimodulon"
-version = "0.2.0"
+version = "1.0.0"
 description = "A Python package for analyzing multi-species RNA-seq expression profiles"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,7 +46,7 @@ dev = [
     "black>=23.0.0,<24.0.0",
     "flake8>=6.0.0,<7.0.0",
     "mypy>=1.0.0,<2.0.0",
-    "ruff>=0.1.0,<1.0.0",
+    "ruff>=0.1,<1.0.0",
 ]
 
 [project.urls]

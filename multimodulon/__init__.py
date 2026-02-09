@@ -4,5 +4,5 @@ MultiModulon: A Python package for analyzing multi-species RNA-seq expression pr
 
 from .core import MultiModulon
 
-__version__ = "0.2.0"
+__version__ = "1.0.0"
 __all__ = ["MultiModulon"]
