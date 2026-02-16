@@ -69,21 +69,6 @@ Example:
    Sample2,Control,ProjectA,2
    Sample3,Treatment,ProjectA,1
 
-Optional Files
---------------
-
-Gene Table (gene_table.csv)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* **Format**: CSV file with genes as rows
-* **Index**: Must match expression matrix gene identifiers
-* **Useful columns**:
-  
-  - ``gene_name``: Human-readable gene name
-  - ``product``: Gene product description
-  - ``COG``: COG category
-  - ``start``, ``end``, ``strand``: Genomic coordinates
-
 Normalized Expression (log_tpm_norm.csv)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -91,21 +76,11 @@ Normalized Expression (log_tpm_norm.csv)
 * Same format as log_tpm.csv
 * If not provided, log_tpm will be used directly
 
-Files for BBH Analysis
+Files for BBH Analysis and Gene Annotation
 ----------------------
 
-To perform gene alignment across species, you need:
+To perform gene alignment across species and add gene annotation, you need:
 
 * ``genome.fna``: Genome sequence in FASTA format
 * ``genome.gff``: Gene annotations in GFF3 format
 * ``protein.faa``: Protein sequences in FASTA format
-
-Data Quality Checklist
-----------------------
-
-Before running analysis, ensure:
-
-1. ✓ Sample names are consistent between expression matrix and sample sheet
-2. ✓ Gene identifiers are consistent across all files
-3. ✓ No missing values in expression matrix (or handle appropriately)
-4. ✓ Biological replicates are properly labeled (1, 2, 3, not 1, 1, 2) # only when available

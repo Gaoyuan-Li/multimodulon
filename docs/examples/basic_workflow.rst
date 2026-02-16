@@ -39,7 +39,7 @@ Parse GFF files to create gene annotation tables for each strain.
 
    multiModulon.add_eggnog_annotation("./Output_eggnog_mapper")
 
-Step 2: Generate BBH Files
+Step 3: Generate BBH Files
 --------------------------
 
 Generate Bidirectional Best Hits (BBH) files for ortholog detection between all strain pairs.
@@ -51,7 +51,7 @@ Generate Bidirectional Best Hits (BBH) files for ortholog detection between all 
 
    multiModulon.generate_BBH(output_bbh_path, threads=16)
 
-Step 3: Align Genes Across Strains
+Step 4: Align Genes Across Strains
 ----------------------------------
 
 Create a unified gene database by aligning genes across all strains using the BBH results.
