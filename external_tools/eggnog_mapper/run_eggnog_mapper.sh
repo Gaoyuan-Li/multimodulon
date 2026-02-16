@@ -2,19 +2,20 @@
 
 # run_eggnog_mapper.sh
 # Script to run eggNOG-mapper on multiple species from imminer_2_industrial_strain dataset
-# Usage: ./run_eggnog_mapper.sh <input_data_path> <output_dir_path>
-# Example: ./run_eggnog_mapper.sh ../imminer_2_industrial_strain/Input_Data ../imminer_2_industrial_strain/Output_eggnog_mapper
+# Usage: ./run_eggnog_mapper.sh <input_data_path> <output_dir_path> <tax_scope>
+# Example: ./run_eggnog_mapper.sh ../imminer_2_industrial_strain/Input_Data ../imminer_2_industrial_strain/Output_eggnog_mapper Gammaproteobacteria
 
 # Check if correct number of arguments
-if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <input_data_path> <output_dir_path>"
-    echo "Example: $0 ../imminer_2_industrial_strain/Input_Data ../imminer_2_industrial_strain/Output_eggnog_mapper"
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <input_data_path> <output_dir_path> <tax_scope>"
+    echo "Example: $0 ../imminer_2_industrial_strain/Input_Data ../imminer_2_industrial_strain/Output_eggnog_mapper Gammaproteobacteria"
     exit 1
 fi
 
 # Set input and output paths
 INPUT_DATA_PATH="$1"
 OUTPUT_DIR="$2"
+TAX_SCOPE="$3"
 
 # Check if input path exists
 if [ ! -d "$INPUT_DATA_PATH" ]; then
@@ -25,8 +26,15 @@ fi
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
-# Define the species list
-SPECIES=("BL21" "C" "Crooks" "MG1655" "W" "W3110")
+# Get species list from subfolder names in Input_Data
+SPECIES=()
+for dir in "$INPUT_DATA_PATH"/*; do
+    if [ -d "$dir" ]; then
+        SPECIES+=("$(basename "$dir")")
+    fi
+done
+
+echo "Found species: ${SPECIES[@]}"
 
 # Process each species
 for species in "${SPECIES[@]}"; do
@@ -48,13 +56,13 @@ for species in "${SPECIES[@]}"; do
     
     # Run eggNOG-mapper
     echo "Running eggNOG-mapper for $species..."
-    python emapper.py \
+    python /mnt/bop/eggnog-mapper/emapper.py \
         -o "$species" \
-        --tax_scope Gammaproteobacteria \
+        --tax_scope "$TAX_SCOPE" \
         --tax_scope_mode Bacteria \
         -i "$FAA_FILE" \
         --output_dir "$SPECIES_OUTPUT_DIR" \
-        --cpu 48
+        --cpu 16
     
     # Check if command was successful
     if [ $? -eq 0 ]; then
