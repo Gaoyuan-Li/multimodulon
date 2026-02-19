@@ -10,7 +10,7 @@ Requirements
 * CUDA-capable GPU
 * Docker
 
-Basic Installation
+Installation
 ------------------
 
 Install BLAST+ (Required for BBH generation)
@@ -39,7 +39,7 @@ Install MultiModulon using pip:
 Development Installation
 ------------------------
 
-For development or to get the latest features:
+For development:
 
 .. code-block:: bash
 
@@ -56,7 +56,7 @@ Core dependencies will be automatically installed:
 * pandas
 * matplotlib
 * scikit-learn
-* pytorch (for multi-view ICA)
+* pytorch (for robust multi-view ICA)
 * biopython (for sequence handling)
 
 
