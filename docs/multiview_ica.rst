@@ -6,7 +6,7 @@ This section covers running multi-view Independent Component Analysis (ICA) to i
 Overview
 --------
 
-Multi-view ICA decomposes expression matrices from multiple species into:
+Robust Multi-view ICA decomposes expression matrices from multiple species into:
 
 * **Core components** - Shared regulatory modules conserved across species
 * **Unique components** - Species-specific regulatory modules
@@ -157,32 +157,6 @@ Components are labeled by type:
    print(f"Core components: {len(core_components)}")
    print(f"Unique components: {len(unique_components)}")
 
-Generating Activity Matrices
-----------------------------
-
-After running ICA, generate A matrices from M and X:
-
-.. py:method:: MultiModulon.generate_A()
-
-   Generate A matrices (M.T @ X) for all species.
-   
-   **Example:**
-   
-   .. code-block:: python
-      
-      # Generate A matrices after ICA
-      multiModulon.generate_A()
-      
-      # Access generated matrices
-      for species in multiModulon.species:
-          A = multiModulon[species].A   
-          print(f"{species} activities: {A.shape}")
-
-This is useful when:
-
-* You've loaded pre-computed M matrices
-* You want to recalculate activities after filtering
-
 Advanced Usage
 --------------
 
@@ -239,11 +213,6 @@ Assess ICA Results
 
 .. code-block:: python
 
-   # Calculate explained variance
-   explained_var = multiModulon.calculate_explained_variance()
-   for species, var in explained_var.items():
-       print(f"{species}: {var:.1%} variance explained")
-   
    # Check components passing the single-gene filter
    from multimodulon.optimization import passes_single_gene_filter
    
