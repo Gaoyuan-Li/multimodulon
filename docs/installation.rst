@@ -13,6 +13,14 @@ Requirements
 Installation
 ------------------
 
+Create multimodulon env
+
+.. code-block:: bash
+
+   # Conda
+   conda create -n multimodulon python=3.11
+   conda activate multimodulon
+
 Install BLAST+ (Required for BBH generation)
 
 .. code-block:: bash
