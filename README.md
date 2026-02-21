@@ -99,28 +99,12 @@ Input_Data/
 
 Main class for multi-species/strain analysis.
 
-**Constructor:**
-- `__init__(input_folder_path)`: Initialize with Input_Data folder path
-
-**Properties:**
-- `bbh`: Get BBH (Bidirectional Best Hits) results
-- `species`: Get list of loaded species names
-- `combined_gene_db`: Get the combined gene database if available
-
-**Data Access:**
-- `__getitem__(species_name)`: Get data for a specific species (e.g., `multiModulon['species_name']`)
-- `summary()`: Print summary of loaded data including species, samples, and matrix shapes
-
 **Gene Analysis:**
+
 - `generate_BBH(output_path="Output_BBH", threads=1)`: Generate BBH files using existing protein.faa files
 - `align_genes(input_bbh_dir="Output_BBH", output_dir="Output_Gene_Info", reference_order=None, bbh_threshold=None)`: Align genes across all species using Union-Find algorithm
 - `create_gene_table()`: Create gene tables from GFF files for all species
 - `add_eggnog_annotation(eggnog_output_path)`: Add eggNOG annotations to gene tables
-- `gff2pandas(gff_file, feature="CDS", index=None)`: Convert GFF file to pandas DataFrame
-
-**Data Preparation:**
-- `generate_X(gene_info_folder)`: Generate X matrices for all strains with consistent row indices
-- `generate_A()`: Generate A matrices for all species from M matrices (A = M.T @ X)
 
 **Optimization:**
 - `optimize_number_of_core_components(**kwargs)`: Optimize number of core components using the single-gene filter metric
@@ -128,12 +112,8 @@ Main class for multi-species/strain analysis.
 - `optimize_M_thresholds(method="Otsu's method", quantile_threshold=90)`: Optimize thresholds for M matrices
 
 **ICA Analysis:**
-- `run_multiview_ica(**kwargs)`: Run standard multi-view ICA (single run)
-- `run_robust_multiview_ica(a, c, num_runs=100, ...)`: Run robust multi-view ICA with clustering
-- `calculate_explained_variance()`: Calculate explained variance for each species
 
-**iModulon Management:**
-- `rename_iModulon(current_name, new_name, species=None)`: Rename an iModulon across all species and related dataframes
+- `run_robust_multiview_ica(a, c, num_runs=100, ...)`: Run robust multi-view ICA with clustering
 
 **Visualization:**
 - `view_iModulon_weights(*args, **kwargs)`: View weights of an iModulon
