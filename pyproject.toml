@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    { name = "MultiModulon Development Team", email = "dev@multimodulon.org" }
+    { name = "Gaoyuan Li", email = "gaoyuan-li@ucsd.edu" }
 ]
 keywords = ["bioinformatics", "RNA-seq", "multi-species", "expression-analysis", "modulon"]
 classifiers = [
