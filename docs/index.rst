@@ -32,7 +32,7 @@ Welcome to MultiModulon's documentation!
 Key Features
 ------------
 
-* **Multi-species Integration**: Analyze gene expression data from multiple bacterial species simultaneously
+* **Multi-modalities/Multi-species Integration**: Analyze gene expression data from multiple bacterial species simultaneously
 * **Robust Multi-view ICA**: Identify core (conserved) and unique (species-specific) regulatory modules
 * **Optimization Tools**: Automated optimization of component numbers using non-single-gene filtering
 * **Visualization**: Comprehensive plotting functions for iModulon activities and gene weights
