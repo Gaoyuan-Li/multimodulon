@@ -29,14 +29,11 @@ Welcome to MultiModulon's documentation!
    :target: https://www.docker.com/
    :alt: Docker
 
-.. note::
-   This project is under active development. The API may change in future releases.
-
 Key Features
 ------------
 
 * **Multi-species Integration**: Analyze gene expression data from multiple bacterial species simultaneously
-* **Multi-view ICA**: Identify core (conserved) and unique (species-specific) regulatory modules
+* **Robust Multi-view ICA**: Identify core (conserved) and unique (species-specific) regulatory modules
 * **Optimization Tools**: Automated optimization of component numbers using non-single-gene filtering
 * **Visualization**: Comprehensive plotting functions for iModulon activities and gene weights
 * **GPU Support**: Accelerated computation using GPU for large-scale analyses
@@ -76,3 +73,6 @@ Contents
    
    changelog
    error_report
+
+.. note::
+   This project is under active development. The API may change in future releases.
